@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -31,9 +30,8 @@ func initJWTSecret() {
 	if secretStr != "" {
 		jwtSecret = []byte(secretStr)
 	} else {
-		// Fallback para segredo gerado dinamicamente no boot se não especificado
-		jwtSecret = make([]byte, 32)
-		_, _ = rand.Read(jwtSecret)
+		// Fallback para segredo determinístico padrão de dev caso não esteja no .env
+		jwtSecret = []byte("kallia_default_jwt_secret_key_2026_dev_32bytes!")
 	}
 }
 
@@ -100,7 +98,37 @@ func parseToken(tokenStr string) (map[string]any, error) {
 	return claims, nil
 }
 
-// handleRegister cria um novo projeto e o usuário admin vinculado a ele
+// handleMe retorna as informações do usuário autenticado
+func (s *server) handleMe(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value(ctxKeyUserID).(string)
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "não autenticado"})
+		return
+	}
+
+	user, err := s.sessions.store.getUserByID(r.Context(), userID)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "usuário não encontrado"})
+		return
+	}
+
+	projID := ""
+	if user.ProjectID != nil {
+		projID = *user.ProjectID
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"user": map[string]any{
+			"id":        user.ID,
+			"email":     user.Email,
+			"role":      user.Role,
+			"projectId": projID,
+			"createdAt": user.CreatedAt,
+		},
+	})
+}
+
+// handleRegister cria um novo projeto e o usuário admin vinculado a ele de forma atômica
 func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email    string `json:"email"`
@@ -135,16 +163,6 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Criar o projeto
-	projectID := newSessionID()
-	// Plano básico ativo por 30 dias inicialmente
-	planEnds := time.Now().Add(30 * 24 * time.Hour)
-	err = s.sessions.store.createProject(r.Context(), projectID, projName, "basic", "active", time.Now(), &planEnds)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao criar projeto"})
-		return
-	}
-
 	// Criptografar senha
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -152,11 +170,14 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Criar usuário admin
+	projectID := newSessionID()
 	userID := newSessionID()
-	err = s.sessions.store.createUser(r.Context(), userID, email, string(hashed), "admin", projectID)
+	planEnds := time.Now().Add(30 * 24 * time.Hour)
+
+	// Criar o projeto e o usuário dentro de uma única transação
+	err = s.sessions.store.createProjectAndUser(r.Context(), projectID, projName, userID, email, string(hashed), "admin", planEnds)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao criar usuário"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao cadastrar projeto e usuário"})
 		return
 	}
 

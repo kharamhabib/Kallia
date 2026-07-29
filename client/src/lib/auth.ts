@@ -37,13 +37,18 @@ export const clearAuth = (): void => {
 
 export const apiUrl = (path: string): string => getApiBase() + path;
 
-// checkAuth verifica se o token JWT atual ainda é válido
+// checkAuth verifica se o token JWT atual ainda é válido no backend
 export const checkAuth = async (): Promise<boolean> => {
-  if (!getToken()) return false;
+  const token = getToken();
+  if (!token) return false;
   try {
-    const r = await fetch(apiUrl("/api/config"), { 
-      headers: { "Authorization": `Bearer ${getToken()}` } 
+    const r = await fetch(apiUrl("/api/auth/me"), { 
+      headers: { "Authorization": `Bearer ${token}` } 
     });
+    if (r.status === 401 || r.status === 403) {
+      clearAuth();
+      return false;
+    }
     return r.ok;
   } catch {
     return false;

@@ -80,6 +80,9 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()`)
 
 	// 4. Executar migrações de dados de legado
+	_, _ = db.ExecContext(ctx, `UPDATE users SET email = LOWER(TRIM(email))`)
+	_, _ = db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_lower_email ON users (LOWER(email))`)
+
 	_, _ = db.ExecContext(ctx, `
 		INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
 		VALUES ('default', 'Projeto Padrão', 'basic', 'active', now(), now() + interval '10 years')
@@ -762,6 +765,7 @@ func (s *sessionStore) updateProjectBilling(ctx context.Context, id, plan, statu
 // --- CRUD Usuários ---
 
 func (s *sessionStore) createUser(ctx context.Context, id, email, passwordHash, role, projectID string) error {
+	cleanEmail := strings.TrimSpace(strings.ToLower(email))
 	var projVal *string
 	if projectID != "" {
 		projVal = &projectID
@@ -769,16 +773,49 @@ func (s *sessionStore) createUser(ctx context.Context, id, email, passwordHash, 
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO users (id, email, password_hash, role, project_id)
 		VALUES ($1, $2, $3, $4, $5)
-	`, id, email, passwordHash, role, projVal)
+	`, id, cleanEmail, passwordHash, role, projVal)
 	return err
 }
 
+func (s *sessionStore) createProjectAndUser(ctx context.Context, projectID, projName, userID, email, passwordHash, role string, planEnds time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	cleanEmail := strings.TrimSpace(strings.ToLower(email))
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
+		VALUES ($1, $2, 'basic', 'active', now(), $3)
+	`, projectID, projName, planEnds)
+	if err != nil {
+		return fmt.Errorf("criar projeto: %w", err)
+	}
+
+	var projVal *string
+	if projectID != "" {
+		projVal = &projectID
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO users (id, email, password_hash, role, project_id)
+		VALUES ($1, $2, $3, $4, $5)
+	`, userID, cleanEmail, passwordHash, role, projVal)
+	if err != nil {
+		return fmt.Errorf("criar usuário: %w", err)
+	}
+
+	return tx.Commit()
+}
+
 func (s *sessionStore) getUserByEmail(ctx context.Context, email string) (*userRow, error) {
+	cleanEmail := strings.TrimSpace(strings.ToLower(email))
 	r := &userRow{}
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, email, password_hash, role, project_id, created_at
-		FROM users WHERE email = $1
-	`, email).Scan(&r.ID, &r.Email, &r.PasswordHash, &r.Role, &r.ProjectID, &r.CreatedAt)
+		FROM users WHERE LOWER(email) = $1
+	`, cleanEmail).Scan(&r.ID, &r.Email, &r.PasswordHash, &r.Role, &r.ProjectID, &r.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

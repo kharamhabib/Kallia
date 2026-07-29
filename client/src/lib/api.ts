@@ -13,9 +13,9 @@ const baseHeaders = (): HeadersInit => {
   return headers;
 };
 
-// Em 401 (key inválida/expirada) limpa a auth e volta pra tela de login.
+// Em 401 ou 403 (chave/token expirado ou acesso negado ao projeto) limpa a auth e recarrega para o login.
 const guard = (status: number) => {
-  if (status === 401) {
+  if (status === 401 || status === 403) {
     clearAuth();
     location.reload();
   }

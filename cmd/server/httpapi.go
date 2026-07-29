@@ -108,8 +108,15 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 
 	// Rotas de Autenticação do Usuário
+	mux.HandleFunc("GET /api/auth/me", s.handleMe)
 	mux.HandleFunc("POST /api/auth/register", s.handleRegister)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+
+	// Favicon para evitar erros 404 no navegador
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.WriteHeader(http.StatusOK)
+	})
 
 	if s.staticDir != "" {
 		if _, err := os.Stat(s.staticDir); err == nil {

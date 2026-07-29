@@ -113,15 +113,17 @@ export const ConnectionsPage = () => {
                       {s.apiKey && (
                         <div className="flex items-center gap-1.5 mt-1">
                           <span className="text-[10px] font-mono text-muted-foreground/75 bg-muted/60 px-1.5 py-0.5 rounded-md">
-                            API Key: {s.apiKey.slice(0, 6)}••••••••
+                            API Key: {s.apiKey ? s.apiKey.slice(0, 6) : ""}••••••••
                           </span>
                           <button
                             type="button"
                             title="Copiar API Key"
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigator.clipboard.writeText(s.apiKey);
-                              toast.success("Chave de API da conexão copiada com sucesso!");
+                              if (s.apiKey) {
+                                navigator.clipboard.writeText(s.apiKey);
+                                toast.success("Chave de API da conexão copiada com sucesso!");
+                              }
                             }}
                             className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors"
                           >

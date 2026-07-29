@@ -22,16 +22,22 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
     setErr("");
     setSuccessMsg("");
 
+    const cleanEmail = email.trim().toLowerCase();
+
     try {
       if (isRegister) {
         const r = await fetch(`${base}/api/auth/register`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, name: projectName }),
+          body: JSON.stringify({ email: cleanEmail, password, name: projectName.trim() }),
         });
         const data = await r.json();
         if (!r.ok) {
-          setErr(data.error || `Erro ${r.status}`);
+          if (r.status === 409) {
+            setErr("Este e-mail já está cadastrado. Por favor, faça login.");
+          } else {
+            setErr(data.error || `Erro ${r.status}`);
+          }
           return;
         }
         setSuccessMsg("Conta criada! Entrando...");
@@ -40,7 +46,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
       const loginRes = await fetch(`${base}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: cleanEmail, password }),
       });
       const loginData = await loginRes.json();
       if (!loginRes.ok) {
