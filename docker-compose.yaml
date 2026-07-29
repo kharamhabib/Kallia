@@ -18,6 +18,9 @@ services:
       - KALLIA_PUBLIC_IP=${KALLIA_PUBLIC_IP:-auto}
       - KALLIA_UDP_PORT=${KALLIA_UDP_PORT:-50000}
       - KALLIA_API_KEY=${KALLIA_API_KEY}
+      - KALLIA_JWT_SECRET=${KALLIA_JWT_SECRET:-kallia_jwt_secret_key_prod_2026_secure}
+      - KALLIA_LOG_LEVEL=${KALLIA_LOG_LEVEL:-info}
+      - KALLIA_CORS_ORIGINS=${KALLIA_CORS_ORIGINS:-*}
     volumes:
       - ./storage:/app/storage
     depends_on:

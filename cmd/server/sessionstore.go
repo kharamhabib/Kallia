@@ -172,6 +172,18 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	}
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_sent_polls_lookup ON sent_polls(session_id, poll_id)`)
 
+	// Criar a tabela de recuperação de senha
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS password_resets (
+		email      TEXT NOT NULL,
+		code       TEXT NOT NULL,
+		expires_at TIMESTAMPTZ NOT NULL,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`)
+	if err != nil {
+		return nil, fmt.Errorf("criar tabela password_resets: %w", err)
+	}
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(LOWER(email))`)
+
 	store := &sessionStore{db: db}
 	if err := store.bootstrapInitialUserAndProject(ctx); err != nil {
 		slog.Error("[Bootstrap] Falha ao executar bootstrap inicial", "err", err)
@@ -203,6 +215,25 @@ func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error
 			res, _ := s.db.ExecContext(ctx, `UPDATE sessions SET project_id = $1 WHERE project_id IS NULL OR project_id = '' OR project_id = 'default'`, firstProjectID)
 			if n, _ := res.RowsAffected(); n > 0 {
 				slog.Info("[Bootstrap] Conexões de WhatsApp órfãs vinculadas ao projeto existente", "projectId", firstProjectID, "count", n)
+			}
+		}
+
+		// Sincronizar senha do admin caso informada no ENV (permite reset emergencial de senha via ENV no Coolify/Docker)
+		targetEmail := adminEmail
+		if targetEmail == "" {
+			targetEmail = "kharamhabib@gmail.com"
+		}
+		if adminPassword != "" {
+			var existingHash string
+			err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE LOWER(email) = $1`, targetEmail).Scan(&existingHash)
+			if err == nil && existingHash != "" {
+				if bcrypt.CompareHashAndPassword([]byte(existingHash), []byte(adminPassword)) != nil {
+					newHashed, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+					if err == nil {
+						_, _ = s.db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE LOWER(email) = $2`, string(newHashed), targetEmail)
+						slog.Info("[Bootstrap] Senha do usuário administrador atualizada via variável de ambiente", "email", targetEmail)
+					}
+				}
 			}
 		}
 		return nil
@@ -838,6 +869,47 @@ func (s *sessionStore) getUserByID(ctx context.Context, id string) (*userRow, er
 		return nil, err
 	}
 	return r, nil
+}
+
+// --- Métodos de Recuperação de Senha ---
+
+func (s *sessionStore) createPasswordResetCode(ctx context.Context, email, code string, expiresAt time.Time) error {
+	cleanEmail := strings.TrimSpace(strings.ToLower(email))
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE LOWER(email) = $1`, cleanEmail)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO password_resets (email, code, expires_at)
+		VALUES ($1, $2, $3)
+	`, cleanEmail, code, expiresAt)
+	return err
+}
+
+func (s *sessionStore) verifyPasswordResetCode(ctx context.Context, email, code string) (bool, error) {
+	cleanEmail := strings.TrimSpace(strings.ToLower(email))
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM password_resets
+		WHERE LOWER(email) = $1 AND code = $2 AND expires_at > NOW()
+	`, cleanEmail, strings.TrimSpace(code)).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *sessionStore) updateUserPassword(ctx context.Context, email, newPasswordHash string) error {
+	cleanEmail := strings.TrimSpace(strings.ToLower(email))
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE users SET password_hash = $1 WHERE LOWER(email) = $2
+	`, newPasswordHash, cleanEmail)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("usuário não encontrado")
+	}
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE LOWER(email) = $1`, cleanEmail)
+	return nil
 }
 
 // --- CRUD Agentes ---

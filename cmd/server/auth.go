@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -237,6 +239,107 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func generateResetCode() string {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(900000))
+	if err != nil {
+		return fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	}
+	return fmt.Sprintf("%06d", nBig.Int64()+100000)
+}
+
+// handleForgotPassword gera um código numérico de 6 dígitos para recuperação de senha
+func (s *server) handleForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dados inválidos"})
+		return
+	}
+
+	email := strings.TrimSpace(strings.ToLower(body.Email))
+	if email == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "o e-mail é obrigatório"})
+		return
+	}
+
+	user, err := s.sessions.store.getUserByEmail(r.Context(), email)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao buscar usuário"})
+		return
+	}
+	if user == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "e-mail não cadastrado na plataforma"})
+		return
+	}
+
+	code := generateResetCode()
+	expiresAt := time.Now().Add(15 * time.Minute)
+
+	if err := s.sessions.store.createPasswordResetCode(r.Context(), email, code, expiresAt); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar código de recuperação"})
+		return
+	}
+
+	s.log.Info("[Auth] Código de recuperação de senha gerado", "email", email, "code", code)
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "sucesso",
+		"message": "Código de recuperação gerado com sucesso (válido por 15 minutos).",
+		"code":    code,
+	})
+}
+
+// handleResetPassword valida o código e redefine a senha do usuário
+func (s *server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email       string `json:"email"`
+		Code        string `json:"code"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dados inválidos"})
+		return
+	}
+
+	email := strings.TrimSpace(strings.ToLower(body.Email))
+	code := strings.TrimSpace(body.Code)
+	newPassword := body.NewPassword
+
+	if email == "" || code == "" || len(newPassword) < 6 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "e-mail, código de 6 dígitos e nova senha de pelo menos 6 caracteres são obrigatórios"})
+		return
+	}
+
+	valid, err := s.sessions.store.verifyPasswordResetCode(r.Context(), email, code)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao verificar código"})
+		return
+	}
+	if !valid {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "código de recuperação inválido ou expirado"})
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao processar nova senha"})
+		return
+	}
+
+	if err := s.sessions.store.updateUserPassword(r.Context(), email, string(hashed)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao atualizar senha do usuário"})
+		return
+	}
+
+	s.log.Info("[Auth] Senha redefinida com sucesso", "email", email)
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "sucesso",
+		"message": "Sua senha foi redefinida com sucesso! Você já pode fazer login.",
+	})
+}
+
 // withUserAuth protege as rotas validando o token JWT do operador
 func (s *server) withUserAuth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -303,6 +406,7 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 		}
 		if path == "/healthz" || path == "/ready" ||
 			path == "/api/auth/login" || path == "/api/auth/register" ||
+			path == "/api/auth/forgot-password" || path == "/api/auth/reset-password" ||
 			path == "/api/config" || path == "/api/metrics" {
 			next.ServeHTTP(w, r)
 			return

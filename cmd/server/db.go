@@ -66,19 +66,6 @@ func newDBProvider(ctx context.Context, rawURL, ns string, waLogger waLog.Logger
 		return nil, fmt.Errorf("ping no Postgres (%s): %w", u.Host, pingErr)
 	}
 
-	// Compatibilidade: Se a namespace for 'kallia', mas 'kallia_main' não existir e 'wacalls_main' existir, usa 'wacalls'
-	if ns == "kallia" {
-		var kalliaExists, wacallsExists bool
-		_ = admin.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = 'kallia_main')`).Scan(&kalliaExists)
-		if !kalliaExists {
-			_ = admin.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = 'wacalls_main')`).Scan(&wacallsExists)
-			if wacallsExists {
-				log.Info("detectado banco existente wacalls_main, utilizando namespace de legado wacalls")
-				ns = "wacalls"
-			}
-		}
-	}
-
 	p := &dbProvider{base: u, ns: ns, waLogger: waLogger, log: log, admin: admin}
 	if err := p.ensureDatabase(ctx, p.mainDBName()); err != nil {
 		return nil, fmt.Errorf("garantir banco principal: %w", err)
