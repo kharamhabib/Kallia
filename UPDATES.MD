@@ -14,6 +14,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Exclusão Autenticada no Histórico**: Correção e injeção do Bearer Token no frontend para exclusão segura de registros.
 - [x] **Mensagens Interativas com Botões (Multi-Device)**: Injeção automática de nós binários `biz` e `bot` via `whatsmeow` no Go para possibilitar e forçar a exibição de botões interativos nativos enviados por contas pessoais MD.
 - [x] **Atualização Completa da Documentação da API (OpenAPI/Swagger)**: Mapeamento de todas as mais de 20 rotas do projeto (Mensagens, Chatwoot, Agentes, WebRTC, Gemini) no `openapi.yaml`, com suporte a autorização via Connection API Key no Swagger.
+- [x] **Reconexão de Dispositivo & Geração de QR Code**: Adição de botões dedicados de reconexão e regeneração de QR Code em conexões de WhatsApp desconectadas no `ConnectionsPage` e `SessionPairing`.
 
 ---
 

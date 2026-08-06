@@ -21,13 +21,20 @@ const guard = (status: number) => {
   }
 };
 
+const parseResponse = async <T>(r: Response): Promise<T> => {
+  if (r.status === 204) return {} as T;
+  const text = await r.text().catch(() => "");
+  if (!text || !text.trim()) return {} as T;
+  return JSON.parse(text) as T;
+};
+
 export const apiGet = async <T>(path: string): Promise<T> => {
   const r = await fetch(apiUrl(path), { headers: baseHeaders() });
   if (!r.ok) {
     guard(r.status);
     throw new Error(`${path} ${r.status}`);
   }
-  return r.json() as Promise<T>;
+  return parseResponse<T>(r);
 };
 
 export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
@@ -37,7 +44,7 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
     const text = await r.text().catch(() => "");
     throw new Error(`${path} ${r.status} ${text}`);
   }
-  return r.json() as Promise<T>;
+  return parseResponse<T>(r);
 };
 
 export const apiDelete = async (path: string): Promise<void> => {
@@ -55,5 +62,5 @@ export const apiPut = async <T>(path: string, body: unknown): Promise<T> => {
     const text = await r.text().catch(() => "");
     throw new Error(`${path} ${r.status} ${text}`);
   }
-  return r.json() as Promise<T>;
+  return parseResponse<T>(r);
 };

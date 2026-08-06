@@ -407,7 +407,9 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 		if path == "/healthz" || path == "/ready" ||
 			path == "/api/auth/login" || path == "/api/auth/register" ||
 			path == "/api/auth/forgot-password" || path == "/api/auth/reset-password" ||
-			path == "/api/config" || path == "/api/metrics" {
+			path == "/api/config" || path == "/api/metrics" ||
+			path == "/api/docs" || path == "/api/swagger" || path == "/api/openapi.yaml" ||
+			path == "/api-docs.html" || path == "/openapi.yaml" {
 			next.ServeHTTP(w, r)
 			return
 		}

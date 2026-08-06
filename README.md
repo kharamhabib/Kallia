@@ -2,9 +2,9 @@
 
 # 📞 Kallia
 
-**Plataforma PABX VoIP profissional SaaS para WhatsApp com Agentes de IA em Go puro, direto do navegador — pronta para produção.**
+**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado e Agentes de IA em Go puro, direto do navegador — pronta para produção.**
 
-Mídia VoIP nativa, multi-tenant (projetos, planos e permissões RBAC), IA de voz Gemini Live, transferência em tempo real entre agentes especialistas, gravação dual-channel, API de mensagens, webhooks, integração nativa com **Chatwoot** e deploy containerizado (Docker / Coolify).
+Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos e permissões RBAC), IA de voz Gemini Live, transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks, integração nativa com **Chatwoot** e deploy containerizado (Docker / VPS).
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -17,19 +17,25 @@ Mídia VoIP nativa, multi-tenant (projetos, planos e permissões RBAC), IA de vo
 
 ---
 
-> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), autenticação JWT, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA Gemini Live, gravação de chamadas no servidor, **PostgreSQL por sessão**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy em Docker / VPS**. Todos os créditos dos projetos originários estão preservados em [Colaboradores](#-colaboradores).
+> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), módulo de CRM de contatos por sessão, autenticação JWT, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA Gemini Live, gravação de chamadas no servidor, **PostgreSQL por sessão**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy em Docker / VPS**. Todos os créditos dos projetos originários estão preservados em [Colaboradores](#-colaboradores).
 
 ---
 
 ## 📋 Visão Geral
 
-O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas por projetos e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
+O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas por projetos, gerenciar uma base de contatos em formato CRM e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
 
 Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem **RTP/SRTP**, **STUN**, o transporte **WebRTC/SCTP relay** e a sinalização `<call>`, integrados ao [**whatsmeow**](https://github.com/tulir/whatsmeow) e servidos a um cliente **React 19**. A dependência em C é o codec `opus_mlow` (via cgo) — que pode ser compilado via `-tags mlow`. Sem ela, o servidor roda em modo **somente sinalização**.
 
 ---
 
 ## 🚀 Recursos e Funcionalidades do Kallia
+
+### 👥 Módulo de CRM de Contatos Integrado
+
+- **Base de Dados por Sessão (`session_contacts`)**: Armazenamento completo de clientes contendo Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
+- **Discagem Direta p/ o Webphone**: Ao clicar no ícone de telefone em qualquer contato da lista, o sistema navega reativamente para a tela do discador e preenche o número automaticamente.
+- **Resolução Reativa de Identidade (`useContactDisplay`)**: Exibição automática do nome cadastrado no CRM e avatar do cliente nas telas de Dashboard, Histórico de Chamadas, Notificações e Webphone.
 
 ### 🏢 Multi-Tenancy & Autenticação JWT
 
@@ -52,13 +58,20 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Modos Inbound / Outbound**: Agentes dedicados para receber ligações, fazer chamadas ativas ou atuar como padrão.
 - **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa.
 
+### 🎨 Design System Executivo, Modais & Player de Áudio
+
+- **UI/UX Sóbrio e Mobile-First**: Dashboard reformulado com badges discretos padronizados no formato do Histórico (`Entrada` / `Saída`, `• Desligado pelo cliente`, `concluído` / `não atendida`).
+- **Modal Reutilizável (`ConfirmModal`)**: Componente global de confirmação com suporte a ações destrutivas e indicador de carregamento para remoção segura de contatos e chamadas.
+- **Player com Linha do Tempo Customizada (`.audio-slider`)**: Ajuste técnico no indicador deslizante (*thumb slider* de 10px), eliminando sobreposição visual nos carimbos de tempo.
+- **Modais de Transcrição & Resumo IA**: Acesso instantâneo a resumos e transcrições completas via modais interativos tanto no Histórico quanto no Dashboard.
+
 ### 🔑 Chaves de API por Conexão (`kc_*`)
 
 - Chave de API exclusiva (`kc_...`) gerada automaticamente por conexão para chamadas de API externas isoladas por WhatsApp.
 
 ### 🗄️ Persistência em PostgreSQL (1 banco por sessão)
 
-- Modelo de bancos isolados: um banco **principal** (`kallia_main`, com tabelas de projetos, usuários e conexões) + **um banco por sessão** (`kallia_<id>`, com o store do whatsmeow daquela conta).
+- Modelo de bancos isolados: um banco **principal** (`kallia_main`, com tabelas de projetos, usuários e conexões) + **um banco por sessão** (`kallia_<id>`, com o store do whatsmeow daquela conta e contatos do CRM).
 - **Detecção Inteligente de Legado**: Caso a namespace `kallia_main` não exista mas haja uma base `wacalls_main`, o servidor utiliza automaticamente o namespace legado sem perda de dados.
 
 ### 💬 API de Mensagens & Webhooks
@@ -77,7 +90,7 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│              BROWSER (cliente React 19)  +  Widget no Chatwoot           │
+│          BROWSER (cliente React 19 + CRM + Discador Webphone)            │
 │   mic + alto-falante  ·  WebRTC (Opus)  ·  HTTP REST (JWT) + SSE         │
 └───────────────────────────────┬──────────────────────────────────────────┘
                                  │  POST /api/sessions/{sid}/calls/{id}/webrtc
@@ -87,6 +100,7 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 │  SessionManager   registry de contas escopadas por projeto                 │
 │  Auth (JWT)       middleware RBAC (appadmin, admin, normal)                │
 │  Projects / Plans gestão de planos e limite de conexões por projeto        │
+│  CRM Contacts     gerenciador do banco de contatos da sessão               │
 │  Agents           gerenciador de agentes especialistas e transferências    │
 │  Broker           hub SSE (sessões, auth, ciclo de vida das chamadas)       │
 │  Bridge           ponte pion WebRTC (Opus do navegador ⇄ PCM 16 kHz)        │
@@ -106,6 +120,8 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
                                               │  kallia_main + 1/db  │
                                               └──────────────────────┘
 ```
+
+---
 
 ## 📋 Variáveis de Ambiente (`KALLIA_*`)
 
@@ -143,6 +159,12 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - `POST /api/sessions` — Cria uma nova conexão (valida limite do plano).
 - `DELETE /api/sessions/{sid}` — Remove a conexão e derruba o banco da sessão.
 
+### CRM de Contatos
+
+- `GET /api/sessions/{sid}/contacts` — Busca contatos do CRM com suporte a parâmetro `q` (nome, telefone ou e-mail).
+- `POST /api/sessions/{sid}/contacts` — Cria ou atualiza um contato no CRM da sessão.
+- `DELETE /api/sessions/{sid}/contacts/{id}` — Exclui um contato do CRM.
+
 ### Agentes Especialistas
 
 - `GET /api/sessions/{sid}/agents` — Lista agentes cadastrados na conexão.
@@ -163,8 +185,11 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 ## 🧪 Testes
 
 ```bash
-go test ./...                 # suíte completa backend (auth, VoIP, media, signaling, transport)
-cd client && npx tsc --noEmit # verificação estrita de tipos no frontend React
+# Testes unitários do Backend Go
+go test ./cmd/server ./internal/...
+
+# Verificação estrita de tipos no Frontend React/TypeScript
+cd client && npx tsc --noEmit
 ```
 
 ---

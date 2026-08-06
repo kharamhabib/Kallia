@@ -394,6 +394,15 @@ export class GeminiLiveAgent {
       }
     }
 
+    if (name === "transfer_agent" || name === "transfer_to_agent") {
+      const target = (args.target_agent_id || args.target_agent || args.agent_id || args.agentId) as string;
+      if (!target) return { error: "target_agent_id é obrigatório" };
+      if (call) {
+        apiPost(`/api/sessions/${call.sessionId}/calls/${call.callId}/transfer-agent`, { agentId: target }).catch(console.error);
+      }
+      return { status: "transferência iniciada com sucesso" };
+    }
+
     // Custom tools (Webhooks proxy)
     console.log(`[GeminiAgent] Tool customizada ${name} disparada.`, args);
     const tool = this.config.customTools?.find((t) => t.name === name);

@@ -12,9 +12,9 @@ export const formatPhoneNumber = (value?: string | null): string => {
   const cleaned = user.replace(/\D/g, "");
   if (!cleaned) return value;
 
-  // Se o número for muito longo (>13 dígitos), é provavelmente um LID não resolvido.
+  // Se o número for muito longo (>13 dígitos), é um LID/identificador interno Multi-Device do WhatsApp.
   if (cleaned.length > 13) {
-    return value.includes("@lid") ? user : `+${cleaned}`;
+    return `LID ${cleaned.slice(0, 4)}...${cleaned.slice(-4)}`;
   }
 
   if (cleaned.length <= 2) return `+${cleaned}`;
@@ -36,33 +36,40 @@ export const formatDuration = (startedAt: number, endedAt: number | null): strin
 };
 
 export const getInitials = (name: string): string => {
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (!name) return "W";
+  const clean = name.replace(/[^a-zA-ZÀ-ÿ\s]/g, "").trim();
+  if (clean) {
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    if (parts[0]) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
   }
-  if (parts[0]) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return "?";
+  return "W";
 };
 
 export const isCallMissedOrRejected = (startedAt: number, endedAt: number | null, endReason?: string | null): boolean => {
   if (!endedAt) return true;
-  if (endReason === "accepted_elsewhere") return true;
+  const reason = (endReason || "").toLowerCase().trim();
   if (
-    endReason === "rejected" ||
-    endReason === "declined" ||
-    endReason === "busy" ||
-    endReason === "do_not_disturb" ||
-    endReason === "no_answer" ||
-    endReason === "timeout" ||
-    endReason === "canceled" ||
-    endReason === "cancelled" ||
-    endReason === "failed" ||
-    endReason === "unknown"
+    reason === "accepted_elsewhere" ||
+    reason === "rejected_elsewhere" ||
+    reason === "rejected" ||
+    reason === "reject" ||
+    reason === "declined" ||
+    reason === "busy" ||
+    reason === "do_not_disturb" ||
+    reason === "no_answer" ||
+    reason === "timeout" ||
+    reason === "canceled" ||
+    reason === "cancelled" ||
+    reason === "failed" ||
+    reason === "unknown"
   ) return true;
   const duration = endedAt - startedAt;
-  if (duration < 3000) return true;
+  if (duration < 5000) return true;
   return false;
 };
 
@@ -79,6 +86,65 @@ export interface CallStatusDetails {
   showMedia: boolean;
 }
 
+export const formatEndReason = (
+  endReason?: string | null,
+  startedAt?: number,
+  endedAt?: number | null,
+  direction?: string | null
+): string => {
+  const reason = (endReason || "").toLowerCase().trim();
+  const duration = startedAt && endedAt ? endedAt - startedAt : 0;
+
+  if (
+    reason === "rejected" ||
+    reason === "reject" ||
+    reason === "declined" ||
+    reason === "rejected_elsewhere"
+  ) {
+    if (reason === "rejected_elsewhere") return "Recusada em outro aparelho";
+    return direction === "inbound" ? "Recusada por você" : "Recusada pelo contato";
+  }
+  if (reason === "user_ended") {
+    if (duration < 5000) return direction === "inbound" ? "Chamada recusada" : "Cancelada antes de atender";
+    return direction === "inbound" ? "Desligado pelo cliente" : "Desligado pelo operador";
+  }
+  if (reason === "peer_ended") {
+    if (duration < 5000) return direction === "inbound" ? "Cancelada pelo cliente" : "Recusada pelo contato";
+    return direction === "inbound" ? "Desligado pelo operador" : "Desligado pelo contato";
+  }
+  if (reason === "ai_hangup" || reason === "agent_ended" || reason === "tool_hangup") {
+    return "Finalizado pela IA";
+  }
+  if (reason === "busy") {
+    return "Linha ocupada";
+  }
+  if (reason === "no_answer") {
+    return "Não atendeu";
+  }
+  if (reason === "timeout") {
+    return "Tempo limite excedido";
+  }
+  if (reason === "canceled" || reason === "cancelled") {
+    return "Cancelada antes de atender";
+  }
+  if (reason === "accepted_elsewhere") {
+    return "Atendida em outro aparelho";
+  }
+  if (reason === "failed" || reason === "error") {
+    return "Falha na conexão VoIP";
+  }
+
+  // Fallback quando não há motivo explícito registrado
+  if (endedAt && duration >= 5000) {
+    return "Concluída normalmente";
+  }
+  if (!endedAt || duration < 5000) {
+    return "Não atendida";
+  }
+
+  return endReason || "Concluída";
+};
+
 export const getCallStatusDetails = (
   startedAt: number,
   endedAt: number | null,
@@ -87,26 +153,33 @@ export const getCallStatusDetails = (
 ): CallStatusDetails => {
   const isInbound = direction === "inbound";
   const duration = endedAt ? endedAt - startedAt : 0;
-  const isAcceptedElsewhere = endReason === "accepted_elsewhere";
+  const reason = (endReason || "").toLowerCase().trim();
+
+  const isAcceptedElsewhere = reason === "accepted_elsewhere";
   const isRejected =
-    endReason === "rejected" ||
-    endReason === "declined" ||
-    endReason === "busy" ||
-    endReason === "do_not_disturb";
+    reason === "rejected" ||
+    reason === "reject" ||
+    reason === "rejected_elsewhere" ||
+    reason === "declined" ||
+    reason === "busy" ||
+    reason === "do_not_disturb";
+
   const isMissed =
     !endedAt ||
-    duration < 3000 ||
-    endReason === "no_answer" ||
-    endReason === "timeout" ||
-    endReason === "canceled" ||
-    endReason === "cancelled" ||
-    endReason === "failed" ||
-    endReason === "unknown";
+    duration < 5000 ||
+    reason === "no_answer" ||
+    reason === "timeout" ||
+    reason === "canceled" ||
+    reason === "cancelled" ||
+    reason === "failed" ||
+    reason === "unknown";
+
+  const reasonLabel = formatEndReason(endReason, startedAt, endedAt, direction);
 
   if (isAcceptedElsewhere) {
     return {
       statusType: "accepted_elsewhere",
-      badgeText: isInbound ? "Recebida (Outro aparelho)" : "Efetuada (Outro aparelho)",
+      badgeText: reasonLabel,
       badgeClass: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
       cardBorderClass: "border-blue-500/20 bg-blue-500/[0.02] hover:border-blue-500/30",
       descriptionText: isInbound
@@ -119,11 +192,11 @@ export const getCallStatusDetails = (
   if (isRejected) {
     return {
       statusType: "rejected",
-      badgeText: isInbound ? "Recebida (Recusada)" : "Efetuada (Recusada)",
+      badgeText: reasonLabel,
       badgeClass: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
       cardBorderClass: "border-red-500/20 bg-red-500/[0.02] hover:border-red-500/30",
       descriptionText: isInbound
-        ? "Chamada recebida — Você recusou a ligação"
+        ? "Chamada recebida — Chamada recusada"
         : "Chamada efetuada — O contato recusou a ligação",
       showMedia: false,
     };
@@ -132,7 +205,7 @@ export const getCallStatusDetails = (
   if (isMissed) {
     return {
       statusType: "missed",
-      badgeText: isInbound ? "Recebida (Não atendida)" : "Efetuada (Não atendida)",
+      badgeText: reasonLabel,
       badgeClass: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30",
       cardBorderClass: "border-amber-500/20 bg-amber-500/[0.02] hover:border-amber-500/30",
       descriptionText: isInbound
@@ -144,7 +217,7 @@ export const getCallStatusDetails = (
 
   return {
     statusType: "completed",
-    badgeText: isInbound ? "Recebida (Atendida)" : "Efetuada (Atendida)",
+    badgeText: reasonLabel,
     badgeClass: isInbound
       ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
       : "bg-primary/10 text-primary border-primary/20",

@@ -3,9 +3,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useContactInfo } from "@/hooks/useContactInfo";
+import { useContactDisplay } from "@/hooks/useContactDisplay";
 import type { ScheduledCall } from "@/types/ai";
-import { getInitials, formatPhoneNumber } from "@/utils/format";
 
 type ScheduleStatus = "pending" | "completed" | "cancelled";
 
@@ -29,13 +28,10 @@ interface ScheduleCardProps {
 }
 
 export const ScheduleCard = ({ sid, schedule, onDelete }: ScheduleCardProps) => {
-  const { data: contact } = useContactInfo(sid, schedule.phone);
+  const { displayName, formattedPhone, pictureUrl, initials, hasRealName } = useContactDisplay(sid, schedule.phone);
   const status = getStatus(schedule);
   const cfg = statusConfig[status];
   const StatusIcon = cfg.icon;
-
-  const displayName = contact ? contact.name : formatPhoneNumber(schedule.phone);
-  const hasContactName = contact && contact.name !== schedule.phone;
 
   return (
     <Card className="card-premium transition-all duration-300 hover:shadow-md border border-primary/10">
@@ -43,15 +39,15 @@ export const ScheduleCard = ({ sid, schedule, onDelete }: ScheduleCardProps) => 
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {/* Avatar or Fallback */}
-            {contact?.pictureUrl ? (
+            {pictureUrl ? (
               <img
-                src={contact.pictureUrl}
+                src={pictureUrl}
                 alt={displayName}
                 className="h-10 w-10 shrink-0 rounded-full object-cover border border-primary/10 shadow-sm"
               />
             ) : (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground font-semibold text-xs border border-primary/5">
-                {getInitials(displayName)}
+                {initials}
               </div>
             )}
 
@@ -59,9 +55,9 @@ export const ScheduleCard = ({ sid, schedule, onDelete }: ScheduleCardProps) => 
               <p className="truncate text-sm font-bold text-foreground" title={displayName}>
                 {displayName}
               </p>
-              {hasContactName && (
+              {hasRealName && (
                 <p className="text-[10px] text-muted-foreground font-mono truncate">
-                  {formatPhoneNumber(schedule.phone)}
+                  {formattedPhone}
                 </p>
               )}
               <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">

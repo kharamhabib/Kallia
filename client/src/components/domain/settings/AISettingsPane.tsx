@@ -1,17 +1,63 @@
-import { Sparkles } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Sparkles, Target, Bot, Plus, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { AIConfig } from "@/types/ai";
 import { Switch } from "@/components/ui/Switch";
+import { listAgents, type Agent } from "@/services/agents";
 
 interface AISettingsPaneProps {
   config: AIConfig;
   onChange: (cfg: AIConfig) => void;
   enabled: boolean;
+  sid?: string;
 }
 
-export const AISettingsPane = ({ config, onChange, enabled }: AISettingsPaneProps) => {
+export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPaneProps) => {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentToAdd, setSelectedAgentToAdd] = useState<string>("");
+  const isFirstUtteranceActive = !!(config.firstUtterance && config.firstUtterance.trim() !== "");
+  const isSpecialistTransferEnabled = config.enableSpecialistTransfer ?? true;
+
+  useEffect(() => {
+    if (sid) {
+      listAgents(sid).then((res) => {
+        setAgents(res);
+        // Se ainda não houver filtro definido (undefined), inicializa com todos os especialistas disponíveis
+        if (config.allowedSpecialistIds === undefined) {
+          const defaultSpecIds = res.filter((a) => !a.inbound && !a.outbound).map((a) => a.id);
+          onChange({ ...config, allowedSpecialistIds: defaultSpecIds });
+        }
+      }).catch(() => {});
+    }
+  }, [sid]);
+
+  // Todos os agentes especialistas da conexão (que não são Principal Inbound/Outbound)
+  const availableSpecialists = agents.filter((a) => !a.inbound && !a.outbound);
+
+  // Lista dos IDs atualmente selecionados/permitidos para transferência
+  const allowedIds = config.allowedSpecialistIds || [];
+
+  // Agentes que o usuário efetivamente adicionou para a transferência
+  const activeSpecialists = availableSpecialists.filter((a) => allowedIds.includes(a.id));
+
+  // Agentes ainda não adicionados
+  const unaddedSpecialists = availableSpecialists.filter((a) => !allowedIds.includes(a.id));
+
+  const handleAddSpecialist = () => {
+    if (!selectedAgentToAdd) return;
+    const nextIds = [...allowedIds, selectedAgentToAdd];
+    onChange({ ...config, allowedSpecialistIds: nextIds });
+    setSelectedAgentToAdd("");
+  };
+
+  const handleRemoveSpecialist = (idToRemove: string) => {
+    const nextIds = allowedIds.filter((id) => id !== idToRemove);
+    onChange({ ...config, allowedSpecialistIds: nextIds });
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Status indicator */}
@@ -73,59 +119,167 @@ export const AISettingsPane = ({ config, onChange, enabled }: AISettingsPaneProp
             </div>
           </div>
 
-          {/* System Instructions */}
-          <div className="space-y-1.5">
-            <Label htmlFor="instructions">Instruções do Sistema (Prompt)</Label>
-            <textarea
-              id="instructions"
-              rows={8}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y min-h-[180px]"
-              placeholder="Ex: Você é o atendente de voz de uma pizzaria. Seja cordial..."
-              value={config.systemInstruction}
-              onChange={(e) => onChange({ ...config, systemInstruction: e.target.value })}
-            />
-            <div className="rounded-md bg-muted/40 p-2.5 text-xs space-y-1 text-muted-foreground animate-fade-in-fast border border-border/50">
-              <p className="font-semibold text-foreground">Tags Dinâmicas Disponíveis:</p>
-              <ul className="list-disc list-inside space-y-0.5 mt-1 font-sans">
-                <li><code className="text-primary font-mono">[today]</code>: Substitui por data e hora atual (ex: 29/06/2026 23:48).</li>
-                <li><code className="text-primary font-mono">[phone]</code>: Número de telefone do cliente.</li>
-                <li><code className="text-primary font-mono">[direction]</code>: Sentido da chamada (inbound/outbound).</li>
-                <li><code className="text-primary font-mono">[session_name]</code>: Nome da sessão ativa.</li>
-                <li><code className="text-primary font-mono">[custom_fields]</code>: Conteúdo do campo personalizado abaixo.</li>
-              </ul>
+          {/* Transferência Automática para Agentes Especialistas */}
+          <div className="space-y-3.5 rounded-xl border bg-muted/15 p-4">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 font-semibold text-sm">
+                  <Target className="h-4 w-4 text-primary" />
+                  <Label htmlFor="enableSpecialistTransfer" className="cursor-pointer font-semibold text-sm">
+                    Transferência para Agentes Especialistas
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  A IA Principal transfere a chamada via tool calling apenas para os especialistas adicionados abaixo.
+                </p>
+              </div>
+              <Switch
+                id="enableSpecialistTransfer"
+                checked={isSpecialistTransferEnabled}
+                onChange={(checked) => onChange({ ...config, enableSpecialistTransfer: checked })}
+              />
             </div>
+
+            {isSpecialistTransferEnabled && (
+              <div className="space-y-3 pt-2 border-t border-border/50 animate-fade-in">
+                {/* Add Specialist Button & Selector */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <select
+                    className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={selectedAgentToAdd}
+                    onChange={(e) => setSelectedAgentToAdd(e.target.value)}
+                  >
+                    <option value="">-- Selecione um agente especialista para adicionar --</option>
+                    {unaddedSpecialists.map((ag) => (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.name} {ag.description ? `(${ag.description})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 gap-1.5 text-xs rounded-md shrink-0"
+                    disabled={!selectedAgentToAdd}
+                    onClick={handleAddSpecialist}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Adicionar Especialista</span>
+                  </Button>
+                </div>
+
+                {availableSpecialists.length === 0 && (
+                  <div className="rounded-lg border border-dashed bg-background/60 p-3.5 text-center space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      Nenhum agente especialista encontrado nesta conexão.
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80">
+                      Crie agentes com descrições específicas na aba <strong>"Agentes IA"</strong> para adicioná-los aqui.
+                    </p>
+                  </div>
+                )}
+
+                {activeSpecialists.length === 0 && availableSpecialists.length > 0 && (
+                  <div className="rounded-lg border border-dashed bg-background/60 p-3.5 text-center space-y-1">
+                    <p className="text-xs text-muted-foreground font-semibold">
+                      Nenhum especialista ativado para esta conexão.
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80">
+                      Selecione um agente no menu acima e clique em <strong>"Adicionar Especialista"</strong>.
+                    </p>
+                  </div>
+                )}
+
+                {activeSpecialists.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground">
+                      Especialistas Ativos para Transferência ({activeSpecialists.length})
+                    </p>
+                    {activeSpecialists.map((ag) => (
+                      <div key={ag.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card text-xs shadow-2xs">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0 font-bold mt-0.5">
+                            <Bot className="h-4 w-4" />
+                          </div>
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-foreground truncate">{ag.name}</span>
+                              <span className="bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
+                                Ativo
+                              </span>
+                            </div>
+                            <p className="text-muted-foreground text-[11px] line-clamp-2">
+                              {ag.description || "Sem descrição (edite o agente na aba 'Agentes IA' para definir sua especialidade)."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
+                          onClick={() => handleRemoveSpecialist(ag.id)}
+                          title="Remover especialista das regras de transferência"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Custom Fields */}
-          <div className="space-y-1.5">
-            <Label htmlFor="customFields">Campos Personalizados (Tag [custom_fields])</Label>
-            <textarea
-              id="customFields"
-              rows={2}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
-              placeholder="Ex: Nome da pizzaria: Pizza Top, Gerente: João, Cidade: São Paulo"
-              value={config.customFields || ""}
-              onChange={(e) => onChange({ ...config, customFields: e.target.value })}
-            />
-          </div>
+          {/* First Utterance Toggle */}
+          <div className="space-y-3 rounded-xl border bg-muted/20 p-3.5">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="firstUtteranceToggle" className="text-sm font-medium cursor-pointer">
+                  IA fala primeiro ao atender
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Se ativado, a IA iniciará a conversa com uma saudação. Se desativado, a IA aguardará a pessoa falar primeiro.
+                </p>
+              </div>
+              <Switch
+                id="firstUtteranceToggle"
+                checked={isFirstUtteranceActive}
+                onChange={(checked) => {
+                  if (checked) {
+                    onChange({
+                      ...config,
+                      firstUtterance: config.firstUtterance || "Alô? Boa tarde, sou a assistente virtual e estou ligando...",
+                    });
+                  } else {
+                    onChange({ ...config, firstUtterance: "" });
+                  }
+                }}
+              />
+            </div>
 
-          {/* First Utterance */}
-          <div className="space-y-1.5">
-            <Label htmlFor="firstUtterance">Primeira fala da IA (Atendimento automático/recebidas)</Label>
-            <textarea
-              id="firstUtterance"
-              rows={2}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
-              placeholder="Ex: Alô? Boa tarde, sou a assistente virtual e estou ligando..."
-              value={config.firstUtterance || ""}
-              onChange={(e) => onChange({ ...config, firstUtterance: e.target.value })}
-            />
+            {isFirstUtteranceActive && (
+              <div className="space-y-1.5 pt-2 border-t border-border/50 animate-fade-in">
+                <Label htmlFor="firstUtteranceText" className="text-xs font-semibold text-muted-foreground">
+                  Mensagem da Primeira Fala
+                </Label>
+                <textarea
+                  id="firstUtteranceText"
+                  rows={2}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                  placeholder="Ex: Alô? Boa tarde, sou a assistente virtual e estou ligando..."
+                  value={config.firstUtterance}
+                  onChange={(e) => onChange({ ...config, firstUtterance: e.target.value })}
+                />
+              </div>
+            )}
           </div>
 
           {/* Temperature & Duration */}
           <div className="grid grid-cols-2 gap-3 items-center">
             <div className="space-y-1.5">
-              <Label htmlFor="temp">Temperatura ({config.temperature})</Label>
+              <Label htmlFor="temp">Temperatura ({config.temperature ?? 1.0})</Label>
               <input
                 id="temp"
                 type="range"
@@ -133,7 +287,7 @@ export const AISettingsPane = ({ config, onChange, enabled }: AISettingsPaneProp
                 max="1.8"
                 step="0.1"
                 className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                value={config.temperature}
+                value={config.temperature ?? 1.0}
                 onChange={(e) => onChange({ ...config, temperature: parseFloat(e.target.value) })}
               />
             </div>
@@ -144,8 +298,8 @@ export const AISettingsPane = ({ config, onChange, enabled }: AISettingsPaneProp
                 type="number"
                 min="1"
                 max="60"
-                value={config.maxDurationMin}
-                onChange={(e) => onChange({ ...config, maxDurationMin: parseInt(e.target.value) || 5 })}
+                value={config.maxDurationMin ?? 15}
+                onChange={(e) => onChange({ ...config, maxDurationMin: parseInt(e.target.value) || 15 })}
               />
             </div>
           </div>

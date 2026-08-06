@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Badge } from "@/components/ui/badge";
 import type { AIConfig, CustomTool, ToolParam } from "@/types/ai";
 import { Switch } from "@/components/ui/Switch";
+import { PromptEditorModal, PromptExpandButton } from "@/components/shared/PromptEditorModal";
 
 interface ToolsSettingsPaneProps {
   config: AIConfig;
@@ -16,6 +17,11 @@ interface ToolsSettingsPaneProps {
 
 export const ToolsSettingsPane = ({ config, onChange }: ToolsSettingsPaneProps) => {
   const [showAddTool, setShowAddTool] = useState(false);
+  const [activeToolPromptModal, setActiveToolPromptModal] = useState<{
+    toolKey: string;
+    title: string;
+    placeholder: string;
+  } | null>(null);
   
   // States for new custom tool
   const [toolName, setToolName] = useState("");
@@ -137,7 +143,16 @@ export const ToolsSettingsPane = ({ config, onChange }: ToolsSettingsPaneProps) 
                 </div>
                 {config.predefinedTools?.includes("hangup") && (
                   <div className="space-y-1.5 px-1 animate-slide-down">
-                    <Label className="text-xs font-semibold text-muted-foreground" htmlFor="hangupInstructions">Instruções para Desligar (hangup)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-muted-foreground" htmlFor="hangupInstructions">Instruções para Desligar (hangup)</Label>
+                      <PromptExpandButton
+                        onClick={() => setActiveToolPromptModal({
+                          toolKey: "hangup",
+                          title: "Instruções para Desligar (hangup)",
+                          placeholder: "Ex: Como a IA deve se despedir e desligar..."
+                        })}
+                      />
+                    </div>
                     <textarea
                       id="hangupInstructions"
                       className="w-full min-h-[60px] text-xs rounded-md border border-input bg-transparent px-3 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -174,7 +189,16 @@ export const ToolsSettingsPane = ({ config, onChange }: ToolsSettingsPaneProps) 
                 </div>
                 {config.predefinedTools?.includes("open_ticket") && (
                   <div className="space-y-1.5 px-1 animate-slide-down">
-                    <Label className="text-xs font-semibold text-muted-foreground" htmlFor="openTicketInstructions">Instruções para Abrir Chamado (open_ticket)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-muted-foreground" htmlFor="openTicketInstructions">Instruções para Abrir Chamado (open_ticket)</Label>
+                      <PromptExpandButton
+                        onClick={() => setActiveToolPromptModal({
+                          toolKey: "open_ticket",
+                          title: "Instruções para Abrir Chamado (open_ticket)",
+                          placeholder: "Ex: Quando a IA deve abrir o chamado e avisar o cliente..."
+                        })}
+                      />
+                    </div>
                     <textarea
                       id="openTicketInstructions"
                       className="w-full min-h-[60px] text-xs rounded-md border border-input bg-transparent px-3 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -211,7 +235,16 @@ export const ToolsSettingsPane = ({ config, onChange }: ToolsSettingsPaneProps) 
                 </div>
                 {config.predefinedTools?.includes("send_message") && (
                   <div className="space-y-1.5 px-1 animate-slide-down">
-                    <Label className="text-xs font-semibold text-muted-foreground" htmlFor="sendMessageInstructions">Instruções para Enviar Mensagem (send_message)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-muted-foreground" htmlFor="sendMessageInstructions">Instruções para Enviar Mensagem (send_message)</Label>
+                      <PromptExpandButton
+                        onClick={() => setActiveToolPromptModal({
+                          toolKey: "send_message",
+                          title: "Instruções para Enviar Mensagem (send_message)",
+                          placeholder: "Ex: Que tipo de informações a IA pode enviar via mensagem..."
+                        })}
+                      />
+                    </div>
                     <textarea
                       id="sendMessageInstructions"
                       className="w-full min-h-[60px] text-xs rounded-md border border-input bg-transparent px-3 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -248,7 +281,16 @@ export const ToolsSettingsPane = ({ config, onChange }: ToolsSettingsPaneProps) 
                 </div>
                 {config.predefinedTools?.includes("schedule_call") && (
                   <div className="space-y-1.5 px-1 animate-slide-down">
-                    <Label className="text-xs font-semibold text-muted-foreground" htmlFor="scheduleCallInstructions">Instruções para Agendar Ligação (schedule_call)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-semibold text-muted-foreground" htmlFor="scheduleCallInstructions">Instruções para Agendar Ligação (schedule_call)</Label>
+                      <PromptExpandButton
+                        onClick={() => setActiveToolPromptModal({
+                          toolKey: "schedule_call",
+                          title: "Instruções para Agendar Ligação (schedule_call)",
+                          placeholder: "Ex: Como a IA deve solicitar data/hora e confirmar o agendamento..."
+                        })}
+                      />
+                    </div>
                     <textarea
                       id="scheduleCallInstructions"
                       className="w-full min-h-[60px] text-xs rounded-md border border-input bg-transparent px-3 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -443,6 +485,18 @@ export const ToolsSettingsPane = ({ config, onChange }: ToolsSettingsPaneProps) 
             )}
           </div>
         </>
+      )}
+
+      {activeToolPromptModal && (
+        <PromptEditorModal
+          open={!!activeToolPromptModal}
+          onOpenChange={(open) => !open && setActiveToolPromptModal(null)}
+          title={`Editor de Prompt — ${activeToolPromptModal.title}`}
+          description="Edite as instruções completas da ferramenta em tela cheia para maior conforto"
+          value={config.toolPrompts?.[activeToolPromptModal.toolKey] ?? ""}
+          onSave={(val) => handlePromptChange(activeToolPromptModal.toolKey, val)}
+          placeholder={activeToolPromptModal.placeholder}
+        />
       )}
     </div>
   );

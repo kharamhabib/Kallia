@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PhoneOff, Sparkles, PhoneIncoming, PhoneOutgoing, Mic, Volume2 } from "lucide-react";
+import { PhoneOff, Sparkles, PhoneIncoming, PhoneOutgoing, Mic, Volume2, ArrowLeftRight, Loader2, Bot } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,85 @@ import { formatCallDuration, formatPhoneNumber, getInitials } from "@/utils/form
 import type { CallStatus, CallSummary } from "@/types/call";
 import { useAIAgents, type TranscriptLine } from "@/stores/ai";
 import { getAIConfig } from "@/services/ai";
+import { listAgents, type Agent } from "@/services/agents";
+import { apiPost } from "@/lib/api";
 import type { AIConfig } from "@/types/ai";
 import { toast } from "sonner";
 import { useContactInfo } from "@/hooks/useContactInfo";
 import { cn } from "@/lib/utils";
+
+const OperatorTransferButton = ({ sessionId, callId }: { sessionId: string; callId: string }) => {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const handleOpen = () => {
+    setOpen(!open);
+    if (!open) {
+      listAgents(sessionId)
+        .then(setAgents)
+        .catch(() => {});
+    }
+  };
+
+  const handleTransfer = async (agent: Agent) => {
+    setBusy(true);
+    try {
+      await apiPost(`/api/sessions/${sessionId}/calls/${callId}/transfer-agent`, { agentId: agent.id });
+      toast.success(`Transferindo atendimento para ${agent.name}...`);
+      setOpen(false);
+    } catch (e) {
+      toast.error(`Falha ao transferir: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleOpen}
+            disabled={busy}
+            className="h-9 gap-1.5 rounded-xl font-semibold text-xs hover:bg-primary/10"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowLeftRight className="h-4 w-4 text-primary" />}
+            <span className="hidden sm:inline">Transferir</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Transferir para Agente Especialista</TooltipContent>
+      </Tooltip>
+
+      {open && (
+        <div className="absolute right-0 top-11 z-50 w-56 rounded-xl border bg-card p-2 shadow-xl space-y-1 animate-in fade-in zoom-in-95">
+          <p className="text-[11px] font-bold text-muted-foreground px-2 py-1 border-b border-border/50 uppercase tracking-wider">
+            Transferir para Agente
+          </p>
+          {agents.length === 0 ? (
+            <p className="text-xs text-muted-foreground p-2 text-center">Nenhum agente disponível</p>
+          ) : (
+            agents.map((ag) => (
+              <button
+                key={ag.id}
+                type="button"
+                onClick={() => handleTransfer(ag)}
+                className="w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-left font-medium hover:bg-primary/10 hover:text-primary transition-colors"
+              >
+                <span className="flex items-center gap-2 truncate">
+                  <Bot className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="truncate">{ag.name}</span>
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const statusVariant: Record<CallStatus, "success" | "secondary" | "muted"> = {
   connected: "success",
@@ -233,6 +308,11 @@ export const CallCard = ({ call }: { call: CallSummary }) => {
                 </TooltipTrigger>
                 <TooltipContent>{isAIActive ? "Desativar IA nesta chamada" : "Conectar IA nesta chamada"}</TooltipContent>
               </Tooltip>
+            )}
+
+            {/* Operator Manual Agent Transfer */}
+            {call.status === "connected" && (
+              <OperatorTransferButton sessionId={call.sessionId} callId={call.callId} />
             )}
 
             <Tooltip>

@@ -43,11 +43,18 @@ type MissedFollowupConfig struct {
 	MessageTemplate string `json:"messageTemplate"`
 }
 
+type TransferRule struct {
+	TargetAgentID   string `json:"targetAgentId"`
+	TargetAgentName string `json:"targetAgentName"`
+	Condition       string `json:"condition"`
+}
+
 var DefaultToolPrompts = map[string]string{
-	"hangup":        "* Ferramenta hangup (Desligar Chamada): Quando a conversa estiver resolvida, o cliente se despedir e não houver mais nenhuma pendência, agradeça pelo contato, despeça-se educadamente e chame a ferramenta hangup para desligar a ligação. Nunca deixe a ligação em silêncio ou pendente após a despedida.",
-	"open_ticket":   "* Ferramenta open_ticket (Abrir Chamado): Use esta ferramenta quando o cliente solicitar falar com um atendente humano, suporte ou precisar de ajuda especializada que a IA não consiga resolver. Pergunte brevemente o motivo do chamado, informe ao cliente que o chamado foi registrado/aberto e pergunte educadamente se há mais alguma coisa em que você possa ajudar. Não desligue a chamada após usar esta ferramenta — apenas aguarde a resposta do cliente e use a ferramenta hangup para finalizar quando ele não precisar de mais nada.",
-	"send_message":  "* Ferramenta send_message (Enviar WhatsApp): Use esta ferramenta quando o cliente solicitar que você envie informações por escrito, como um código de barras, chave Pix, link de confirmação, ou endereço. Diga ao cliente: \"Estou te enviando esses dados agora mesmo no seu WhatsApp\" e execute a ferramenta.",
-	"schedule_call": "* Ferramenta schedule_call (Reagendar/Agendar Ligação): Se o cliente disser que não pode falar no momento, pedir para retornar mais tarde, ou solicitar um lembrete (ex: \"me ligue e confirme a reunião as 10 da manhã\"), pergunte educadamente pela data e hora desejada. Calcule a data/hora exata relativa ao horário atual ([today]) e execute esta ferramenta preenchendo o parâmetro 'datetime' em formato ISO e 'prompt' com o roteiro ou lembrete (ex: \"Confirmar reunião\"). Confirme para o cliente o agendamento antes de desligar.",
+	"hangup":         "* Ferramenta hangup (Desligar Chamada): Quando a conversa estiver resolvida, o cliente se despedir e não houver mais nenhuma pendência, agradeça pelo contato, despeça-se educadamente e chame a ferramenta hangup para desligar a ligação. Nunca deixe a ligação em silêncio ou pendente após a despedida.",
+	"open_ticket":    "* Ferramenta open_ticket (Abrir Chamado): Use esta ferramenta quando o cliente solicitar falar com um atendente humano, suporte ou precisar de ajuda especializada que a IA não consiga resolver. Pergunte brevemente o motivo do chamado, informe ao cliente que o chamado foi registrado/aberto e pergunte educadamente se há mais alguma coisa em que você possa ajudar. Não desligue a chamada após usar esta ferramenta — apenas aguarde a resposta do cliente e use a ferramenta hangup para finalizar quando ele não precisar de mais nada.",
+	"send_message":   "* Ferramenta send_message (Enviar WhatsApp): Use esta ferramenta quando o cliente solicitar que você envie informações por escrito, como um código de barras, chave Pix, link de confirmação, ou endereço. Diga ao cliente: \"Estou te enviando esses dados agora mesmo no seu WhatsApp\" e execute a ferramenta.",
+	"schedule_call":  "* Ferramenta schedule_call (Reagendar/Agendar Ligação): Se o cliente disser que não pode falar no momento, pedir para retornar mais tarde, ou solicitar um lembrete (ex: \"me ligue e confirme a reunião as 10 da manhã\"), pergunte educadamente pela data e hora desejada. Calcule a data/hora exata relativa ao horário atual ([today]) e execute esta ferramenta preenchendo o parâmetro 'datetime' em formato ISO e 'prompt' com o roteiro ou lembrete (ex: \"Confirmar reunião\"). Confirme para o cliente o agendamento antes de desligar.",
+	"transfer_agent": "* Ferramenta transfer_agent (Transferir para Agente Especialista): Use esta ferramenta quando o cliente solicitar ou se enquadrar em uma das regras de transferência para um agente especialista (ex: Vendas, Suporte Técnico, Financeiro). Diga verbalmente ao cliente: \"Vou te transferir para o especialista, só um instante por favor...\" e execute a ferramenta fornecendo o parâmetro 'target_agent_id'. APÓS EXECUTAR A FERRAMENTA, PERMANEÇA EM SILÊNCIO E NÃO DIGA MAIS NADA (não confirme que a transferência foi concluída ou realizada).",
 }
 
 type AIConfig struct {
@@ -71,8 +78,11 @@ type AIConfig struct {
 	PostCall          PostCallActions      `json:"postCall"`
 	NPS               NPSConfig            `json:"nps"`
 	MissedFollowup    MissedFollowupConfig `json:"missedFollowup"`
-	CustomFields      string               `json:"customFields"`
-	ChatwootEnabled   bool                 `json:"chatwootEnabled"`
+	CustomFields             string               `json:"customFields"`
+	TransferRules            []TransferRule       `json:"transferRules"`
+	EnableSpecialistTransfer bool                 `json:"enableSpecialistTransfer"`
+	AllowedSpecialistIDs     []string             `json:"allowedSpecialistIds"`
+	ChatwootEnabled          bool                 `json:"chatwootEnabled"`
 }
 
 func (s *server) handleSetAIConfig(w http.ResponseWriter, r *http.Request) {

@@ -139,6 +139,20 @@ func (g *GeminiLiveClient) connectAndSetup() error {
 	}
 }
 
+// ReconnectWithConfig atualiza a configuração do agente (persona, voz, prompt) e reconecta o WebSocket Gemini em tempo real.
+func (g *GeminiLiveClient) ReconnectWithConfig(newConfig AIConfig) error {
+	g.mu.Lock()
+	if g.conn != nil {
+		_ = g.conn.Close()
+		g.conn = nil
+	}
+	g.ready = false
+	g.config = newConfig
+	g.mu.Unlock()
+
+	return g.connectAndSetup()
+}
+
 // buildSetup constrói o payload de setup com voice, tools e system instruction.
 func (g *GeminiLiveClient) buildSetup() map[string]any {
 	tools := g.buildTools()
@@ -220,16 +234,16 @@ func (g *GeminiLiveClient) buildTools() []map[string]any {
 					"required": []string{"datetime"},
 				},
 			})
-		case "transfer_to_agent":
+		case "transfer_agent", "transfer_to_agent":
 			decls = append(decls, map[string]any{
-				"name":        "transfer_to_agent",
+				"name":        "transfer_agent",
 				"description": "Transfere a chamada de voz para outro atendente ou especialista. Você deve passar o ID do agente destino.",
 				"parameters": map[string]any{
 					"type": "OBJECT",
 					"properties": map[string]any{
-						"agent_id": map[string]any{"type": "STRING", "description": "O ID do agente especialista destino."},
+						"target_agent_id": map[string]any{"type": "STRING", "description": "O ID do agente especialista destino."},
 					},
-					"required": []string{"agent_id"},
+					"required": []string{"target_agent_id"},
 				},
 			})
 		}

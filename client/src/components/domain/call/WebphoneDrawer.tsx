@@ -15,10 +15,13 @@ export const WebphoneDrawer = () => {
   const [muted, setMuted] = useState(false);
   const activeId = useSessions((s) => s.activeId);
   const calls = useCalls((s) => s.calls);
-
   const activeCall = calls.find((c) => c.sessionId === activeId && c.status !== "ended");
-  const isAgentActive = activeCall ? useAIAgents.getState().activeAgentCalls.has(activeCall.callId) : false;
-  const transcript = activeCall ? useAIAgents.getState().transcripts[activeCall.callId] || [] : [];
+
+  const activeAgentCalls = useAIAgents((s) => s.activeAgentCalls);
+  const transcripts = useAIAgents((s) => s.transcripts);
+
+  const isAgentActive = activeCall ? activeAgentCalls.has(activeCall.callId) : false;
+  const transcript = activeCall ? transcripts[activeCall.callId] || [] : [];
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const { data: contact } = useContactInfo(activeId, activeCall?.peer);

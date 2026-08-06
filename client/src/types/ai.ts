@@ -35,6 +35,12 @@ export type MissedFollowupConfig = {
   messageTemplate: string;
 };
 
+export type TransferRule = {
+  targetAgentId: string;
+  targetAgentName: string;
+  condition: string;
+};
+
 export type AIConfig = {
   serverSideAI: boolean; // Se true, o servidor gerencia IA de voz e agendamentos autonomamente
   geminiApiKey: string;
@@ -57,6 +63,9 @@ export type AIConfig = {
   nps?: NPSConfig;
   missedFollowup?: MissedFollowupConfig;
   customFields?: string;
+  transferRules?: TransferRule[];
+  enableSpecialistTransfer?: boolean;
+  allowedSpecialistIds?: string[];
   chatwootEnabled?: boolean; // preenchido em runtime pelo agente (não vem do backend)
 };
 

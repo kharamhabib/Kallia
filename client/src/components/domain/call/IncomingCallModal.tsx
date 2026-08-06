@@ -6,8 +6,7 @@ import { useCalls } from "@/stores/calls";
 import { useDevices } from "@/stores/devices";
 import { useAcceptCall } from "@/hooks/useAcceptCall";
 import { useRejectCall } from "@/hooks/useRejectCall";
-import { useContactInfo } from "@/hooks/useContactInfo";
-import { formatPhoneNumber, getInitials } from "@/utils/format";
+import { useContactDisplay } from "@/hooks/useContactDisplay";
 import { getAIConfig } from "@/services/ai";
 import { useAIAgents } from "@/stores/ai";
 import { useNow } from "@/lib/use-now";
@@ -26,7 +25,9 @@ const startRingLoop = (): RingHandle | null => {
   }
   let cancelled = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+
   const playToneAt = (when: number, durationSec: number, freq: number, gainVal = 0.18) => {
+    if (cancelled) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -40,12 +41,14 @@ const startRingLoop = (): RingHandle | null => {
     osc.start(t);
     osc.stop(t + durationSec + 0.05);
   };
+
   const scheduleCycle = () => {
     if (cancelled) return;
     playToneAt(0, 1.0, 440);
     playToneAt(0, 1.0, 480);
     timer = setTimeout(scheduleCycle, 3000);
   };
+
   scheduleCycle();
   return {
     stop: () => {
@@ -66,7 +69,7 @@ export const IncomingCallModal = () => {
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
   useNow(); // relógio compartilhado para o countdown do auto-atendimento
 
-  const { data: contact } = useContactInfo(incoming?.sessionId, incoming?.peer);
+  const { displayName, formattedPhone, pictureUrl, initials, hasRealName } = useContactDisplay(incoming?.sessionId, incoming?.peer);
 
   useEffect(() => {
     if (!incoming) return;
@@ -118,16 +121,16 @@ export const IncomingCallModal = () => {
         className="sm:max-w-sm card-premium"
       >
         <DialogHeader className="items-center text-center space-y-3">
-          {contact?.pictureUrl ? (
+          {pictureUrl ? (
             <img
-              src={contact.pictureUrl}
-              alt={contact.name}
+              src={pictureUrl}
+              alt={displayName}
               className="h-20 w-20 rounded-full object-cover border-4 border-primary/20 shadow-lg animate-pulse-glow"
             />
           ) : (
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/15 text-primary border-4 border-primary/10 shadow-md animate-radar-ripple">
-              {contact ? (
-                <span className="text-2xl font-bold tracking-wider">{getInitials(contact.name)}</span>
+              {incoming ? (
+                <span className="text-2xl font-bold tracking-wider">{initials}</span>
               ) : (
                 <PhoneIncoming className="h-10 w-10" />
               )}
@@ -136,10 +139,10 @@ export const IncomingCallModal = () => {
           <div className="space-y-1">
             <DialogTitle className="text-xl font-bold text-foreground">Chamada Recebida</DialogTitle>
             <DialogDescription className="text-base font-semibold text-primary truncate max-w-[260px] mx-auto">
-              {contact?.name && contact.name !== contact.phone ? contact.name : formatPhoneNumber(contact?.phone || incoming?.peer)}
+              {displayName}
             </DialogDescription>
-            {contact?.name && contact.name !== contact.phone && (
-              <p className="text-xs text-muted-foreground font-mono">{formatPhoneNumber(contact?.phone || incoming?.peer)}</p>
+            {hasRealName && (
+              <p className="text-xs text-muted-foreground font-mono">{formattedPhone}</p>
             )}
           </div>
         </DialogHeader>

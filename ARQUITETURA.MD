@@ -1,6 +1,6 @@
 # Arquitetura do Sistema: Kallia
 
-O **Kallia** (plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e **WaCalls**) é uma solução profissional SaaS de atendimento e inteligência de voz baseada em WhatsApp que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos projetos e conexões, e automatizar atendimentos com agentes de IA (Gemini Live).
+O **Kallia** (plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e **WaCalls**) é uma solução profissional SaaS de atendimento, CRM de contatos e inteligência de voz baseada em WhatsApp que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos projetos e conexões, e automatizar atendimentos com agentes de IA (Gemini Live).
 
 O sistema suporta dois modos de operação para a **API Gemini Live** (Google):
 
@@ -19,18 +19,22 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
    - `appadmin`: Superadministrador com acesso total a todos os projetos, usuários e conexões do sistema.
    - `admin`: Administrador do projeto. Gerencia conexões, API keys, agentes especialistas e usuários do seu próprio projeto.
    - `normal`: Operador convidado. Acesso operacional (efetuar e receber chamadas), sem permissão para criar/deletar conexões, alterar chaves de API ou modificar agentes.
-3. **Backend (Go)**:
+3. **Módulo de CRM de Contatos Integrado**:
+   - Cada sessão de WhatsApp possui um repositório de contatos no PostgreSQL (`session_contacts`). Permite cadastrar e gerenciar Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
+   - Integração direta entre o CRM e o Webphone: ao clicar no ícone de telefone de qualquer contato, o sistema navega reativamente para a tela de discagem e preenche automaticamente o número do destinatário.
+   - Resolução de contato centralizada (`useContactDisplay` e `useContactInfo`), exibindo o nome real e avatar do cliente no Dashboard, Histórico, Notificações de Chamadas e Webphone.
+4. **Backend (Go)**:
    - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow`, controla chamadas VoIP, encapsula sinalização WebRTC, realiza a persistência no PostgreSQL (banco por sessão), executa o cliente nativo Gemini Live (`gemini_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`) e expõe a API HTTP/SSE autenticada por JWT.
-4. **Frontend (React 19, TypeScript, Vite)**:
-   - Painel do operador com Login JWT (sem necessidade de digitar URL do servidor), escopo automático do projeto ativo, discador VoIP, gerenciamento de agentes, histórico interativo e widget embutível para o Chatwoot.
+5. **Frontend (React 19, TypeScript, Vite)**:
+   - Painel do operador com Login JWT (sem necessidade de digitar URL do servidor), escopo automático do projeto ativo, discador VoIP, gerenciamento de agentes, módulo de CRM, histórico interativo, modais reutilizáveis (`ConfirmModal`) e widget embutível para o Chatwoot.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                BROWSER (React Frontend)                                │
 │                                                                                        │
 │ ┌────────────────┐      ┌─────────────────────────┐ (Se Client-Side) ┌────────────────┐│
-│ │  Painel Web    │◄────►│    GeminiLiveAgent      │◄───────────────►│ Google Gemini  ││
-│ │  (WebRTC Peer) │      │  (Audio Loop & Bridge)  │                 │ (Bidi WebSocket││
+│ │  Painel Web /  │◄────►│    GeminiLiveAgent      │◄───────────────►│ Google Gemini  ││
+│ │ CRM / Webphone │      │  (Audio Loop & Bridge)  │                 │ (Bidi WebSocket││
 │ └───────┬────────┘      └────────────┬────────────┘                 └────────────────┘│
 └─────────┼────────────────────────────┼─────────────────────────────────────────────────┘
           │ WebRTC (SDP / Opus)        │ PCM 16kHz / 24kHz
@@ -57,18 +61,22 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 ### Backend
 
 - **Linguagem**: Go (Golang) 1.26+
-- **Autenticação**: JWT nativo (HMAC-SHA256) com controle de perfis (`appadmin`, `admin`, `normal`)
-- **Banco de Dados**: PostgreSQL (banco principal `kallia_main` + 1 banco por sessão `kallia_<session_id>`, com detecção automática de fallback para bancos legados `wacalls_main`)
-- **Processamento de Mídia**: CGO com wrapping de codecs Opus nativos (`opus_mlow` do WhatsApp)
+- **Autenticação**: JWT nativo (HMAC-SHA256) com controle de perfis (`appadmin`, `admin`, `normal`).
+- **Banco de Dados**: PostgreSQL (banco principal `kallia_main` + 1 banco por sessão `kallia_<session_id>`, com detecção automática de fallback para bancos legados `wacalls_main`).
+- **Processamento de Mídia**: CGO com wrapping de codecs Opus nativos (`opus_mlow` do WhatsApp).
 - **Gravação de Áudio Dual-Channel**: Gravação e mixagem estocástica em tempo real dos dois canais de áudio (Cliente + IA) salvas em `storage/recordings/YYYYMMDD_HHMMSS_Contato_CallID.wav` com player autenticado.
 - **Protocolo**: Sinalização de VoIP via nós binários do WhatsApp e transporte de mídia UDP (SRTP) intermediado por WebRTC.
 - **Comunicação Gemini**: WebSocket bidirecional nativo (`github.com/gorilla/websocket`) para comunicação direta com a API Gemini Live.
 
 ### Frontend
 
-- **Core**: React 19, TypeScript, Vite
-- **Estilização**: Tailwind CSS v4, Lucide Icons, Design System escuro/claro
-- **Estado**: Zustand (Stores globais para controle de chamadas, sessões, autenticação e IA)
+- **Core**: React 19, TypeScript, Vite.
+- **Estilização**: Tailwind CSS v4, Lucide Icons, Design System sóbrio executivo escuro/claro.
+- **Componentes Globais Reutilizáveis**:
+  - `ConfirmModal`: Modal de confirmação seguro utilizado em exclusões do CRM e do Histórico.
+  - `AudioRecordingPlayer`: Player de áudio com marcador de linha do tempo customizado (`.audio-slider`) e controle de volume/download.
+  - `TranscriptModal` & `SummaryModal`: Visualizadores modais de transcrição e resumos gerados por IA.
+- **Estado**: Zustand (Stores globais para controle de chamadas, sessões, autenticação, navegação e IA).
 - **Comunicação**: Event Stream via SSE (`/api/events`) autenticado por ticket temporário e requisições HTTP REST com Bearer Token.
 
 ---
@@ -78,7 +86,7 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 ```
 Kallia/
 ├── cmd/
-│   ├── migrate/                     # Migrações e setup de tabelas do PostgreSQL (projects, users, sessions, agents, etc.)
+│   ├── migrate/                     # Migrações e setup de tabelas do PostgreSQL (projects, users, sessions, agents, contacts, etc.)
 │   └── server/                      # Servidor Go Principal
 │       ├── main.go                  # Bootstrap, carregador de .env (KALLIA_*), flags e sinal do SO
 │       ├── auth.go                  # Autenticação JWT, login, registro, geração de tickets e middleware RBAC
@@ -97,7 +105,7 @@ Kallia/
 │       ├── server.go                # Inicialização do servidor + hidratação do histórico do banco
 │       ├── session.go               # Estado WhatsApp/VoIP, auto-atendimento, attachServerAI
 │       ├── sessionmanager.go        # Ciclo de vida e restauração de sessões do banco
-│       └── sessionstore.go          # Operações no Postgres + call_history + transcrições + agents
+│       └── sessionstore.go          # Operações no Postgres (users, projects, contacts, call_history, agents)
 ├── internal/
 │   └── voip/
 │       ├── call/                    # Máquina de estados das chamadas e CallManager (CGO + Mutexes)
@@ -111,25 +119,49 @@ Kallia/
 │       ├── App.tsx                  # Ponto de entrada React com rotas autenticadas e modal de login
 │       ├── components/
 │       │   ├── auth/LoginScreen.tsx # Tela de login simplificada (sem campo de URL do servidor)
-│       │   ├── layout/AppShell.tsx  # Layout principal com pill do usuário logado (email/role/projeto)
+│       │   ├── layout/
+│       │   │   ├── AppShell.tsx     # Layout principal com barra superior e gerenciador de workspaces
+│       │   │   └── Sidebar.tsx      # Navegação lateral limpa e responsiva
+│       │   ├── shared/
+│       │   │   └── ConfirmModal.tsx # Modal reutilizável de confirmação com variantes de ação
 │       │   └── domain/
-│       │       ├── history/HistoryDrawer.tsx # Drawer de histórico com exclusão autenticada de chamadas
-│       │       └── session/AIDialog.tsx # Dialog de voz e seleção de agente especialista
+│       │       ├── call/Webphone.tsx         # Discador Webphone com atalho de discagem do CRM
+│       │       ├── history/
+│       │       │   ├── HistoryTable.tsx       # Tabela de histórico com badges discretos e exclusão autenticada
+│       │       │   ├── AudioRecordingPlayer.tsx # Player de áudio com marcador .audio-slider
+│       │       │   ├── TranscriptModal.tsx    # Modal de transcrição completa
+│       │       │   └── SummaryModal.tsx       # Modal de resumo por IA
+│       │       │       ├── settings/
+│       │       │   ├── SettingsTab.tsx        # Configurações de sistema (Chatwoot, Geral e Webhook)
+│       │       │   ├── AISettingsPane.tsx     # Painel de Voz, Chave Gemini e automação de atendimento
+│       │       │   ├── ToolsSettingsPane.tsx    # Painel de Ferramentas e Ações da IA
+│       │       │   ├── PostCallSettingsPane.tsx# Notificações e resumos pós-chamada
+│       │       │   ├── NPSSettingsPane.tsx    # Pesquisa de satisfação pós-atendimento (NPS)
+│       │       │   └── FollowupSettingsPane.tsx # Mensagens de acompanhamento (Follow-up)
+│       │       └── session/AIDialog.tsx      # Dialog de voz e seleção de agente especialista
 │       ├── pages/
-│       │   ├── AgentsPage.tsx       # Página dedicada ao CRUD e atribuição de Agentes Especialistas
-│       │   └── ConnectionsPage.tsx  # Conexões de WhatsApp escopadas pelo plano do projeto
+│       │   ├── DashboardPage.tsx     # Dashboard executivo com KPIs, histórico de atendimentos e botões de IA
+│       │   ├── ContactsPage.tsx      # Módulo de CRM de contatos com busca, criação, edição e confirmação de exclusão
+│       │   ├── AgentsPage.tsx        # Central Única de Agentes IA (Master-Detail: Agente Principal + Especialistas + Tools + NPS)
+│       │   └── ConnectionsPage.tsx   # Conexões de WhatsApp escopadas pelo plano do projeto
 │       ├── services/
-│       │   ├── auth.ts              # Login/Logout e utilitários de token no localStorage (kallia.token)
-│       │   ├── agents.ts            # Serviços REST de gerenciamento de agentes
-│       │   └── history.ts           # Serviços de busca e exclusão autenticada de histórico
+│       │   ├── auth.ts               # Login/Logout e utilitários de token no localStorage
+│       │   ├── contacts.ts           # Serviços REST de gerenciamento de contatos (CRM)
+│       │   ├── agents.ts             # Serviços REST de gerenciamento de agentes
+│       │   └── history.ts            # Serviços de busca e exclusão autenticada de histórico
+│       ├── hooks/
+│       │   ├── useContactDisplay.ts  # Hook reativo de resolução de nomes e fotos de contatos
+│       │   └── useContactInfo.ts     # Hook de busca e cache de informações de contato por JID/LID/Telefone
+│       ├── styles/
+│       │   └── index.css             # Estilos globais, variáveis CSS, micro-animações e classe .audio-slider
 │       └── lib/
-│           ├── api.ts               # Cliente HTTP centralizado com injeção automática de Bearer Token
-│           └── event-stream.ts      # SSE com ticket de uso único + reconexão manual c/ backoff
+│           ├── api.ts                # Cliente HTTP centralizado com injeção automática de Bearer Token
+│           └── event-stream.ts       # SSE com ticket de uso único + reconexão manual c/ backoff
 ```
 
 ---
 
-## 4. Multi-Tenancy, Autenticação e Gestão de Planos
+## 4. Multi-Tenancy, Autenticação, CRM e Gestão de Planos
 
 ### 4.1 Modelo de Dados (PostgreSQL)
 
@@ -144,18 +176,16 @@ O banco principal (`kallia_main`) contém as tabelas fundamentais de controle de
 4. **`agents`**:
    - `id`, `session_id`, `name`, `prompt`, `greeting`, `voice`, `inbound_enabled`, `outbound_enabled`, `is_default`.
 
-### 4.3 Bootstrap Automático de Usuário, Projeto e Conexões (Deploy Zero-Touch)
+Nos bancos por sessão (`kallia_<session_id>`):
 
-Ao inicializar o servidor Go (`newSessionStore`):
+5. **`session_contacts`**:
+   - `id`, `phone`, `name`, `email`, `company`, `notes`, `tags`, `lid`, `jid`, `picture_url`, `created_at`, `updated_at`.
 
-- O sistema verifica se a tabela `users` está vazia.
-- Se for a primeira execução/deploy, lê do `.env` (ou usa fallbacks padronizados):
-  - `KALLIA_ADMIN_EMAIL` (default: `admin@kallia.com`)
-  - `KALLIA_ADMIN_PASSWORD` (default: `123456`)
-  - `KALLIA_INITIAL_PROJECT_NAME` (default: `Projeto Inicial`)
-  - `KALLIA_INITIAL_PROJECT_PLAN` (default: `expert`)
-- Cria automaticamente o projeto inicial e o usuário admin de forma atômica.
-- **Vínculo Automático de Conexões Existentes**: Executa a migração `UPDATE sessions SET project_id = <projectID> WHERE project_id IS NULL OR project_id = '' OR project_id = 'default'`, vinculando todas as sessões de WhatsApp ativas ou pré-existentes a este projeto recém-criado, evitando qualquer perda de conexões ou históricos durante o deploy.
+### 4.2 Integridade do CRM e Navegação Reativa
+
+- O sistema sincroniza de forma transparente os números gravados no banco de contatos da sessão.
+- Ao clicar no botão de discagem em `ContactsPage.tsx`, o aplicativo dispara o evento de navegação reativa `navigateToWebphone(phone)`, abrindo a página do discador Webphone e preenchendo automaticamente o campo de telefone.
+- O hook `useContactDisplay` centraliza a resolução de identificadores, garantindo que o nome do contato cadastrado no CRM seja exibido em vez de números brutos em todas as telas do sistema.
 
 ---
 
@@ -191,20 +221,10 @@ Durante uma chamada em andamento operada pelo `ServerAIAgent`:
 - A compilação é realizada via CGO com a flag `-tags mlow` e a biblioteca `libopus_mlow.so` (Linux) ou `opus_mlow.dll` (Windows) presente em `native/`.
 - Caso o binário seja compilado sem CGO/MLow, o sistema roda em modo **somente sinalização** (permitindo o pareamento e recebimento do sinal, mas sem áudio).
 
-### 6.2 Modos de Diagnóstico e Fallback de Banco de Dados
+### 6.2 Marcador de Linha do Tempo Customizado (`.audio-slider`)
 
-Ao iniciar o backend Go, o `dbProvider`:
-
-- Procura a variável primária `KALLIA_PG_URL` (com fallback para `WACALLS_PG_URL`).
-- Verifica se existe a namespace `kallia_main`. Se o banco de dados contiver registros legados sob `wacalls_main`, ele utiliza automaticamente o namespace `wacalls` garantindo **zero perda de dados e compatibilidade 100%** com servidores já implantados em produção.
-
-### 6.3 Mensagens Interativas e Injeção de Nós Binários (whatsmeow)
-
-- **Contorno de Restrições Multi-Device**: As conexões normais via QR Code (Multi-Device) não possuem por padrão autorização nativa para renderização de botões rápidos (`quick_reply`) e listagem interativa nos dispositivos destinatários.
-- **Injeção de Metadados XML**: No arquivo [messaging.go](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia%20-%20CRM/Kallia%20CRM/cmd/server/messaging.go), ao disparar requisições do tipo `/messages/interactive`, o servidor Kallia constrói e injeta dinamicamente nós XML binários através do parâmetro `whatsmeow.SendRequestExtra.AdditionalNodes`:
-  - Nó `<biz>`: Especifica o mapeamento interativo do tipo `native_flow` e o subtipo `mixed`.
-  - Nó `<bot>`: Com o atributo `biz_bot="1"`, inserido de forma automática apenas para conversas individuais (chats privados), garantindo o aceite e renderização visual dos botões no app do destinatário.
-- **Container ViewOnceMessageV2**: O payload `InteractiveMessage` é envelopado no contêiner moderno `ViewOnceMessageV2` do WhatsApp (em vez do antigo `ViewOnceMessage` v1), requisito atual para que o aplicativo oficial de destinatários renderize os componentes interativos.
+- Para garantir que a linha do tempo das gravações de áudio no Dashboard e no Histórico não obstrua as informações do cabeçalho ou o número do contato, o player utiliza a classe CSS `.audio-slider`.
+- O elemento `input[type="range"]` utiliza estilização customizada via `::-webkit-slider-thumb` e `::-moz-range-thumb`, definindo o marcador de controle com diâmetro de 10px perfeitamente alinhado ao centro da faixa de 4px.
 
 ---
 

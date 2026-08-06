@@ -106,6 +106,7 @@ func (s *server) send(sess *Session, w http.ResponseWriter, r *http.Request, to 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	sess.enrichSingleContactAsync(to)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": resp.ID, "to": jid.String(), "timestamp": resp.Timestamp.UnixMilli(),
 	})

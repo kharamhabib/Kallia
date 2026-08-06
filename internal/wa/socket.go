@@ -2,6 +2,8 @@ package wa
 
 import (
 	"context"
+	"log/slog"
+	"strings"
 	"time"
 
 	"kallia/internal/voip/core"
@@ -82,6 +84,22 @@ func (s *Socket) DecryptCallKey(ctx context.Context, from types.JID, encChild *w
 	isPreKey := typ == "pkmsg"
 	plaintext, _, err := s.di().DecryptDM(ctx, encChild, from, isPreKey, time.Now())
 	if err != nil {
+		// Sessão Signal corrompida (MAC mismatch). Deleta todas as sessões
+		// com este peer para que a PRÓXIMA chamada crie sessão nova.
+		if s.cli.Store != nil && s.cli.Store.Sessions != nil {
+			addr := from.SignalAddress().String()
+			// SignalAddress retorna "user:device", mas DeleteAllSessions
+			// espera apenas o "user" (phone/LID sem device).
+			phone := addr
+			if idx := strings.Index(addr, ":"); idx >= 0 {
+				phone = addr[:idx]
+			}
+			if delErr := s.cli.Store.Sessions.DeleteAllSessions(ctx, phone); delErr != nil {
+				slog.Error("failed to delete corrupted Signal sessions", "peer", from.String(), "err", delErr)
+			} else {
+				slog.Warn("deleted corrupted Signal sessions for peer — next call should work", "peer", from.String())
+			}
+		}
 		return nil, err
 	}
 	return signaling.DecodeCallKeyPlaintext(plaintext)

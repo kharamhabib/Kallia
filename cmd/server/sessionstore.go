@@ -172,6 +172,29 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	}
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_sent_polls_lookup ON sent_polls(session_id, poll_id)`)
 
+	// Criar a tabela de contatos (CRM)
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS contacts (
+		id         SERIAL PRIMARY KEY,
+		session_id TEXT NOT NULL,
+		phone      TEXT NOT NULL,
+		name       TEXT NOT NULL DEFAULT '',
+		email      TEXT NOT NULL DEFAULT '',
+		company    TEXT NOT NULL DEFAULT '',
+		notes      TEXT NOT NULL DEFAULT '',
+		avatar_url TEXT NOT NULL DEFAULT '',
+		lid        TEXT NOT NULL DEFAULT '',
+		jid        TEXT NOT NULL DEFAULT '',
+		tags       TEXT NOT NULL DEFAULT '',
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`)
+	if err != nil {
+		return nil, fmt.Errorf("criar tabela contacts: %w", err)
+	}
+	_, _ = db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_session_phone ON contacts(session_id, phone)`)
+	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_lid ON contacts(session_id, lid)`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMPTZ`)
+
 	// Criar a tabela de recuperação de senha
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS password_resets (
 		email      TEXT NOT NULL,
@@ -1037,4 +1060,185 @@ func (s *sessionStore) getActiveAgent(ctx context.Context, sessionID string, dir
 		return nil, err
 	}
 	return r, nil
+}
+
+// Structs e CRUD de Contatos para o módulo de CRM
+
+type ContactRecord struct {
+	ID         int64      `json:"id"`
+	SessionID  string     `json:"sessionId"`
+	Phone      string     `json:"phone"`
+	Name       string     `json:"name"`
+	Email      string     `json:"email"`
+	Company    string     `json:"company"`
+	Notes      string     `json:"notes"`
+	AvatarURL  string     `json:"avatarUrl"`
+	LID        string     `json:"lid"`
+	JID        string     `json:"jid"`
+	Tags       string     `json:"tags"`
+	EnrichedAt *time.Time `json:"enrichedAt,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*ContactRecord, error) {
+	if c.SessionID == "" || c.Phone == "" {
+		return nil, fmt.Errorf("session_id and phone are required")
+	}
+
+	c.Phone = normalizePhone(c.Phone)
+	if c.Phone == "" {
+		return nil, fmt.Errorf("invalid phone number")
+	}
+
+	var existing ContactRecord
+	var enrichedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
+		FROM contacts WHERE session_id = $1 AND (phone = $2 OR (lid <> '' AND lid = $3))
+	`, c.SessionID, c.Phone, c.LID).Scan(
+		&existing.ID, &existing.SessionID, &existing.Phone, &existing.Name, &existing.Email,
+		&existing.Company, &existing.Notes, &existing.AvatarURL, &existing.LID, &existing.JID,
+		&existing.Tags, &enrichedAt, &existing.CreatedAt, &existing.UpdatedAt,
+	)
+	if enrichedAt.Valid {
+		existing.EnrichedAt = &enrichedAt.Time
+	}
+
+	now := time.Now()
+	if err == sql.ErrNoRows {
+		var newID int64
+		err = s.db.QueryRowContext(ctx, `
+			INSERT INTO contacts (session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			RETURNING id
+		`, c.SessionID, c.Phone, c.Name, c.Email, c.Company, c.Notes, c.AvatarURL, c.LID, c.JID, c.Tags, c.EnrichedAt, now, now).Scan(&newID)
+		if err != nil {
+			return nil, err
+		}
+		c.ID = newID
+		c.CreatedAt = now
+		c.UpdatedAt = now
+		return &c, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	name := existing.Name
+	if name == "" || name == existing.Phone || (c.Name != "" && existing.Name == "") {
+		name = c.Name
+	}
+	avatar := existing.AvatarURL
+	if c.AvatarURL != "" {
+		avatar = c.AvatarURL
+	}
+	lid := existing.LID
+	if c.LID != "" {
+		lid = c.LID
+	}
+	jid := existing.JID
+	if c.JID != "" {
+		jid = c.JID
+	}
+	var enrichedToSave *time.Time = existing.EnrichedAt
+	if c.EnrichedAt != nil {
+		enrichedToSave = c.EnrichedAt
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE contacts SET name = $3, avatar_url = $4, lid = $5, jid = $6, enriched_at = $7, updated_at = $8
+		WHERE id = $1 AND session_id = $2
+	`, existing.ID, c.SessionID, name, avatar, lid, jid, enrichedToSave, now)
+	if err != nil {
+		return nil, err
+	}
+
+	existing.Name = name
+	existing.AvatarURL = avatar
+	existing.LID = lid
+	existing.JID = jid
+	existing.EnrichedAt = enrichedToSave
+	existing.UpdatedAt = now
+	return &existing, nil
+}
+
+func (s *sessionStore) updateContactManual(ctx context.Context, c ContactRecord) (*ContactRecord, error) {
+	now := time.Now()
+	c.Phone = normalizePhone(c.Phone)
+
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE contacts SET phone = $3, name = $4, email = $5, company = $6, notes = $7, avatar_url = $8, tags = $9, updated_at = $10
+		WHERE id = $1 AND session_id = $2
+	`, c.ID, c.SessionID, c.Phone, c.Name, c.Email, c.Company, c.Notes, c.AvatarURL, c.Tags, now)
+	if err != nil {
+		return nil, err
+	}
+	c.UpdatedAt = now
+	return &c, nil
+}
+
+func (s *sessionStore) listContacts(ctx context.Context, sessionID string, search string) ([]ContactRecord, error) {
+	query := `
+		SELECT id, session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
+		FROM contacts WHERE session_id = $1
+	`
+	var args []any
+	args = append(args, sessionID)
+
+	if search != "" {
+		query += ` AND (phone ILIKE $2 OR name ILIKE $2 OR company ILIKE $2 OR email ILIKE $2 OR tags ILIKE $2)`
+		args = append(args, "%"+search+"%")
+	}
+	query += ` ORDER BY updated_at DESC LIMIT 300`
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	contacts := make([]ContactRecord, 0)
+	for rows.Next() {
+		var c ContactRecord
+		var enrichedAt sql.NullTime
+		if err := rows.Scan(
+			&c.ID, &c.SessionID, &c.Phone, &c.Name, &c.Email,
+			&c.Company, &c.Notes, &c.AvatarURL, &c.LID, &c.JID,
+			&c.Tags, &enrichedAt, &c.CreatedAt, &c.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if enrichedAt.Valid {
+			c.EnrichedAt = &enrichedAt.Time
+		}
+		contacts = append(contacts, c)
+	}
+	return contacts, nil
+}
+
+func (s *sessionStore) getContactByPhone(ctx context.Context, sessionID string, phoneOrJID string) (*ContactRecord, error) {
+	clean := normalizePhone(phoneOrJID)
+	rawJid := phoneOrJID
+
+	var c ContactRecord
+	var enrichedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
+		FROM contacts WHERE session_id = $1 AND (phone = $2 OR lid = $3 OR jid = $3)
+	`, sessionID, clean, rawJid).Scan(
+		&c.ID, &c.SessionID, &c.Phone, &c.Name, &c.Email,
+		&c.Company, &c.Notes, &c.AvatarURL, &c.LID, &c.JID,
+		&c.Tags, &enrichedAt, &c.CreatedAt, &c.UpdatedAt,
+	)
+	if enrichedAt.Valid {
+		c.EnrichedAt = &enrichedAt.Time
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+func (s *sessionStore) deleteContact(ctx context.Context, sessionID string, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM contacts WHERE session_id = $1 AND id = $2`, sessionID, id)
+	return err
 }

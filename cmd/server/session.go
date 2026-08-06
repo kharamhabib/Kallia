@@ -26,6 +26,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -148,14 +149,30 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		if c.Direction == core.CallDirectionIncoming {
 			dir = "inbound"
 		}
+		peerPhone := c.PeerJid
+		if c.CallerPn != "" {
+			peerPhone = c.CallerPn
+		}
+		if idx := strings.Index(peerPhone, "@"); idx >= 0 {
+			peerPhone = peerPhone[:idx]
+		}
+		// Se peerPhone for LID (>13 dígitos), tenta resolver para telefone real
+		if len(peerPhone) > 13 {
+			if real := s.realPhone(types.NewJID(peerPhone, "lid")); real != "" && real != peerPhone {
+				peerPhone = real
+			}
+		}
 		existing, _ := s.mgr.broker.getCall(c.CallID)
 		recRecord := CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: dir, Peer: c.PeerJid,
+			SessionID: s.id, CallID: c.CallID, Direction: dir, Peer: peerPhone,
 			StartedAt: time.Now().UnixMilli(), Status: mapStatus(c.StateData.State),
 		}
 		if existing != nil {
 			recRecord.Owner = existing.Owner
 			recRecord.StartedAt = existing.StartedAt
+			if existing.Peer != "" && len(peerPhone) > 13 {
+				recRecord.Peer = existing.Peer
+			}
 		}
 		s.mgr.broker.upsertCall(recRecord)
 	})
@@ -175,13 +192,17 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		// Disparo de automações NPS e Missed Follow-up
 		cfg := s.getAIConfig()
 		durationSec := int(time.Since(callStartTime).Seconds())
+		peerPhone := c.PeerJid
+		if c.CallerPn != "" {
+			peerPhone = c.CallerPn
+		}
 		if c.StateData.State == core.CallStateActive || durationSec > 5 {
 			if s.mgr.nps != nil {
-				s.mgr.nps.ScheduleNPS(s.id, c.CallID, c.PeerJid, durationSec, cfg.NPS)
+				s.mgr.nps.ScheduleNPS(s.id, c.CallID, peerPhone, durationSec, cfg.NPS)
 			}
 		} else {
 			if s.mgr.followup != nil {
-				s.mgr.followup.ScheduleFollowup(s.id, c.CallID, c.PeerJid, cfg.MissedFollowup)
+				s.mgr.followup.ScheduleFollowup(s.id, c.CallID, peerPhone, cfg.MissedFollowup)
 			}
 		}
 	})
@@ -273,6 +294,55 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 		return
 	}
 
+	// Salva o nome de contato do WhatsApp (push name) trazido no offer, se presente
+	if evt.Data != nil {
+		if notify, ok := evt.Data.Attrs["notify"].(string); ok && notify != "" {
+			cli := s.getClient()
+			if cli != nil && cli.Store != nil && cli.Store.Contacts != nil {
+				_, _, _ = cli.Store.Contacts.PutPushName(ctx, evt.From.ToNonAD(), notify)
+			}
+		}
+	}
+
+	// Auto-upsert no banco de dados do CRM
+	if s.mgr != nil && s.mgr.store != nil {
+		phone := s.realPhone(evt.From)
+		name := ""
+		if evt.Data != nil {
+			if notify, ok := evt.Data.Attrs["notify"].(string); ok {
+				name = notify
+			}
+		}
+		lid := ""
+		if evt.From.Server == types.HiddenUserServer {
+			lid = evt.From.User
+		}
+		goSafe(s.log, func() {
+			c := ContactRecord{
+				SessionID: s.id,
+				Phone:     phone,
+				Name:      name,
+				LID:       lid,
+				JID:       evt.From.String(),
+			}
+			if cli := s.getClient(); cli != nil && cli.Store != nil && cli.Store.Contacts != nil {
+				if contact, err := cli.Store.Contacts.GetContact(context.Background(), evt.From.ToNonAD()); err == nil && contact.Found {
+					if c.Name == "" {
+						if contact.FullName != "" {
+							c.Name = contact.FullName
+						} else if contact.BusinessName != "" {
+							c.Name = contact.BusinessName
+						} else if contact.PushName != "" {
+							c.Name = contact.PushName
+						}
+					}
+				}
+			}
+			_, _ = s.mgr.store.upsertContact(context.Background(), c)
+			s.enrichSingleContactAsync(phone)
+		})
+	}
+
 	// Filtrar chamadas antigas (sincronização de histórico/offline)
 	callTime := evt.Timestamp
 	if callTime.IsZero() {
@@ -326,7 +396,32 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 	cm := s.createCall(callID)
 	cm.HandleCallOffer(ctx, node, evt.From)
 
-	// Resolve o telefone real de forma robusta e salva no CallInfo
+	// Se a chave E2E não pôde ser decriptada (sessão Signal corrompida),
+	// envia mensagem protocolar ao LID do peer para forçar re-estabelecimento.
+	// DecryptCallKey já deletou nossa sessão; agora forçamos o PEER a atualizar
+	// enviando um pkmsg (pre-key message) que substitui a sessão dele.
+	if info := cm.CurrentCall(); info != nil && info.EncryptionKey == nil {
+		go func() {
+			client := s.getClient()
+			if client == nil {
+				return
+			}
+			lid := evt.From.ToNonAD()
+			s.log.Warn("E2E key decrypt failed — forcing LID session re-establishment", "lid", lid.String())
+			_, err := client.SendMessage(context.Background(), lid, &waE2E.Message{
+				ProtocolMessage: &waE2E.ProtocolMessage{
+					Type: waE2E.ProtocolMessage_INITIAL_SECURITY_NOTIFICATION_SETTING_SYNC.Enum(),
+				},
+			})
+			if err != nil {
+				s.log.Error("session reset send failed", "lid", lid.String(), "err", err)
+			} else {
+				s.log.Info("session reset message sent — next call from this peer should work", "lid", lid.String())
+			}
+		}()
+	}
+
+	// Resolve o telefone real APÓS o offer para não atrasar a sinalização
 	callerPn := evt.From.User
 	if evt.From.Server != types.DefaultUserServer {
 		if evt.CallCreatorAlt.Server == types.DefaultUserServer && evt.CallCreatorAlt.User != "" {
@@ -337,6 +432,11 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 	}
 	if info := cm.CurrentCall(); info != nil {
 		info.CallerPn = callerPn
+	}
+	if callerPn != "" {
+		s.mgr.broker.updateCall(callID, func(rec *CallRecord) {
+			rec.Peer = callerPn
+		})
 	}
 
 	// Auto-atendimento server-side: aceita e acopla IA automaticamente
@@ -480,6 +580,11 @@ func (s *Session) connect(ctx context.Context) error {
 }
 
 func (s *Session) startPairing(ctx context.Context) error {
+	osName := "Kallia"
+	if s.name != "" {
+		osName = "Kallia (" + s.name + ")"
+	}
+	store.SetOSInfo(osName, [3]uint32{1, 0, 0})
 	qrChan, err := s.getClient().GetQRChannel(ctx)
 	if err != nil {
 		return err
@@ -665,4 +770,232 @@ func (s *Session) handlePollVote(ctx context.Context, evt *events.Message) {
 		"timestamp": evt.Info.Timestamp.UnixMilli(),
 		"votes":     votes,
 	})
+}
+
+// enrichSingleContactAsync enriquece um único contato quando disparado por evento
+// (ao ligar, receber ligação ou enviar/receber mensagem), respeitando a trava de 24h
+// e a data de enriched_at no banco de dados.
+func (s *Session) enrichSingleContactAsync(phone string) {
+	if s == nil || phone == "" || s.mgr == nil || s.mgr.store == nil {
+		return
+	}
+
+	goSafe(s.log, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		info := s.enrichContactInfo(ctx, phone)
+		if info.Phone == "" {
+			return
+		}
+
+		existing, _ := s.mgr.store.getContactByPhone(ctx, s.id, info.Phone)
+		if existing == nil && info.LID != "" {
+			existing, _ = s.mgr.store.getContactByPhone(ctx, s.id, info.LID)
+		}
+
+		now := time.Now()
+
+		// Se o contato foi enriquecido nas últimas 24 horas e já tem nome e foto, pula
+		if existing != nil && existing.EnrichedAt != nil && time.Since(*existing.EnrichedAt) < 24*time.Hour {
+			if existing.Name != "" && existing.Name != existing.Phone && existing.AvatarURL != "" {
+				return
+			}
+		}
+
+		rec := ContactRecord{
+			SessionID:  s.id,
+			Phone:      info.Phone,
+			Name:       info.Name,
+			Email:      info.Email,
+			Company:    info.Company,
+			Notes:      info.Notes,
+			AvatarURL:  info.AvatarURL,
+			LID:        info.LID,
+			JID:        info.JID,
+			Tags:       info.Tags,
+			EnrichedAt: &now,
+		}
+
+		if existing != nil {
+			rec.ID = existing.ID
+			if rec.Name == "" {
+				rec.Name = existing.Name
+			}
+			if rec.AvatarURL == "" {
+				rec.AvatarURL = existing.AvatarURL
+			}
+			if rec.Email == "" {
+				rec.Email = existing.Email
+			}
+			if rec.Company == "" {
+				rec.Company = existing.Company
+			}
+			if rec.Notes == "" {
+				rec.Notes = existing.Notes
+			}
+			if rec.LID == "" {
+				rec.LID = existing.LID
+			}
+			if rec.JID == "" {
+				rec.JID = existing.JID
+			}
+			if rec.Tags == "" {
+				rec.Tags = existing.Tags
+			}
+		}
+
+		_, err := s.mgr.store.upsertContact(context.Background(), rec)
+		if err != nil {
+			s.log.Warn("falha ao salvar contato enriquecido", "phone", info.Phone, "err", err)
+		} else {
+			s.log.Info("contato enriquecido com sucesso", "phone", info.Phone, "name", info.Name, "avatar", info.AvatarURL != "")
+		}
+	})
+}
+
+type ContactEnrichmentResult struct {
+	Phone     string
+	Name      string
+	AvatarURL string
+	Company   string
+	Email     string
+	Notes     string
+	LID       string
+	JID       string
+	Tags      string
+}
+
+func (s *Session) enrichContactInfo(ctx context.Context, peerStr string) ContactEnrichmentResult {
+	res := ContactEnrichmentResult{}
+	cli := s.getClient()
+	if cli == nil {
+		return res
+	}
+
+	var origJid types.JID
+	if strings.Contains(peerStr, "@") {
+		origJid, _ = types.ParseJID(peerStr)
+	} else {
+		clean := normalizePhone(peerStr)
+		if len(clean) > 13 {
+			origJid = types.NewJID(clean, types.HiddenUserServer)
+		} else {
+			origJid = types.NewJID(clean, types.DefaultUserServer)
+		}
+	}
+
+	var pnJID types.JID
+	var lidJID types.JID
+
+	if origJid.Server == types.HiddenUserServer || len(origJid.User) > 13 {
+		lidJID = origJid
+		if origJid.Server != types.HiddenUserServer {
+			lidJID = types.NewJID(origJid.User, types.HiddenUserServer)
+		}
+		realPn := s.realPhone(lidJID)
+		if realPn != "" && realPn != lidJID.User && len(realPn) <= 13 {
+			pnJID = types.NewJID(realPn, types.DefaultUserServer)
+		} else {
+			pnJID = types.NewJID(lidJID.User, types.DefaultUserServer)
+		}
+	} else {
+		pnJID = origJid
+		if origJid.Server != types.DefaultUserServer {
+			pnJID = types.NewJID(origJid.User, types.DefaultUserServer)
+		}
+		if cli.Store != nil && cli.Store.LIDs != nil {
+			if lid, err := cli.Store.LIDs.GetLIDForPN(ctx, pnJID); err == nil && !lid.IsEmpty() {
+				lidJID = lid
+			}
+		}
+	}
+
+	res.Phone = pnJID.User
+	res.JID = pnJID.String()
+	if !lidJID.IsEmpty() {
+		res.LID = lidJID.User
+	}
+
+	jidsToTry := make([]types.JID, 0, 2)
+	if !pnJID.IsEmpty() {
+		jidsToTry = append(jidsToTry, pnJID)
+	}
+	if !lidJID.IsEmpty() {
+		jidsToTry = append(jidsToTry, lidJID)
+	}
+
+	// 1. Extração do Nome (Store local e GetUserInfo)
+	if cli.Store != nil && cli.Store.Contacts != nil {
+		for _, jid := range jidsToTry {
+			if contact, err := cli.Store.Contacts.GetContact(ctx, jid); err == nil && contact.Found {
+				if contact.FullName != "" {
+					res.Name = contact.FullName
+					break
+				} else if contact.BusinessName != "" {
+					res.Name = contact.BusinessName
+					break
+				} else if contact.FirstName != "" {
+					res.Name = contact.FirstName
+					break
+				} else if contact.PushName != "" {
+					res.Name = contact.PushName
+					break
+				}
+			}
+		}
+	}
+
+	if uinfo, err := cli.GetUserInfo(ctx, jidsToTry); err == nil && uinfo != nil {
+		for _, jid := range jidsToTry {
+			if user, ok := uinfo[jid]; ok {
+				if res.Notes == "" && user.Status != "" {
+					res.Notes = user.Status
+				}
+				if res.Name == "" && user.VerifiedName != nil && user.VerifiedName.Details != nil && user.VerifiedName.Details.GetVerifiedName() != "" {
+					res.Name = user.VerifiedName.Details.GetVerifiedName()
+				}
+			}
+		}
+	}
+
+	// 2. Extração da Foto de Perfil HD
+	pfpCtx, pfpCancel := context.WithTimeout(ctx, 4*time.Second)
+	defer pfpCancel()
+
+	for _, jid := range jidsToTry {
+		// Tenta imagem em alta resolução (Preview: false)
+		pfp, err := cli.GetProfilePictureInfo(pfpCtx, jid, &whatsmeow.GetProfilePictureParams{
+			Preview: false,
+		})
+		if err == nil && pfp != nil && pfp.URL != "" {
+			res.AvatarURL = pfp.URL
+			break
+		}
+		// Fallback para preview
+		pfpPrev, errPrev := cli.GetProfilePictureInfo(pfpCtx, jid, &whatsmeow.GetProfilePictureParams{
+			Preview: true,
+		})
+		if errPrev == nil && pfpPrev != nil && pfpPrev.URL != "" {
+			res.AvatarURL = pfpPrev.URL
+			break
+		}
+	}
+
+	// 3. Extração do Perfil Comercial (Empresa / E-mail / Categoria)
+	bizCtx, bizCancel := context.WithTimeout(ctx, 3*time.Second)
+	defer bizCancel()
+	if bizInfo, err := cli.GetBusinessProfile(bizCtx, pnJID); err == nil && bizInfo != nil {
+		if len(bizInfo.Categories) > 0 && bizInfo.Categories[0].Name != "" {
+			res.Company = bizInfo.Categories[0].Name
+		} else if bizInfo.Address != "" {
+			res.Company = bizInfo.Address
+		}
+		if bizInfo.Email != "" {
+			res.Email = bizInfo.Email
+		}
+		res.Tags = "WhatsApp Business"
+	}
+
+	return res
 }

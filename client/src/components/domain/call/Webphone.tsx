@@ -1,13 +1,33 @@
-import { useState, useRef, useEffect } from "react";
-import { Phone, Delete, Mic, MicOff, PhoneOff, Globe } from "lucide-react";
+import { useState, useEffect } from "react";
+import {
+  Phone,
+  Delete,
+  Mic,
+  MicOff,
+  PhoneOff,
+  Globe,
+  Users,
+  Search,
+  Check,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { startCall, endCall } from "@/services/calls";
 import { useCalls } from "@/stores/calls";
 import { useAIAgents } from "@/stores/ai";
 import { useContactInfo } from "@/hooks/useContactInfo";
-import { formatPhoneNumber } from "@/utils/format";
+import { useContacts } from "@/hooks/useContacts";
+import { useNavigation } from "@/stores/navigation";
+import { formatPhoneNumber, getInitials } from "@/utils/format";
 import { cn } from "@/lib/utils";
+import type { Contact } from "@/types/contact";
 
 export const ddiOptions = [
   { code: "55", flag: "🇧🇷", label: "+55 BR" },
@@ -23,7 +43,6 @@ export const formatPhoneInput = (val: string, ddi = "55"): string => {
   let digits = val.replace(/\D/g, "");
   if (!digits) return "";
 
-  // Se o usuário colou com DDI +55 (12 ou 13 dígitos), removemos o 55 inicial para formatar (DDD) NÚMERO
   if (ddi === "55" && digits.startsWith("55") && digits.length >= 12) {
     digits = digits.slice(2);
   }
@@ -61,25 +80,56 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showAutoComplete, setShowAutoComplete] = useState(false);
+
+  const dialPhone = useNavigation((s) => s.dialPhone);
+  const setDialPhone = useNavigation((s) => s.setDialPhone);
 
   const calls = useCalls((s) => s.calls);
   const activeCall = calls.find((c) => c.sessionId === sid && c.status !== "ended");
-  const isAgentActive = activeCall ? useAIAgents.getState().activeAgentCalls.has(activeCall.callId) : false;
-  const transcript = activeCall ? useAIAgents.getState().transcripts[activeCall.callId] || [] : [];
-  const activeCustomPrompt = activeCall ? useAIAgents.getState().customPrompts[activeCall.callId] : null;
-  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  const activeAgentCalls = useAIAgents((s) => s.activeAgentCalls);
+  const customPrompts = useAIAgents((s) => s.customPrompts);
+
+  const isAgentActive = activeCall ? activeAgentCalls.has(activeCall.callId) : false;
+  const activeCustomPrompt = activeCall ? customPrompts[activeCall.callId] : null;
 
   const { data: contact } = useContactInfo(sid, activeCall?.peer);
+  const { data: contactsList = [] } = useContacts(sid, searchQuery || phone);
 
   const displayPhone = formatPhoneNumber(contact?.phone || activeCall?.peer);
   const displayName = contact?.name && contact.name !== contact.phone ? contact.name : displayPhone;
   const hasContactName = Boolean(contact?.name && contact.name !== contact.phone);
 
+  // Escuta o sinal do botão de ligar vindo da tela de Contatos
   useEffect(() => {
-    if (transcriptRef.current) {
-      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    if (dialPhone) {
+      const raw = dialPhone.replace(/\D/g, "");
+      if (raw.startsWith("55") && raw.length >= 12) {
+        setDdi("55");
+        setPhone(formatPhoneInput(raw.slice(2), "55"));
+      } else {
+        setPhone(formatPhoneInput(raw, ddi));
+      }
+      setDialPhone("");
     }
-  }, [transcript]);
+  }, [dialPhone, ddi, setDialPhone]);
+
+
+
+  const selectContact = (c: Contact) => {
+    const raw = c.phone.replace(/\D/g, "");
+    if (raw.startsWith("55") && raw.length >= 12) {
+      setDdi("55");
+      setPhone(formatPhoneInput(raw.slice(2), "55"));
+    } else {
+      setPhone(formatPhoneInput(raw, ddi));
+    }
+    setShowAutoComplete(false);
+    setIsPickerOpen(false);
+  };
 
   const handleKeyPress = (digit: string) => {
     const raw = phone.replace(/\D/g, "");
@@ -132,11 +182,20 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
     }
   };
 
-  // Teclado numérico limpo (0-9)
   const numericKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
+  // Filtra sugestões de auto-complete
+  const autoCompleteSuggestions = phone.trim()
+    ? (contactsList ?? []).filter(
+        (c) =>
+          c.phone.replace(/\D/g, "").includes(phone.replace(/\D/g, "")) ||
+          (c.name || "").toLowerCase().includes(phone.toLowerCase()) ||
+          (c.company || "").toLowerCase().includes(phone.toLowerCase())
+      ).slice(0, 4)
+    : [];
+
   return (
-    <div className="rounded-3xl border bg-card p-6 shadow-xl space-y-5 animate-fade-in transition-all">
+    <div className="rounded-3xl border bg-card p-6 shadow-xl space-y-5 animate-fade-in transition-all relative">
       {/* Phone Header */}
       <div className="flex items-center justify-between border-b pb-3">
         <div className="flex items-center gap-2">
@@ -177,19 +236,7 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
             )}
           </div>
 
-          {/* Transcript Snippet */}
-          {transcript.length > 0 && (
-            <div ref={transcriptRef} className="rounded-xl border bg-background/80 p-3 text-left max-h-36 overflow-y-auto text-xs space-y-1.5 custom-scrollbar">
-              {transcript.slice(-3).map((t, idx) => (
-                <div key={idx} className="flex items-start gap-1.5">
-                  <span className={cn("font-bold shrink-0", t.speaker === "ai" ? "text-primary" : "text-emerald-500")}>
-                    {t.speaker === "ai" ? "IA:" : "Cliente:"}
-                  </span>
-                  <span className="text-muted-foreground">{t.text}</span>
-                </div>
-              ))}
-            </div>
-          )}
+
 
           {/* Active Controls */}
           <div className="flex items-center justify-center gap-3 pt-2">
@@ -216,14 +263,25 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
         </div>
       ) : (
         <>
-          {/* Display Field com Seletor de DDI */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
-              <Globe className="h-3 w-3 text-primary" />
-              <span>Número de Telefone:</span>
-            </label>
+          {/* Display Field com Seletor de DDI e Busca Integrada de Contatos */}
+          <div className="space-y-1.5 relative">
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
+                <Globe className="h-3 w-3 text-primary" />
+                <span>Número de Telefone:</span>
+              </label>
 
-            <div className="flex items-center rounded-2xl border bg-muted/30 focus-within:bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all p-1.5 gap-2">
+              <button
+                type="button"
+                onClick={() => setIsPickerOpen(true)}
+                className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1 focus:outline-none"
+              >
+                <Users className="h-3.5 w-3.5" />
+                <span>Buscar Contato</span>
+              </button>
+            </div>
+
+            <div className="flex items-center rounded-2xl border bg-muted/30 focus-within:bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all p-1.5 gap-2 relative">
               {/* Seletor de DDI */}
               <div className="relative flex items-center shrink-0 border-r pr-2 border-border/60">
                 <select
@@ -243,11 +301,16 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
                 </select>
               </div>
 
-              {/* Input Numérico com Formatação de Telefone */}
+              {/* Input Numérico com Formatação de Telefone e Sugestões */}
               <input
                 type="tel"
                 value={phone}
-                onChange={(e) => setPhone(formatPhoneInput(e.target.value, ddi))}
+                onFocus={() => setShowAutoComplete(true)}
+                onBlur={() => setTimeout(() => setShowAutoComplete(false), 200)}
+                onChange={(e) => {
+                  setPhone(formatPhoneInput(e.target.value, ddi));
+                  setShowAutoComplete(true);
+                }}
                 placeholder="Ex: (11) 99YYY-XXXX"
                 className="w-full bg-transparent text-lg font-bold tracking-wider text-foreground focus:outline-none placeholder:text-muted-foreground/40 placeholder:font-normal placeholder:text-xs font-mono"
               />
@@ -263,6 +326,43 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
                 </button>
               )}
             </div>
+
+            {/* Auto-complete Popover de Contatos */}
+            {showAutoComplete && autoCompleteSuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-card border border-primary/20 rounded-2xl shadow-xl p-2 space-y-1 animate-in fade-in-50 zoom-in-95">
+                <p className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-wider">
+                  Contatos Encontrados
+                </p>
+                {autoCompleteSuggestions.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onMouseDown={() => selectContact(c)}
+                    className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-primary/10 transition-colors text-left group"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {c.avatarUrl ? (
+                        <img src={c.avatarUrl} alt={c.name} className="h-7 w-7 rounded-full object-cover shrink-0" />
+                      ) : (
+                        <div className="h-7 w-7 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                          {getInitials(c.name || "W")}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-foreground truncate group-hover:text-primary">
+                          {c.name || "Contato WhatsApp"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground font-mono truncate">
+                          {formatPhoneNumber(c.phone)}
+                        </p>
+                      </div>
+                    </div>
+                    <Check className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </button>
+                ))}
+              </div>
+            )}
+
             <p className="text-[10px] text-muted-foreground font-medium pl-1">
               O DDI <span className="font-bold text-primary font-mono">+{ddi}</span> será incluído automaticamente ao ligar.
             </p>
@@ -322,6 +422,72 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
           </Button>
         </>
       )}
+
+      {/* Modal / Dialog Integrado para Selecionar Contato da Base */}
+      <Dialog open={isPickerOpen} onOpenChange={setIsPickerOpen}>
+        <DialogContent className="sm:max-w-md card-premium">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Selecionar Contato para Ligar
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome, telefone ou empresa..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 bg-background"
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-1.5 custom-scrollbar pr-1">
+              {contactsList.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-xs">
+                  Nenhum contato encontrado na sua base.
+                </div>
+              ) : (
+                contactsList.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => selectContact(c)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl border border-primary/10 bg-card hover:bg-primary/10 hover:border-primary/30 transition-all text-left group"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {c.avatarUrl ? (
+                        <img
+                          src={c.avatarUrl}
+                          alt={c.name}
+                          className="h-9 w-9 rounded-full object-cover border border-primary/10 shrink-0"
+                        />
+                      ) : (
+                        <div className="h-9 w-9 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                          {getInitials(c.name || "W")}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-foreground truncate group-hover:text-primary">
+                          {c.name || "Contato WhatsApp"}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-mono truncate">
+                          {formatPhoneNumber(c.phone)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="secondary" className="h-7 text-xs gap-1 font-semibold">
+                      <Phone className="h-3 w-3 text-emerald-500" /> Discar
+                    </Button>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

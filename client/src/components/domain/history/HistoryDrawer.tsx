@@ -1,12 +1,10 @@
 import { useState } from "react";
-import { History, PhoneIncoming, PhoneOutgoing, Clock, MessageSquare, ExternalLink, PhoneMissed, PhoneOff, Sparkles, Trash2 } from "lucide-react";
+import { History, PhoneIncoming, PhoneOutgoing, Clock, MessageSquare, ExternalLink, Sparkles, Trash2, Calendar } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useHistory } from "@/hooks/useHistory";
@@ -15,8 +13,10 @@ import { AudioRecordingPlayer } from "./AudioRecordingPlayer";
 import { TranscriptModal } from "./TranscriptModal";
 import { SummaryModal } from "./SummaryModal";
 import { deleteHistoryCall } from "@/services/history";
+import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import type { HistoryRow } from "@/types/history";
 import { formatDuration, getInitials, formatPhoneNumber, getCallStatusDetails } from "@/utils/format";
+import { cn } from "@/lib/utils";
 
 export const HistoryItem = ({ sid, row }: { sid: string; row: HistoryRow }) => {
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
@@ -30,7 +30,6 @@ export const HistoryItem = ({ sid, row }: { sid: string; row: HistoryRow }) => {
   const DirIcon = isInbound ? PhoneIncoming : PhoneOutgoing;
 
   const displayName = row.name || contact?.name || formatPhoneNumber(row.phone);
-  const hasContactName = (row.name || contact?.name) && (row.name || contact?.name) !== row.phone;
   const pictureUrl = contact?.pictureUrl;
 
   const statusDetails = getCallStatusDetails(row.startedAt, row.endedAt, row.endReason, row.direction);
@@ -51,136 +50,143 @@ export const HistoryItem = ({ sid, row }: { sid: string; row: HistoryRow }) => {
 
   return (
     <>
-      <li className={`flex flex-col justify-between h-full rounded-lg border p-3.5 transition-all duration-300 animate-fade-in ${statusDetails.cardBorderClass}`}>
-        <div className="flex-1 flex flex-col justify-between gap-3">
-          <div className="space-y-2.5">
-            {/* Top header */}
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                {pictureUrl ? (
-                  <img
-                    src={pictureUrl}
-                    alt={displayName}
-                    className="h-9 w-9 shrink-0 rounded-full object-cover border border-primary/10 shadow-xs"
-                  />
-                ) : (
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground font-bold text-xs border border-primary/5">
-                    {getInitials(displayName)}
-                  </div>
-                )}
-
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-bold text-foreground leading-snug" title={displayName}>
-                    {displayName}
-                  </p>
-                  {hasContactName && (
-                    <p className="text-[10px] text-muted-foreground font-mono truncate leading-none mt-0.5">
-                      {formatPhoneNumber(row.phone)}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-1 mt-1 text-[10px] text-muted-foreground">
-                    <Clock className="h-3 w-3 text-primary/70 shrink-0" />
-                    <span>
-                      {new Date(row.startedAt).toLocaleString("pt-BR", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="outline" className={`text-[9px] px-1.5 h-4.5 font-semibold rounded-md ${statusDetails.badgeClass}`}>
-                    <span className="flex items-center gap-1">
-                      <DirIcon className="h-2.5 w-2.5" />
-                      {statusDetails.badgeText}
-                    </span>
-                  </Badge>
-
-                  {/* Lixeira de exclusão no topo */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowDeleteConfirm(true);
-                    }}
-                    className="text-muted-foreground hover:text-red-500 hover:bg-red-500/10 p-1 rounded-md transition-all duration-200"
-                    title="Excluir chamada"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                <span className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium pr-1">
-                  <Clock className="h-3 w-3 text-muted-foreground/60" />
-                  {formatDuration(row.startedAt, row.endedAt)}
-                </span>
-              </div>
-            </div>
-
-            {/* Informação do status da chamada */}
-            {statusDetails.statusType !== "completed" && (
-              <div className={`flex items-center gap-1 text-[10px] font-bold mt-1 pl-1 ${
-                statusDetails.statusType === "accepted_elsewhere"
-                  ? "text-blue-600 dark:text-blue-400"
-                  : statusDetails.statusType === "rejected"
-                  ? "text-red-600 dark:text-red-400"
-                  : "text-amber-600 dark:text-amber-400"
-              }`}>
-                {statusDetails.statusType === "accepted_elsewhere" ? (
-                  <PhoneMissed className="h-3 w-3 rotate-180 shrink-0" />
-                ) : statusDetails.statusType === "rejected" ? (
-                  <PhoneOff className="h-3 w-3 shrink-0" />
-                ) : (
-                  <PhoneMissed className="h-3 w-3 shrink-0" />
-                )}
-                <span>{statusDetails.descriptionText}</span>
-              </div>
-            )}
-
-            {row.ticketOpened && (
-              <div className="rounded-md bg-amber-500/5 p-2 text-[11px] text-amber-600 dark:text-amber-400 border border-amber-500/10 break-words leading-normal">
-                <span className="font-bold flex items-center gap-1 mb-0.5 text-amber-700 dark:text-amber-300">
-                  ⚠️ Chamado Aberto
-                </span>
-                {row.ticketReason || "Sem motivo especificado."}
-              </div>
-            )}
-          </div>
-
-          {/* Gravação e botões de ação (exibidos apenas se a chamada foi atendida localmente neste servidor) */}
-          {statusDetails.showMedia && (
-            <div className="space-y-2 pt-0.5">
-              {row.recordingUrl && (
-                <div>
-                  <AudioRecordingPlayer recordingUrl={row.recordingUrl} />
+      <li className={`flex flex-col justify-between h-full rounded-2xl border p-4 transition-all duration-200 bg-card hover:shadow-md ${statusDetails.cardBorderClass} group relative`}>
+        <div className="space-y-3">
+          {/* Header Superior: Avatar + Nome + Ação de Exclusão */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {pictureUrl ? (
+                <img
+                  src={pictureUrl}
+                  alt={displayName}
+                  className="h-10 w-10 shrink-0 rounded-full object-cover border-2 border-primary/15 shadow-2xs"
+                />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs border border-primary/20 shadow-2xs">
+                  {getInitials(displayName)}
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <h4 className="truncate text-xs sm:text-sm font-bold text-foreground leading-snug group-hover:text-primary transition-colors" title={displayName}>
+                  {displayName}
+                </h4>
+                <p className="text-[11px] text-muted-foreground font-mono truncate mt-0.5">
+                  {formatPhoneNumber(row.phone)}
+                </p>
+              </div>
+            </div>
+
+            {/* Lixeira de exclusão no topo */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDeleteConfirm(true);
+              }}
+              className="text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 p-1.5 rounded-lg transition-colors shrink-0 cursor-pointer"
+              title="Excluir chamada"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Badges de Direção (Entrada/Saída), Status e Duração */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {/* Badge de Direção (Entrada / Saída) */}
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted/80 px-2.5 py-0.5 text-[10px] font-semibold text-foreground border border-border/50">
+              <DirIcon className={cn("h-3 w-3 shrink-0", isInbound ? "text-emerald-500" : "text-blue-500")} />
+              <span>{isInbound ? "Entrada" : "Saída"}</span>
+            </span>
+
+            {/* Badge de Status da Chamada */}
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border",
+                statusDetails.statusType === "completed"
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                  : statusDetails.statusType === "rejected"
+                  ? "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20"
+                  : statusDetails.statusType === "missed"
+                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                  : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20"
+              )}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full shrink-0",
+                  statusDetails.statusType === "completed"
+                    ? "bg-emerald-500"
+                    : statusDetails.statusType === "rejected"
+                    ? "bg-red-500"
+                    : statusDetails.statusType === "missed"
+                    ? "bg-amber-500"
+                    : "bg-blue-500"
+                )}
+              />
+              <span>{statusDetails.badgeText}</span>
+            </span>
+
+            {/* Duração */}
+            <span className="ml-auto flex items-center gap-1 text-[10px] font-mono font-medium text-muted-foreground bg-muted/30 px-2 py-0.5 rounded-md">
+              <Clock className="h-3 w-3 text-muted-foreground/70" />
+              {formatDuration(row.startedAt, row.endedAt)}
+            </span>
+          </div>
+
+          {/* Horário da Chamada */}
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
+            <Calendar className="h-3 w-3 text-primary/70 shrink-0" />
+            <span>
+              {new Date(row.startedAt).toLocaleString("pt-BR", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+
+          {/* Alerta de Chamado Aberto */}
+          {row.ticketOpened && (
+            <div className="rounded-xl bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300 border border-amber-500/20 break-words space-y-0.5">
+              <span className="font-bold flex items-center gap-1 text-amber-800 dark:text-amber-200">
+                ⚠️ Chamado Aberto
+              </span>
+              <p className="text-[11px] leading-relaxed">{row.ticketReason || "Sem motivo especificado."}</p>
+            </div>
+          )}
+
+          {/* Player e Ações da Chamada (Apenas se a chamada foi atendida com mídia) */}
+          {statusDetails.showMedia && (
+            <div className="space-y-2 pt-2 border-t border-border/40">
+              {row.recordingUrl && (
+                <div className="w-full">
+                  <AudioRecordingPlayer recordingUrl={row.recordingUrl} compact={true} />
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 flex-wrap pt-0.5">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-6.5 text-[10px] gap-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-primary/5 transition-all px-2.5"
+                  className="h-7 text-xs gap-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-primary/5 transition-all flex-1 sm:flex-initial justify-center cursor-pointer"
                   onClick={() => setShowTranscriptModal(true)}
                 >
-                  <MessageSquare className="h-3 w-3 text-primary" />
-                  <span>Ver Transcrição</span>
-                  <ExternalLink className="h-2.5 w-2.5 opacity-60 ml-0.5" />
+                  <MessageSquare className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>Transcrição</span>
+                  <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
                 </Button>
 
                 {row.summary && (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-6.5 text-[10px] gap-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-primary/5 transition-all px-2.5"
+                    className="h-7 text-xs gap-1.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-primary/5 transition-all flex-1 sm:flex-initial justify-center cursor-pointer"
                     onClick={() => setShowSummaryModal(true)}
                   >
-                    <Sparkles className="h-3 w-3 text-primary animate-pulse" />
-                    <span>Ver Resumo</span>
+                    <Sparkles className="h-3.5 w-3.5 text-primary animate-pulse shrink-0" />
+                    <span>Resumo IA</span>
                   </Button>
                 )}
               </div>
@@ -204,40 +210,17 @@ export const HistoryItem = ({ sid, row }: { sid: string; row: HistoryRow }) => {
         displayName={displayName}
       />
 
-      {/* Modal de Confirmação de Exclusão */}
-      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <DialogContent className="max-w-sm rounded-lg p-5 gap-4 shadow-2xl border bg-card text-card-foreground">
-          <DialogHeader className="space-y-2 pb-2 border-b">
-            <DialogTitle className="text-sm font-bold text-foreground flex items-center gap-2">
-              <Trash2 className="h-4.5 w-4.5 text-red-500 shrink-0" />
-              <span>Excluir chamada do histórico?</span>
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground leading-normal">
-              Esta ação excluirá permanentemente esta chamada do banco de dados, incluindo a gravação de áudio, transcrições e resumos correspondentes. Esta ação é irreversível.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs rounded-md"
-              onClick={() => setShowDeleteConfirm(false)}
-              disabled={isDeleting}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              className="h-7 text-xs rounded-md gap-1"
-              onClick={handleDelete}
-              disabled={isDeleting}
-            >
-              {isDeleting ? "Excluindo..." : "Sim, Excluir"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Reutilizável de Confirmação de Exclusão */}
+      <ConfirmModal
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Excluir Chamada do Histórico"
+        description="Esta ação excluirá permanentemente esta chamada do banco de dados, incluindo gravação de áudio, transcrições e resumos correspondentes."
+        confirmText="Sim, Excluir"
+        variant="destructive"
+        loading={isDeleting}
+        onConfirm={handleDelete}
+      />
     </>
   );
 };

@@ -34,8 +34,10 @@ interface AgentPayload {
 export interface AgentUpsert {
   name: string;
   description: string;
-  role: Agent["role"];
-  isActive: boolean;
+  role?: Agent["role"];
+  inbound?: boolean;
+  outbound?: boolean;
+  isActive?: boolean;
   aiConfig: Agent["aiConfig"];
 }
 
@@ -65,8 +67,8 @@ const toPayload = (data: AgentUpsert): AgentPayload => ({
   name: data.name,
   description: data.description,
   aiConfig: JSON.stringify(data.aiConfig),
-  inbound: data.role === "inbound" || data.role === "both",
-  outbound: data.role === "outbound" || data.role === "both",
+  inbound: data.inbound ?? (data.role === "inbound" || data.role === "both"),
+  outbound: data.outbound ?? (data.role === "outbound" || data.role === "both"),
 });
 
 export const listAgents = async (sessionId: string): Promise<Agent[]> => {

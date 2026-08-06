@@ -289,6 +289,25 @@ func (m *CallManager) HandleCallAck(ctx context.Context, node *waBinary.Node) {
 	}
 	if e := wanode.AttrString(node.Attrs, "error"); e != "" {
 		m.log.Error("offer ack error", "error", e)
+		m.mu.Lock()
+		call := m.currentCall
+		if call != nil && !call.IsEnded() {
+			reason := core.EndCallReasonDeclined
+			if e == "439" {
+				reason = core.EndCallReason("privacy_restricted_or_unknown_contact")
+				m.log.Warn("Chamada recusada pelo WhatsApp (Erro 439). Causas prováveis: O destino possui 'Silenciar números desconhecidos' ativado, o contato não possui o seu número salvo, ou há restrição para chamadas de dispositivos conectados.")
+			}
+			_ = call.ApplyTransition(Transition{Type: TransitionTerminated, Reason: reason})
+			ended := call
+			m.mu.Unlock()
+			m.emitState()
+			if fn := m.endedHandler(); fn != nil {
+				fn(ended)
+			}
+			m.cleanupMedia()
+			return
+		}
+		m.mu.Unlock()
 		return
 	}
 	parsed := signaling.ParseRelayFromAck(node)

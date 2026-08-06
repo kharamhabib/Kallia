@@ -6,8 +6,15 @@ import { AppShell } from "@/components/layout/AppShell";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { ConnectionsPage } from "@/pages/ConnectionsPage";
 import { CallsPage } from "@/pages/CallsPage";
+import { WebphonePage } from "@/pages/WebphonePage";
 import { AgentsPage } from "@/pages/AgentsPage";
+import { ContactsPage } from "@/pages/ContactsPage";
+import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage";
+import { NPSQualityPage } from "@/pages/NPSQualityPage";
+import { LiveMonitoringPage } from "@/pages/LiveMonitoringPage";
+import { BillingPage } from "@/pages/BillingPage";
 import { SettingsTab } from "@/components/domain/settings/SettingsTab";
+import { IntegrationsTab } from "@/components/domain/integrations/IntegrationsTab";
 import { SchedulesTab } from "@/components/domain/schedule/SchedulesTab";
 import { WebphoneDrawer } from "@/components/domain/call/WebphoneDrawer";
 import { IncomingCallModal } from "@/components/domain/call/IncomingCallModal";
@@ -64,10 +71,19 @@ export const App = () => {
         ) : active ? (
           <>
             {activeSection === "dashboard" && <DashboardPage sid={active.id} />}
+            {activeSection === "webphone" && <WebphonePage sid={active.id} />}
             {activeSection === "calls" && <CallsPage sid={active.id} />}
             {activeSection === "schedules" && <SchedulesTab sid={active.id} />}
             {activeSection === "agents" && <AgentsPage sid={active.id} />}
             {activeSection === "settings" && <SettingsTab sid={active.id} />}
+            {activeSection === "knowledge" && <KnowledgeBasePage sid={active.id} />}
+            {activeSection === "chat_history" && <CallsPage sid={active.id} />}
+            {activeSection === "contacts" && <ContactsPage sid={active.id} />}
+            {activeSection === "analytics" && <DashboardPage sid={active.id} />}
+            {activeSection === "live_monitoring" && <LiveMonitoringPage sid={active.id} />}
+            {activeSection === "nps_qa" && <NPSQualityPage sid={active.id} />}
+            {activeSection === "integrations" && <IntegrationsTab sid={active.id} />}
+            {activeSection === "billing" && <BillingPage sid={active.id} />}
           </>
         ) : (
           <EmptyState title="Selecione uma conta" description="Escolha uma conta no menu superior ou lateral." />

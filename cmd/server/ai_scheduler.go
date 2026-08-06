@@ -304,3 +304,10 @@ func (s *AIScheduler) RegisterAgent(callID string, agent *ServerAIAgent) {
 	s.agents[callID] = agent
 }
 
+// GetAgent retorna o agente ativo registrado para determinada chamada.
+func (s *AIScheduler) GetAgent(callID string) *ServerAIAgent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.agents[callID]
+}
+

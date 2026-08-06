@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,6 +55,12 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{sid}/history/{callId}/ticket", s.handleOpenTicket)
 	mux.HandleFunc("GET /api/sessions/{sid}/history/{callId}/transcript", s.handleGetCallTranscript)
 
+	// Contatos / CRM
+	mux.HandleFunc("GET /api/sessions/{sid}/crm-contacts", s.handleListCRMContacts)
+	mux.HandleFunc("POST /api/sessions/{sid}/crm-contacts", s.handleCreateCRMContact)
+	mux.HandleFunc("PUT /api/sessions/{sid}/crm-contacts/{id}", s.handleUpdateCRMContact)
+	mux.HandleFunc("DELETE /api/sessions/{sid}/crm-contacts/{id}", s.handleDeleteCRMContact)
+
 	// Mensageria (whatsmeow)
 	mux.HandleFunc("POST /api/sessions/{sid}/messages/text", s.handleSendText)
 	mux.HandleFunc("POST /api/sessions/{sid}/messages/image", s.handleSendImage)
@@ -92,6 +99,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PUT /api/sessions/{sid}/agents/{agentId}", s.handleUpdateAgent)
 	mux.HandleFunc("DELETE /api/sessions/{sid}/agents/{agentId}", s.handleDeleteAgent)
 	mux.HandleFunc("POST /api/sessions/{sid}/agents/{agentId}/set-active", s.handleSetActiveAgent)
+	mux.HandleFunc("POST /api/sessions/{sid}/calls/{callId}/transfer-agent", s.handleTransferCallAgent)
 
 	// Proxy do Gemini (a API key nunca sai do servidor: o navegador conecta aqui)
 	mux.HandleFunc("GET /api/sessions/{sid}/gemini/ws", s.handleGeminiWS)
@@ -113,6 +121,13 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/forgot-password", s.handleForgotPassword)
 	mux.HandleFunc("POST /api/auth/reset-password", s.handleResetPassword)
+
+	// Rotas Públicas de Documentação de API (Swagger / OpenAPI)
+	mux.HandleFunc("GET /api/docs", s.handleAPIDocs)
+	mux.HandleFunc("GET /api/swagger", s.handleAPIDocs)
+	mux.HandleFunc("GET /api/openapi.yaml", s.handleOpenAPISpec)
+	mux.HandleFunc("GET /api-docs.html", s.handleAPIDocsFile)
+	mux.HandleFunc("GET /openapi.yaml", s.handleOpenAPISpec)
 
 	// Favicon para evitar erros 404 no navegador
 	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
@@ -563,6 +578,44 @@ func (s *server) handleEndCall(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *server) handleTransferCallAgent(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	sid := r.PathValue("sid")
+	callID := r.PathValue("callId")
+	sess := s.sessionByID(w, sid)
+	if sess == nil {
+		return
+	}
+
+	var body struct {
+		AgentID string `json:"agentId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.AgentID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "agentId é obrigatório"})
+		return
+	}
+
+	if s.scheduler == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "scheduler indisponível"})
+		return
+	}
+
+	agent := s.scheduler.GetAgent(callID)
+	if agent == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "chamada ou agente de IA não encontrado para esta ligação"})
+		return
+	}
+
+	if err := agent.SwitchToAgent(body.AgentID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	sess := s.sessionByID(w, r.PathValue("sid"))
 	if sess == nil {
@@ -587,31 +640,7 @@ func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	
 	rows := make([]ExtendedRow, 0, len(rawRows))
 	for _, row := range rawRows {
-		phone := row.Peer
-		name := ""
-		
-		jid, err := types.ParseJID(row.Peer)
-		if err == nil {
-			phone = jid.User
-		cli := sess.getClient()
-		if cli != nil && cli.Store != nil {
-			if jid.Server == "lid" && cli.Store.LIDs != nil {
-				if pn, err := cli.Store.LIDs.GetPNForLID(r.Context(), jid); err == nil && !pn.IsEmpty() {
-					phone = pn.User
-					jid = pn
-				}
-			}
-			if cli.Store.Contacts != nil {
-				if contact, err := cli.Store.Contacts.GetContact(r.Context(), jid); err == nil && contact.Found {
-					if contact.FullName != "" {
-						name = contact.FullName
-					} else if contact.PushName != "" {
-						name = contact.PushName
-					}
-				}
-			}
-		}
-		}
+		phone, name := s.resolveContactName(r.Context(), sess, row.Peer)
 		
 		recURL := row.RecordingURL
 		if recURL == "" {
@@ -801,6 +830,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	sess.enrichSingleContactAsync(body.Phone)
 
 	s.broker.upsertCall(CallRecord{
 		SessionID: sess.id, CallID: callID, Owner: &owner, Direction: "outbound", Peer: peer.String(),
@@ -950,60 +980,305 @@ func (s *server) doEndCall(sess *Session, w http.ResponseWriter, r *http.Request
 }
 
 func (s *server) handleGetContactInfo(w http.ResponseWriter, r *http.Request) {
-	sess := s.pairedSession(w, r.PathValue("sid"))
+	sess := s.sessionByID(w, r.PathValue("sid"))
 	if sess == nil {
 		return
 	}
+	jidStr := r.PathValue("jid")
+	info := sess.enrichContactInfo(r.Context(), jidStr)
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"jid":        info.JID,
+		"phone":      info.Phone,
+		"name":       info.Name,
+		"pictureUrl": info.AvatarURL,
+		"email":      info.Email,
+		"company":    info.Company,
+		"notes":      info.Notes,
+		"lid":        info.LID,
+	})
+}
+
+func (s *server) resolveContactName(ctx context.Context, sess *Session, peerStr string) (phone string, name string) {
+	if peerStr == "" {
+		return "", ""
+	}
+
+	origJid, err := types.ParseJID(peerStr)
+	if err != nil {
+		origJid = types.NewJID(normalizePhone(peerStr), types.DefaultUserServer)
+	}
+	phone = origJid.User
+	name = ""
+
+	if sess != nil && s.sessions != nil && s.sessions.store != nil {
+		if c, err := s.sessions.store.getContactByPhone(ctx, sess.id, peerStr); err == nil && c != nil {
+			if c.Phone != "" {
+				phone = c.Phone
+			}
+			if c.Name != "" && c.Name != c.Phone {
+				return phone, c.Name
+			}
+		}
+	}
+
 	cli := sess.getClient()
-	if cli == nil || cli.Store == nil || cli.Store.Contacts == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "not paired"})
+	if cli == nil || cli.Store == nil {
+		return phone, name
+	}
+
+	jidsToTry := []types.JID{origJid}
+
+	if (origJid.Server == types.HiddenUserServer || len(origJid.User) > 13) && cli.Store.LIDs != nil {
+		lidJID := origJid
+		if lidJID.Server != types.HiddenUserServer {
+			lidJID = types.NewJID(origJid.User, types.HiddenUserServer)
+		}
+		if pn, err := cli.Store.LIDs.GetPNForLID(ctx, lidJID); err == nil && !pn.IsEmpty() {
+			phone = pn.User
+			jidsToTry = append([]types.JID{pn}, jidsToTry...)
+		}
+	} else if origJid.Server == types.DefaultUserServer && cli.Store.LIDs != nil {
+		if lid, err := cli.Store.LIDs.GetLIDForPN(ctx, origJid); err == nil && !lid.IsEmpty() {
+			jidsToTry = append(jidsToTry, lid)
+		}
+	}
+
+	if cli.Store.Contacts != nil {
+		for _, jid := range jidsToTry {
+			if contact, err := cli.Store.Contacts.GetContact(ctx, jid); err == nil && contact.Found {
+				if contact.FullName != "" {
+					name = contact.FullName
+					break
+				} else if contact.BusinessName != "" {
+					name = contact.BusinessName
+					break
+				} else if contact.FirstName != "" {
+					name = contact.FirstName
+					break
+				} else if contact.PushName != "" {
+					name = contact.PushName
+					break
+				}
+			}
+		}
+	}
+
+	return phone, name
+}
+
+func (s *server) enrichContactInfo(ctx context.Context, sess *Session, peerStr string) (name string, pictureURL string) {
+	if sess == nil {
+		return "", ""
+	}
+	cli := sess.getClient()
+	if cli == nil || cli.Store == nil {
+		return "", ""
+	}
+
+	origJid, err := types.ParseJID(peerStr)
+	if err != nil {
+		origJid = types.NewJID(normalizePhone(peerStr), types.DefaultUserServer)
+	}
+
+	jidsToTry := []types.JID{origJid}
+	if (origJid.Server == types.HiddenUserServer || len(origJid.User) > 13) && cli.Store.LIDs != nil {
+		lidJID := origJid
+		if lidJID.Server != types.HiddenUserServer {
+			lidJID = types.NewJID(origJid.User, types.HiddenUserServer)
+		}
+		if pn, err := cli.Store.LIDs.GetPNForLID(ctx, lidJID); err == nil && !pn.IsEmpty() {
+			jidsToTry = append([]types.JID{pn}, jidsToTry...)
+		}
+	} else if origJid.Server == types.DefaultUserServer && cli.Store.LIDs != nil {
+		if lid, err := cli.Store.LIDs.GetLIDForPN(ctx, origJid); err == nil && !lid.IsEmpty() {
+			jidsToTry = append(jidsToTry, lid)
+		}
+	}
+
+	if cli.Store.Contacts != nil {
+		for _, jid := range jidsToTry {
+			if contact, err := cli.Store.Contacts.GetContact(ctx, jid); err == nil && contact.Found {
+				if contact.FullName != "" {
+					name = contact.FullName
+					break
+				} else if contact.BusinessName != "" {
+					name = contact.BusinessName
+					break
+				} else if contact.FirstName != "" {
+					name = contact.FirstName
+					break
+				} else if contact.PushName != "" {
+					name = contact.PushName
+					break
+				}
+			}
+		}
+	}
+
+	pfpCtx, pfpCancel := context.WithTimeout(ctx, 2*time.Second)
+	defer pfpCancel()
+
+	for _, jid := range jidsToTry {
+		pfp, err := cli.GetProfilePictureInfo(pfpCtx, jid, &whatsmeow.GetProfilePictureParams{
+			Preview: true,
+		})
+		if err == nil && pfp != nil && pfp.URL != "" {
+			pictureURL = pfp.URL
+			break
+		}
+	}
+
+	return name, pictureURL
+}
+
+func (s *server) handleListCRMContacts(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+	if s.sessions == nil || s.sessions.store == nil {
+		writeJSON(w, http.StatusOK, []any{})
+		return
+	}
+	q := r.URL.Query().Get("q")
+	contacts, err := s.sessions.store.listContacts(r.Context(), sess.id, q)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	jidStr := r.PathValue("jid")
-	jid, err := types.ParseJID(jidStr)
+	// Responde imediatamente ao cliente (< 5ms) do banco de dados local
+	writeJSON(w, http.StatusOK, contacts)
+}
+
+// enrichSingleContactAsync enriquece um único contato quando disparado por evento
+// (ao ligar, receber ligação ou enviar/receber mensagem), respeitando a trava de 24h
+// e a data de enriched_at no banco.
+func (s *server) enrichSingleContactAsync(sess *Session, phone string) {
+	if sess == nil || phone == "" || s.sessions == nil || s.sessions.store == nil {
+		return
+	}
+	cleanPhone := normalizePhone(phone)
+	if cleanPhone == "" {
+		return
+	}
+
+	goSafe(s.log, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		existing, _ := s.sessions.store.getContactByPhone(ctx, sess.id, cleanPhone)
+		now := time.Now()
+
+		// Se o contato foi enriquecido nas últimas 24 horas e tem nome/foto, pula
+		if existing != nil && existing.EnrichedAt != nil && time.Since(*existing.EnrichedAt) < 24*time.Hour {
+			if existing.Name != "" && existing.Name != existing.Phone && existing.AvatarURL != "" {
+				return
+			}
+		}
+
+		name, pictureURL := s.enrichContactInfo(ctx, sess, cleanPhone)
+		rec := ContactRecord{
+			SessionID:  sess.id,
+			Phone:      cleanPhone,
+			Name:       name,
+			AvatarURL:  pictureURL,
+			EnrichedAt: &now,
+		}
+		if existing != nil {
+			rec.ID = existing.ID
+			if rec.Name == "" {
+				rec.Name = existing.Name
+			}
+			if rec.AvatarURL == "" {
+				rec.AvatarURL = existing.AvatarURL
+			}
+			if existing.LID != "" {
+				rec.LID = existing.LID
+			}
+			if existing.JID != "" {
+				rec.JID = existing.JID
+			}
+		}
+
+		_, _ = s.sessions.store.upsertContact(context.Background(), rec)
+	})
+}
+
+func (s *server) handleCreateCRMContact(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
+	}
+	if s.sessions == nil || s.sessions.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "store not configured"})
+		return
+	}
+	var req ContactRecord
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.SessionID = sess.id
+	res, err := s.sessions.store.upsertContact(r.Context(), req)
 	if err != nil {
-		jid = types.NewJID(normalizePhone(jidStr), types.DefaultUserServer)
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
+	writeJSON(w, http.StatusOK, res)
+}
 
-	var phone string = sess.realPhone(jid)
-	if phone != jid.User {
-		if parsedJid, err := types.ParseJID(phone + "@" + types.DefaultUserServer); err == nil {
-			jid = parsedJid
-		}
+func (s *server) handleUpdateCRMContact(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
 	}
+	if s.sessions == nil || s.sessions.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "store not configured"})
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var req ContactRecord
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.ID = id
+	req.SessionID = sess.id
+	res, err := s.sessions.store.updateContactManual(r.Context(), req)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
 
-	var name string
-	contact, err := cli.Store.Contacts.GetContact(r.Context(), jid)
-	if err == nil && contact.Found {
-		if contact.FullName != "" {
-			name = contact.FullName
-		} else if contact.FirstName != "" {
-			name = contact.FirstName
-		} else if contact.PushName != "" {
-			name = contact.PushName
-		}
+func (s *server) handleDeleteCRMContact(w http.ResponseWriter, r *http.Request) {
+	sess := s.sessionByID(w, r.PathValue("sid"))
+	if sess == nil {
+		return
 	}
-	if name == "" {
-		name = jid.User
+	if s.sessions == nil || s.sessions.store == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "store not configured"})
+		return
 	}
-
-	var pictureURL string
-	pfpCtx, pfpCancel := context.WithTimeout(r.Context(), 2*time.Second)
-	defer pfpCancel()
-	pfp, err := cli.GetProfilePictureInfo(pfpCtx, jid, &whatsmeow.GetProfilePictureParams{
-		Preview: true,
-	})
-	if err == nil && pfp != nil {
-		pictureURL = pfp.URL
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
 	}
-
-	writeJSON(w, http.StatusOK, map[string]string{
-		"jid":        jid.String(),
-		"phone":      phone,
-		"name":       name,
-		"pictureUrl": pictureURL,
-	})
+	if err := s.sessions.store.deleteContact(r.Context(), sess.id, id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func normalizePhone(p string) string {
@@ -1273,4 +1548,73 @@ func (s *server) checkWritePermission(w http.ResponseWriter, r *http.Request) bo
 		return false
 	}
 	return true
+}
+
+func (s *server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/api-docs.html", http.StatusFound)
+}
+
+func (s *server) handleAPIDocsFile(w http.ResponseWriter, r *http.Request) {
+	for _, p := range []string{
+		filepath.Join(s.staticDir, "api-docs.html"),
+		"client/public/api-docs.html",
+		"public/api-docs.html",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			http.ServeFile(w, r, p)
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(`<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kallia — API Docs</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
+    <style>
+      body { margin: 0; background: #fafafa; }
+      .topbar { display: none; }
+      #header { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: #111827; color: #fff; font-family: system-ui, sans-serif; }
+      #header a { margin-left: auto; color: #93c5fd; text-decoration: none; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <div id="header">
+      <strong>Kallia API</strong>
+      <span style="opacity:.6;font-size:13px">documentação interativa</span>
+      <a href="/">← voltar ao painel</a>
+    </div>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js" crossorigin></script>
+    <script>
+      window.onload = () => {
+        window.ui = SwaggerUIBundle({
+          url: "/openapi.yaml",
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis],
+          layout: "BaseLayout",
+        });
+      };
+    </script>
+  </body>
+</html>`))
+}
+
+func (s *server) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	for _, p := range []string{
+		filepath.Join(s.staticDir, "openapi.yaml"),
+		"client/public/openapi.yaml",
+		"public/openapi.yaml",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+			http.ServeFile(w, r, p)
+			return
+		}
+	}
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "especificação OpenAPI não encontrada"})
 }
