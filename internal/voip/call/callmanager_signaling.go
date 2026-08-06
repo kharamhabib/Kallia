@@ -206,31 +206,23 @@ func (m *CallManager) HandleCallAccept(ctx context.Context, node *waBinary.Node,
 	}
 
 	if relayData != nil {
-		m.log.Info("HandleCallAccept: notifying companion devices", "participants", relayData.ParticipantJids)
+		m.log.Info("HandleCallAccept: notifying other devices", "participants", relayData.ParticipantJids)
 		pjPeer, _ := types.ParseJID(call.PeerJid)
-		pjAcceptDevice, _ := types.ParseJID(ensureDeviceJid(peerJid.String()))
-
+		acceptDevice := ensureDeviceJid(peerJid.String())
+		pjAcceptDevice, _ := types.ParseJID(acceptDevice)
 		for _, part := range relayData.ParticipantJids {
 			pjPart, _ := types.ParseJID(part)
 			if matchJIDs(m.sock, pjPart, pjPeer) {
-				partDeviceStr := ensureDeviceJid(part)
-				pjPartDevice, _ := types.ParseJID(partDeviceStr)
-
-				// Regras para enviar accepted_elsewhere sem derrubar a chamada no telefone que atendeu:
-				// 1. NUNCA enviar para o dispositivo que atendeu (pjPartDevice.Device == pjAcceptDevice.Device).
-				// 2. Se a chamada foi atendida pelo telefone principal (pjAcceptDevice.Device == 0), NUNCA enviar para o pjPartDevice.Device == 0.
-				// 3. Enviar SOMENTE para outros dispositivos companheiros (ex: WhatsApp Web / Tablet).
-				isSameDevice := (pjPartDevice.Device == pjAcceptDevice.Device)
-				isPrimaryTargetWhileAnsweredOnPrimary := (pjAcceptDevice.Device == 0 && pjPartDevice.Device == 0)
-
-				if !isSameDevice && !isPrimaryTargetWhileAnsweredOnPrimary {
-					m.log.Info("sending accepted_elsewhere terminate to companion device", "device", partDeviceStr)
-					termNode := signaling.BuildTerminateStanza(wanode.MustJID(partDeviceStr), call.CallID, creator, "accepted_elsewhere")
+				partDevice := ensureDeviceJid(part)
+				pjPartDevice, _ := types.ParseJID(partDevice)
+				if !matchDevices(m.sock, pjPartDevice, pjAcceptDevice) {
+					m.log.Info("sending accepted_elsewhere terminate to other device", "device", partDevice)
+					termNode := signaling.BuildTerminateStanza(wanode.MustJID(partDevice), call.CallID, creator, "accepted_elsewhere")
 					go func(td string, tn waBinary.Node) {
 						if err := m.sock.SendNode(context.Background(), tn); err != nil {
 							m.log.Error("failed to send accepted_elsewhere terminate", "device", td, "err", err)
 						}
-					}(partDeviceStr, termNode)
+					}(partDevice, termNode)
 				}
 			}
 		}

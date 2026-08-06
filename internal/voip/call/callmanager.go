@@ -348,6 +348,21 @@ func (m *CallManager) AcceptCall(ctx context.Context, callID string) error {
 					}
 				}
 			}
+
+			pjOwn, _ := types.ParseJID(m.ownCredJid())
+			ourDeviceJid, _ := types.ParseJID(ourDevice)
+			for _, dev := range ownDevices {
+				if matchJIDs(m.sock, dev, pjOwn) {
+					if !matchDevices(m.sock, dev, ourDeviceJid) {
+						partDevice := dev.String()
+						m.log.Info("sending accepted_elsewhere terminate to own other device", "device", partDevice)
+						termNode := signaling.BuildTerminateStanza(dev, callID, creator, "accepted_elsewhere")
+						if err := m.sock.SendNode(context.Background(), termNode); err != nil {
+							m.log.Error("failed to send accepted_elsewhere to own device", "device", partDevice, "err", err)
+						}
+					}
+				}
+			}
 		}()
 	}
 	m.log.Info("call accepted", "call_id", callID)

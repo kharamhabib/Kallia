@@ -174,9 +174,6 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 				recRecord.Peer = existing.Peer
 			}
 		}
-		if c.StateData.State == core.CallStateActive || c.StateData.State == core.CallStateConnecting {
-			s.mgr.broker.emitIncomingClaimed(s.id, c.CallID, "answered")
-		}
 		s.mgr.broker.upsertCall(recRecord)
 	})
 	cm.SetOnEnded(func(c *call.CallInfo) {
@@ -188,7 +185,6 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
-		s.mgr.broker.emitIncomingClaimed(s.id, c.CallID, string(c.StateData.EndReason))
 		if s.mgr.Scheduler != nil {
 			s.mgr.Scheduler.CleanupAgent(c.CallID)
 		}
@@ -308,8 +304,9 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 		}
 	}
 
-	// Auto-upsert no banco de dados do CRM (executado de forma assíncrona para não bloquear sinalização)
+	// Auto-upsert no banco de dados do CRM
 	if s.mgr != nil && s.mgr.store != nil {
+		phone := s.realPhone(evt.From)
 		name := ""
 		if evt.Data != nil {
 			if notify, ok := evt.Data.Attrs["notify"].(string); ok {
@@ -321,7 +318,6 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 			lid = evt.From.User
 		}
 		goSafe(s.log, func() {
-			phone := s.realPhone(evt.From)
 			c := ContactRecord{
 				SessionID: s.id,
 				Phone:     phone,
@@ -343,9 +339,7 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 				}
 			}
 			_, _ = s.mgr.store.upsertContact(context.Background(), c)
-			if phone != "" {
-				s.enrichSingleContactAsync(phone)
-			}
+			s.enrichSingleContactAsync(phone)
 		})
 	}
 
@@ -427,25 +421,23 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 		}()
 	}
 
-	// Resolve o telefone real de forma ASSÍNCRONA em goroutine para não atrasar a sinalização
-	goSafe(s.log, func() {
-		callerPn := evt.From.User
-		if evt.From.Server != types.DefaultUserServer {
-			if evt.CallCreatorAlt.Server == types.DefaultUserServer && evt.CallCreatorAlt.User != "" {
-				callerPn = evt.CallCreatorAlt.User
-			} else {
-				callerPn = s.realPhone(evt.From)
-			}
+	// Resolve o telefone real APÓS o offer para não atrasar a sinalização
+	callerPn := evt.From.User
+	if evt.From.Server != types.DefaultUserServer {
+		if evt.CallCreatorAlt.Server == types.DefaultUserServer && evt.CallCreatorAlt.User != "" {
+			callerPn = evt.CallCreatorAlt.User
+		} else {
+			callerPn = s.realPhone(evt.From)
 		}
-		if info := cm.CurrentCall(); info != nil {
-			info.CallerPn = callerPn
-		}
-		if callerPn != "" {
-			s.mgr.broker.updateCall(callID, func(rec *CallRecord) {
-				rec.Peer = callerPn
-			})
-		}
-	})
+	}
+	if info := cm.CurrentCall(); info != nil {
+		info.CallerPn = callerPn
+	}
+	if callerPn != "" {
+		s.mgr.broker.updateCall(callID, func(rec *CallRecord) {
+			rec.Peer = callerPn
+		})
+	}
 
 	// Auto-atendimento server-side: aceita e acopla IA automaticamente
 	config := s.getAIConfig()
@@ -492,13 +484,10 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 
 			// Acopla o agente assim que a chamada ficar ativa
 			s.attachServerAI(cm, callID, "inbound", config, func(info *call.CallInfo) string {
-				if info != nil && info.CallerPn != "" {
-					return info.CallerPn
+				if callerPn != "" {
+					return callerPn
 				}
-				if info != nil {
-					return info.PeerJid
-				}
-				return evt.From.User
+				return info.PeerJid
 			})
 		})
 	}
@@ -573,40 +562,12 @@ func (s *Session) handleEvent(rawEvt any) {
 			ac.cm.HandleCallTransport(ctx, wrapCall(evt.From, evt.Data), evt.From)
 		}
 	case *events.CallTerminate:
-		node := wrapCall(evt.From, evt.Data)
-		callID := callIDFromNode(node)
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
-			ac.cm.HandleCallTerminate(node)
-		} else {
-			for cId, ac := range s.reg.getAll() {
-				if callID == "" || cId == callID {
-					ac.cm.HandleCallTerminate(node)
-					s.mgr.broker.endCall(cId, "declined")
-					s.mgr.broker.emitIncomingClaimed(s.id, cId, "declined")
-				}
-			}
-		}
-		if callID != "" {
-			s.mgr.broker.endCall(callID, "declined")
-			s.mgr.broker.emitIncomingClaimed(s.id, callID, "declined")
+			ac.cm.HandleCallTerminate(wrapCall(evt.From, evt.Data))
 		}
 	case *events.CallReject:
-		node := wrapCall(evt.From, evt.Data)
-		callID := callIDFromNode(node)
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
-			ac.cm.HandleCallTerminate(node)
-		} else {
-			for cId, ac := range s.reg.getAll() {
-				if callID == "" || cId == callID {
-					ac.cm.HandleCallTerminate(node)
-					s.mgr.broker.endCall(cId, "declined")
-					s.mgr.broker.emitIncomingClaimed(s.id, cId, "declined")
-				}
-			}
-		}
-		if callID != "" {
-			s.mgr.broker.endCall(callID, "declined")
-			s.mgr.broker.emitIncomingClaimed(s.id, callID, "declined")
+			ac.cm.HandleCallTerminate(wrapCall(evt.From, evt.Data))
 		}
 	}
 }

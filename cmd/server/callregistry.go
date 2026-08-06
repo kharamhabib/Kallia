@@ -52,16 +52,6 @@ func (r *callRegistry) count() int {
 	return len(r.calls)
 }
 
-func (r *callRegistry) getAll() map[string]*activeCall {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := make(map[string]*activeCall, len(r.calls))
-	for k, v := range r.calls {
-		out[k] = v
-	}
-	return out
-}
-
 func (r *callRegistry) setBridge(callID string, b *Bridge, oc media.Codec) (*Bridge, media.Codec, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
