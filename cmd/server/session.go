@@ -452,23 +452,25 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 		}()
 	}
 
-	// Resolve o telefone real APÓS o offer para não atrasar a sinalização
-	callerPn := evt.From.User
-	if evt.From.Server != types.DefaultUserServer {
-		if evt.CallCreatorAlt.Server == types.DefaultUserServer && evt.CallCreatorAlt.User != "" {
-			callerPn = evt.CallCreatorAlt.User
-		} else {
-			callerPn = s.realPhone(evt.From)
+	// Resolve o telefone real de forma assíncrona em background para não travar o fluxo de sinalização
+	goSafe(s.log, func() {
+		callerPn := evt.From.User
+		if evt.From.Server != types.DefaultUserServer {
+			if evt.CallCreatorAlt.Server == types.DefaultUserServer && evt.CallCreatorAlt.User != "" {
+				callerPn = evt.CallCreatorAlt.User
+			} else {
+				callerPn = s.realPhone(evt.From)
+			}
 		}
-	}
-	if info := cm.CurrentCall(); info != nil {
-		info.CallerPn = callerPn
-	}
-	if callerPn != "" {
-		s.mgr.broker.updateCall(callID, func(rec *CallRecord) {
-			rec.Peer = callerPn
-		})
-	}
+		if info := cm.CurrentCall(); info != nil {
+			info.CallerPn = callerPn
+		}
+		if callerPn != "" {
+			s.mgr.broker.updateCall(callID, func(rec *CallRecord) {
+				rec.Peer = callerPn
+			})
+		}
+	})
 
 	// Auto-atendimento server-side: aceita e acopla IA automaticamente
 	config := s.getAIConfig()
@@ -515,8 +517,8 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 
 			// Acopla o agente assim que a chamada ficar ativa
 			s.attachServerAI(cm, callID, "inbound", config, func(info *call.CallInfo) string {
-				if callerPn != "" {
-					return callerPn
+				if info.CallerPn != "" {
+					return info.CallerPn
 				}
 				return info.PeerJid
 			})
@@ -584,17 +586,8 @@ func (s *Session) handleEvent(rawEvt any) {
 		s.onIncomingOffer(ctx, evt)
 	case *events.CallAccept:
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
-			if currCall := ac.cm.CurrentCall(); currCall != nil {
-				if currCall.Direction == core.CallDirectionOutgoing {
-					ac.cm.HandleCallAccept(ctx, wrapCall(evt.From, evt.Data), evt.From)
-				} else if currCall.Direction == core.CallDirectionIncoming {
-					s.log.Info("incoming call accepted elsewhere (via CallAccept event)", "call_id", currCall.CallID)
-					termNode := wrapCall(evt.From, &waBinary.Node{
-						Tag:   "terminate",
-						Attrs: waBinary.Attrs{"call-id": currCall.CallID, "reason": "accepted_elsewhere"},
-					})
-					ac.cm.HandleCallTerminate(termNode)
-				}
+			if currCall := ac.cm.CurrentCall(); currCall != nil && currCall.Direction == core.CallDirectionOutgoing {
+				ac.cm.HandleCallAccept(ctx, wrapCall(evt.From, evt.Data), evt.From)
 			}
 		}
 	case *events.CallTransport:

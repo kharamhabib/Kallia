@@ -89,15 +89,18 @@ func (s *Session) realPhone(jid types.JID) string {
 	if jid.Server == types.DefaultUserServer {
 		return jid.User
 	}
-	if pn, err := s.getClient().Store.LIDs.GetPNForLID(context.Background(), jid); err == nil && pn.User != "" {
+	nonAD := jid.ToNonAD()
+	if pn, err := s.getClient().Store.LIDs.GetPNForLID(context.Background(), nonAD); err == nil && pn.User != "" {
 		return pn.User
 	}
-	// Força busca no servidor do WhatsApp para resolver LID -> PN
+	// Força busca rápida no servidor do WhatsApp com timeout de 2s para resolver LID -> PN
 	if s.getClient() != nil {
-		s.log.Info("realPhone: LID not in local DB, querying WhatsApp server", "lid", jid.String())
-		if resp, err := s.getClient().GetUserInfo(context.Background(), []types.JID{jid}); err == nil && resp != nil {
-			if pn2, err := s.getClient().Store.LIDs.GetPNForLID(context.Background(), jid); err == nil && pn2.User != "" {
-				s.log.Info("realPhone: LID resolved from WhatsApp server", "lid", jid.String(), "pn", pn2.User)
+		s.log.Info("realPhone: LID not in local DB, querying WhatsApp server", "lid", nonAD.String())
+		ctxTimeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if resp, err := s.getClient().GetUserInfo(ctxTimeout, []types.JID{nonAD}); err == nil && resp != nil {
+			if pn2, err := s.getClient().Store.LIDs.GetPNForLID(context.Background(), nonAD); err == nil && pn2.User != "" {
+				s.log.Info("realPhone: LID resolved from WhatsApp server", "lid", nonAD.String(), "pn", pn2.User)
 				return pn2.User
 			}
 		}
