@@ -33,6 +33,7 @@ export const ensureCallsWired = (): void => {
             ? { ...c, sessionId: ev.sessionId, status: ev.status, peer: ev.peer, startedAt: ev.startedAt }
             : c,
         ),
+        incoming: (s.incoming?.callId === ev.id && ev.status === "connected") ? null : s.incoming,
       }));
     } else if (ev.type === "call-ended") {
       // Desacopla o agente de IA se houver um ativo para esta chamada

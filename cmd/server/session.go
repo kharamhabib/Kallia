@@ -174,6 +174,9 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 				recRecord.Peer = existing.Peer
 			}
 		}
+		if c.StateData.State == core.CallStateActive || c.StateData.State == core.CallStateConnecting {
+			s.mgr.broker.emitIncomingClaimed(s.id, c.CallID, "answered")
+		}
 		s.mgr.broker.upsertCall(recRecord)
 	})
 	cm.SetOnEnded(func(c *call.CallInfo) {
