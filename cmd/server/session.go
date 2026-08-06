@@ -188,6 +188,7 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
+		s.mgr.broker.emitIncomingClaimed(s.id, c.CallID, string(c.StateData.EndReason))
 		if s.mgr.Scheduler != nil {
 			s.mgr.Scheduler.CleanupAgent(c.CallID)
 		}
@@ -565,12 +566,40 @@ func (s *Session) handleEvent(rawEvt any) {
 			ac.cm.HandleCallTransport(ctx, wrapCall(evt.From, evt.Data), evt.From)
 		}
 	case *events.CallTerminate:
+		node := wrapCall(evt.From, evt.Data)
+		callID := callIDFromNode(node)
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
-			ac.cm.HandleCallTerminate(wrapCall(evt.From, evt.Data))
+			ac.cm.HandleCallTerminate(node)
+		} else {
+			for cId, ac := range s.reg.getAll() {
+				if callID == "" || cId == callID {
+					ac.cm.HandleCallTerminate(node)
+					s.mgr.broker.endCall(cId, "declined")
+					s.mgr.broker.emitIncomingClaimed(s.id, cId, "declined")
+				}
+			}
+		}
+		if callID != "" {
+			s.mgr.broker.endCall(callID, "declined")
+			s.mgr.broker.emitIncomingClaimed(s.id, callID, "declined")
 		}
 	case *events.CallReject:
+		node := wrapCall(evt.From, evt.Data)
+		callID := callIDFromNode(node)
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
-			ac.cm.HandleCallTerminate(wrapCall(evt.From, evt.Data))
+			ac.cm.HandleCallTerminate(node)
+		} else {
+			for cId, ac := range s.reg.getAll() {
+				if callID == "" || cId == callID {
+					ac.cm.HandleCallTerminate(node)
+					s.mgr.broker.endCall(cId, "declined")
+					s.mgr.broker.emitIncomingClaimed(s.id, cId, "declined")
+				}
+			}
+		}
+		if callID != "" {
+			s.mgr.broker.endCall(callID, "declined")
+			s.mgr.broker.emitIncomingClaimed(s.id, callID, "declined")
 		}
 	}
 }

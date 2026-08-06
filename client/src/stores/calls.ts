@@ -33,7 +33,7 @@ export const ensureCallsWired = (): void => {
             ? { ...c, sessionId: ev.sessionId, status: ev.status, peer: ev.peer, startedAt: ev.startedAt }
             : c,
         ),
-        incoming: (s.incoming?.callId === ev.id && ev.status === "connected") ? null : s.incoming,
+        incoming: s.incoming?.callId === ev.id && ev.status !== "ringing" && ev.status !== "starting" ? null : s.incoming,
       }));
     } else if (ev.type === "call-ended") {
       // Desacopla o agente de IA se houver um ativo para esta chamada
@@ -56,14 +56,14 @@ export const ensureCallsWired = (): void => {
         return {
           calls: s.calls.filter((c) => c.callId !== ev.id),
           ownConnections: next,
-          incoming: s.incoming?.callId === ev.id ? null : s.incoming,
+          incoming: (!s.incoming?.callId || s.incoming?.callId === ev.id || !ev.id) ? null : s.incoming,
         };
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.history });
     } else if (ev.type === "incoming") {
       useCalls.setState({ incoming: { sessionId: ev.sessionId, callId: ev.id, peer: ev.peer, offeredAt: ev.offeredAt } });
     } else if (ev.type === "incoming-claimed") {
-      useCalls.setState((s) => (s.incoming?.callId === ev.id ? { incoming: null } : s));
+      useCalls.setState((s) => (!s.incoming?.callId || s.incoming?.callId === ev.id || !ev.id ? { incoming: null } : s));
     } else if (ev.type === "ai-agent-active") {
       // Servidor está gerenciando esta chamada com IA
       if (ev.server) {

@@ -21,13 +21,34 @@ type NodeInfo struct {
 func ExtractNodeInfo(node *waBinary.Node) *NodeInfo {
 	children := wanode.NodeChildren(node)
 	if len(children) == 0 {
-		return nil
+		callID := wanode.AttrString(node.Attrs, "call-id")
+		if callID == "" {
+			callID = wanode.AttrString(node.Attrs, "id")
+		}
+		return &NodeInfo{
+			Tag:            node.Tag,
+			PeerJid:        wanode.AttrString(node.Attrs, "from"),
+			CallID:         callID,
+			PeerPlatform:   wanode.AttrString(node.Attrs, "platform"),
+			PeerAppVersion: wanode.AttrString(node.Attrs, "version"),
+			InnerNode:      node,
+		}
 	}
 	inner := children[0]
+	callID := wanode.AttrString(inner.Attrs, "call-id")
+	if callID == "" {
+		callID = wanode.AttrString(inner.Attrs, "id")
+	}
+	if callID == "" {
+		callID = wanode.AttrString(node.Attrs, "call-id")
+	}
+	if callID == "" {
+		callID = wanode.AttrString(node.Attrs, "id")
+	}
 	return &NodeInfo{
 		Tag:            inner.Tag,
 		PeerJid:        wanode.AttrString(node.Attrs, "from"),
-		CallID:         wanode.AttrString(inner.Attrs, "call-id"),
+		CallID:         callID,
 		PeerPlatform:   wanode.AttrString(node.Attrs, "platform"),
 		PeerAppVersion: wanode.AttrString(node.Attrs, "version"),
 		EpochID:        wanode.AttrString(inner.Attrs, "e"),
