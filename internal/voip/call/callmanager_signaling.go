@@ -379,9 +379,22 @@ func (m *CallManager) HandleCallTerminate(node *waBinary.Node) {
 	}
 	info := signaling.ExtractNodeInfo(node)
 	reason := core.EndCallReasonUserEnded
-	if info != nil {
+	if info != nil && info.InnerNode != nil {
 		if r := wanode.AttrString(info.InnerNode.Attrs, "reason"); r != "" {
 			reason = core.EndCallReason(r)
+		}
+	}
+	// Busca motivo de encerramento em qualquer filho do nó XML se ainda não encontrou
+	if reason == core.EndCallReasonUserEnded && node != nil {
+		if r := wanode.AttrString(node.Attrs, "reason"); r != "" {
+			reason = core.EndCallReason(r)
+		} else {
+			for _, child := range wanode.NodeChildren(node) {
+				if r := wanode.AttrString(child.Attrs, "reason"); r != "" {
+					reason = core.EndCallReason(r)
+					break
+				}
+			}
 		}
 	}
 	m.log.Info("call terminated by peer", "call_id", call.CallID, "reason", string(reason))

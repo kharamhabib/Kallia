@@ -553,8 +553,17 @@ func (s *Session) handleEvent(rawEvt any) {
 		s.onIncomingOffer(ctx, evt)
 	case *events.CallAccept:
 		if ac, ok := s.callForEvent(evt.From, evt.Data); ok {
-			if currCall := ac.cm.CurrentCall(); currCall != nil && currCall.Direction == core.CallDirectionOutgoing {
-				ac.cm.HandleCallAccept(ctx, wrapCall(evt.From, evt.Data), evt.From)
+			if currCall := ac.cm.CurrentCall(); currCall != nil {
+				if currCall.Direction == core.CallDirectionOutgoing {
+					ac.cm.HandleCallAccept(ctx, wrapCall(evt.From, evt.Data), evt.From)
+				} else if currCall.Direction == core.CallDirectionIncoming {
+					s.log.Info("incoming call accepted elsewhere (via CallAccept event)", "call_id", currCall.CallID)
+					termNode := wrapCall(evt.From, &waBinary.Node{
+						Tag:   "terminate",
+						Attrs: waBinary.Attrs{"call-id": currCall.CallID, "reason": "accepted_elsewhere"},
+					})
+					ac.cm.HandleCallTerminate(termNode)
+				}
 			}
 		}
 	case *events.CallTransport:

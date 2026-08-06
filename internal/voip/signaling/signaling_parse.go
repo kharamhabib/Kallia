@@ -18,21 +18,84 @@ type NodeInfo struct {
 	InnerNode      *waBinary.Node
 }
 
+var signalingTags = map[string]bool{
+	"offer":       true,
+	"accept":      true,
+	"terminate":   true,
+	"reject":      true,
+	"preaccept":   true,
+	"transport":   true,
+	"interim":     true,
+	"fieldstatus": true,
+}
+
 func ExtractNodeInfo(node *waBinary.Node) *NodeInfo {
-	children := wanode.NodeChildren(node)
-	if len(children) == 0 {
+	if node == nil {
 		return nil
 	}
-	inner := children[0]
+	children := wanode.NodeChildren(node)
+	if len(children) == 0 {
+		callID := wanode.AttrString(node.Attrs, "call-id")
+		if callID != "" {
+			return &NodeInfo{
+				Tag:            node.Tag,
+				PeerJid:        wanode.AttrString(node.Attrs, "from"),
+				CallID:         callID,
+				PeerPlatform:   wanode.AttrString(node.Attrs, "platform"),
+				PeerAppVersion: wanode.AttrString(node.Attrs, "version"),
+				InnerNode:      node,
+			}
+		}
+		return nil
+	}
+
+	// 1. Procura primeiro por uma tag de sinalização principal (offer, accept, terminate, reject, transport, preaccept)
+	var target *waBinary.Node
+	for i := range children {
+		if signalingTags[children[i].Tag] {
+			target = &children[i]
+			break
+		}
+	}
+
+	// 2. Se não achou tag conhecida, procura por um filho que possua o atributo "call-id"
+	if target == nil {
+		for i := range children {
+			if wanode.AttrString(children[i].Attrs, "call-id") != "" {
+				target = &children[i]
+				break
+			}
+		}
+	}
+
+	// 3. Fallback: pega o primeiro filho
+	if target == nil {
+		target = &children[0]
+	}
+
+	// Tenta extrair call-id da tag escolhida, da raiz ou de qualquer outro filho
+	callID := wanode.AttrString(target.Attrs, "call-id")
+	if callID == "" {
+		callID = wanode.AttrString(node.Attrs, "call-id")
+	}
+	if callID == "" {
+		for i := range children {
+			if cid := wanode.AttrString(children[i].Attrs, "call-id"); cid != "" {
+				callID = cid
+				break
+			}
+		}
+	}
+
 	return &NodeInfo{
-		Tag:            inner.Tag,
+		Tag:            target.Tag,
 		PeerJid:        wanode.AttrString(node.Attrs, "from"),
-		CallID:         wanode.AttrString(inner.Attrs, "call-id"),
+		CallID:         callID,
 		PeerPlatform:   wanode.AttrString(node.Attrs, "platform"),
 		PeerAppVersion: wanode.AttrString(node.Attrs, "version"),
-		EpochID:        wanode.AttrString(inner.Attrs, "e"),
-		Timestamp:      wanode.AttrString(inner.Attrs, "t"),
-		InnerNode:      &inner,
+		EpochID:        wanode.AttrString(target.Attrs, "e"),
+		Timestamp:      wanode.AttrString(target.Attrs, "t"),
+		InnerNode:      target,
 	}
 }
 
