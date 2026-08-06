@@ -27,13 +27,17 @@ export const ensureCallsWired = (): void => {
     if (ev.type === "call-list") {
       useCalls.setState({ calls: ev.calls });
     } else if (ev.type === "call-status") {
-      useCalls.setState((s) => ({
-        calls: s.calls.map((c) =>
-          c.callId === ev.id
-            ? { ...c, sessionId: ev.sessionId, status: ev.status, peer: ev.peer, startedAt: ev.startedAt }
-            : c,
-        ),
-      }));
+      useCalls.setState((s) => {
+        const isClosed = ev.status === "connected" || ev.status === "ended" || (ev.status as string) === "active";
+        return {
+          calls: s.calls.map((c) =>
+            c.callId === ev.id
+              ? { ...c, sessionId: ev.sessionId, status: ev.status, peer: ev.peer, startedAt: ev.startedAt }
+              : c,
+          ),
+          incoming: isClosed && s.incoming?.callId === ev.id ? null : s.incoming,
+        };
+      });
     } else if (ev.type === "call-ended") {
       // Desacopla o agente de IA se houver um ativo para esta chamada
       // (setAgentInstance em vez de mutar o Map — mutação in-place não dispara

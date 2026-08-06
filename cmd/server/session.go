@@ -280,11 +280,42 @@ func (s *Session) startOutgoing(ctx context.Context, peer types.JID, isVideo boo
 }
 
 func (s *Session) callForEvent(from types.JID, data *waBinary.Node) (*activeCall, bool) {
-	callID := callIDFromNode(wrapCall(from, data))
-	if callID == "" {
-		return nil, false
+	node := wrapCall(from, data)
+	callID := callIDFromNode(node)
+	if callID != "" {
+		if ac, ok := s.reg.get(callID); ok {
+			return ac, true
+		}
 	}
-	return s.reg.get(callID)
+	if data != nil {
+		if cid := wanode.AttrString(data.Attrs, "call-id"); cid != "" {
+			if ac, ok := s.reg.get(cid); ok {
+				return ac, true
+			}
+		}
+	}
+
+	// Fallback 1: se houver apenas 1 chamada ativa nesta sessão, vincula ao evento recebido
+	s.reg.mu.Lock()
+	defer s.reg.mu.Unlock()
+	if len(s.reg.calls) == 1 {
+		for _, ac := range s.reg.calls {
+			return ac, true
+		}
+	}
+
+	// Fallback 2: se houver múltiplas chamadas, tenta casar por JID/LID/User
+	fromUser := from.User
+	for _, ac := range s.reg.calls {
+		curr := ac.cm.CurrentCall()
+		if curr != nil {
+			if strings.Contains(curr.PeerJid, fromUser) || strings.Contains(curr.CallerPn, fromUser) {
+				return ac, true
+			}
+		}
+	}
+
+	return nil, false
 }
 
 func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
@@ -304,20 +335,20 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 		}
 	}
 
-	// Auto-upsert no banco de dados do CRM
+	// Auto-upsert no banco de dados do CRM (executado de forma assíncrona em background para não atrasar a sinalização)
 	if s.mgr != nil && s.mgr.store != nil {
-		phone := s.realPhone(evt.From)
-		name := ""
-		if evt.Data != nil {
-			if notify, ok := evt.Data.Attrs["notify"].(string); ok {
-				name = notify
-			}
-		}
-		lid := ""
-		if evt.From.Server == types.HiddenUserServer {
-			lid = evt.From.User
-		}
 		goSafe(s.log, func() {
+			phone := s.realPhone(evt.From)
+			name := ""
+			if evt.Data != nil {
+				if notify, ok := evt.Data.Attrs["notify"].(string); ok {
+					name = notify
+				}
+			}
+			lid := ""
+			if evt.From.Server == types.HiddenUserServer {
+				lid = evt.From.User
+			}
 			c := ContactRecord{
 				SessionID: s.id,
 				Phone:     phone,
