@@ -52,15 +52,22 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Limites de Conexão**: Cada plano define a quantidade máxima de WhatsApps conectados em simultâneo (ex: Básico 1 conexão, Advantage 3 conexões, Expert 8 conexões).
 - **Controle de Vigência & Status**: Bloqueio automatizado de novas conexões caso o plano do projeto esteja inativo ou vencido.
 
-### 🤖 Agentes Especialistas & Transferência de Chamada (`TransferTo`)
+### 🤖 Agentes Especialistas, Prompt Master & Transferência (`TransferTo`)
 
-- **Gestão de Agentes / Personas**: Cadastro de múltiplos agentes com prompts, saudações, vozes e funções específicas por conexão.
+- **Central de Agentes & Aba "Instruções & Prompt"**: Interface unificada contendo o editor de prompt do sistema em tela cheia (`PromptEditorModal`), gerenciamento de persona e injeção de **Tags Dinâmicas** (`[today]`, `[phone]`, `[direction]`, `[session_name]`, `[custom_fields]`).
 - **Modos Inbound / Outbound**: Agentes dedicados para receber ligações, fazer chamadas ativas ou atuar como padrão.
 - **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa.
 
-### 🎨 Design System Executivo, Modais & Player de Áudio
+### ⚡ Resiliência VoIP, Sinalização sem Bloqueio & Sincronização Multi-Device
 
-- **UI/UX Sóbrio e Mobile-First**: Dashboard reformulado com badges discretos padronizados no formato do Histórico (`Entrada` / `Saída`, `• Desligado pelo cliente`, `concluído` / `não atendida`).
+- **Sinalização Instantânea (0ms Delay de Toque)**: A resolução de telefones reais (PN) a partir de LIDs de dispositivos secundários de um servidor ou celular (`realPhone`) é executada de forma **100% assíncrona** (`goSafe`) com um limite estrito de timeout (`context.WithTimeout(2s)`) e sanitização `.ToNonAD()`. O sinal de chamada recebida e o modal de toque disparam no frontend no mesmo milissegundo.
+- **Parser de Sinalização Resiliente (`ExtractNodeInfo`)**: Varre a árvore XML em busca do nó de comando VoIP verdadeiro (`offer`, `accept`, `terminate`, `reject`, `transport`, `preaccept`), ignorando estrofes secundárias de latência ou transporte como `<relaylatency>` ou `<te>`.
+- **Sincronização entre Celular Principal e Servidor (`accepted_elsewhere`)**: Quando a chamada é atendida no celular físico ou em outro aparelho, o WhatsApp transmite um evento de término por `reason="accepted_elsewhere"`. O servidor processa a estrofe e notifica o frontend, que fecha o modal `incoming` e interrompe o som de toque imediatamente.
+
+### 🎨 CRM Enriquecido, Modais & Player de Áudio
+
+- **Perfil CRM Completo**: Fotos de alta definição (`avatarUrl`), selo visual de **WhatsApp Business** (ícone ✨ e badge em verde), status/recado formatado em citação (`" "`), data e hora da última sincronização (`enrichedAt`), empresa, e-mail, tags e identificadores de privacidade (LID).
+- **Paridade entre Tabela e Cards (`HistoryItem`)**: Cards do Histórico e Dashboard reformulados com badges explícitos de Direção (`Entrada` / `Saída` com ícone colorido) e status conciso sem frases redundantes.
 - **Modal Reutilizável (`ConfirmModal`)**: Componente global de confirmação com suporte a ações destrutivas e indicador de carregamento para remoção segura de contatos e chamadas.
 - **Player com Linha do Tempo Customizada (`.audio-slider`)**: Ajuste técnico no indicador deslizante (*thumb slider* de 10px), eliminando sobreposição visual nos carimbos de tempo.
 - **Modais de Transcrição & Resumo IA**: Acesso instantâneo a resumos e transcrições completas via modais interativos tanto no Histórico quanto no Dashboard.

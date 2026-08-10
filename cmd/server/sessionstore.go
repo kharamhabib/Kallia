@@ -398,6 +398,24 @@ func (s *sessionStore) getRawSession(ctx context.Context, id string) (*sessionRo
 	return r, nil
 }
 
+func (s *sessionStore) getSessionByAPIKey(ctx context.Context, apiKey string) (*sessionRow, error) {
+	if apiKey == "" {
+		return nil, nil
+	}
+	r := &sessionRow{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, COALESCE(jid, ''), COALESCE(webhook, ''), COALESCE(chatwoot, ''), COALESCE(ai_config, ''), COALESCE(project_id, ''), COALESCE(api_key, '')
+		FROM sessions WHERE api_key = $1
+	`, apiKey).Scan(&r.ID, &r.Name, &r.JID, &r.Webhook, &r.Chatwoot, &r.AIConfig, &r.ProjectID, &r.APIKey)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 func (s *sessionStore) listAll(ctx context.Context) ([]sessionRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, COALESCE(jid, ''), COALESCE(webhook, ''), COALESCE(chatwoot, ''), COALESCE(ai_config, ''), COALESCE(project_id, ''), COALESCE(api_key, '')

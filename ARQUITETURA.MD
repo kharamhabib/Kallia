@@ -215,13 +215,28 @@ Durante uma chamada em andamento operada pelo `ServerAIAgent`:
 
 ## 6. Mídia VoIP, Audio Codec e Resiliência
 
+## 6. Mídia VoIP, Sinalização e Resiliência
+
 ### 6.1 Codec MLow (Meta Low-bitrate)
 
 - A transmissão de áudio VoIP nativa do WhatsApp exige o codec **MLow**.
 - A compilação é realizada via CGO com a flag `-tags mlow` e a biblioteca `libopus_mlow.so` (Linux) ou `opus_mlow.dll` (Windows) presente em `native/`.
 - Caso o binário seja compilado sem CGO/MLow, o sistema roda em modo **somente sinalização** (permitindo o pareamento e recebimento do sinal, mas sem áudio).
 
-### 6.2 Marcador de Linha do Tempo Customizado (`.audio-slider`)
+### 6.2 Parser de Sinalização VoIP Resiliente (`ExtractNodeInfo`)
+
+- O WhatsApp envolve nós binários `<call>` contendo estrofes secundárias de latência e transporte (como `<relaylatency>`, `<te>`, `<enc>`) junto com os nós de controle principal (`offer`, `accept`, `terminate`, `reject`, `transport`, `preaccept`).
+- O parser `ExtractNodeInfo` [internal/voip/signaling/signaling_parse.go](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/internal/voip/signaling/signaling_parse.go) utiliza um mapa de priorização de tags primárias (`signalingTags`). Ele varre a árvore XML em busca do comando de controle VoIP verdadeiro e do `call-id` correto, garantindo resiliência total mesmo quando a ordem ou quantidade de sub-nós é alterada pelo WhatsApp.
+
+### 6.3 Resolução Assíncrona de LID e Encerramento `accepted_elsewhere`
+
+- **Sinalização Instantânea (0ms Delay)**: A resolução de telefones reais (PN) a partir de LIDs de dispositivos secundários (`realPhone`) é executada de forma **100% assíncrona** (`goSafe`) com um limite estrito de timeout (`context.WithTimeout(2s)`) e sanitização `.ToNonAD()`. Isso garante que a notificação de chamada recebida chegue ao WebSocket/SSE e toque no frontend imediatamente sem qualquer bloqueio.
+- **Tratamento de Chamadas Atendidas em Outros Dispositivos (`accepted_elsewhere`)**:
+  - Quando o usuário atende a chamada em seu celular principal ou em outro companion device, o WhatsApp envia um encerramento do tipo `reason="accepted_elsewhere"`.
+  - O backend captura a estrofe de término, transiciona o estado da chamada para `accepted_elsewhere` e notifica o frontend via evento `call-ended` / `call-status`.
+  - O store do frontend (`useCalls`) reage imediatamente alterando `incoming: null`, fechando o modal de toque e pausando a reprodução de áudio sem deixar a interface pendente.
+
+### 6.4 Marcador de Linha do Tempo Customizado (`.audio-slider`)
 
 - Para garantir que a linha do tempo das gravações de áudio no Dashboard e no Histórico não obstrua as informações do cabeçalho ou o número do contato, o player utiliza a classe CSS `.audio-slider`.
 - O elemento `input[type="range"]` utiliza estilização customizada via `::-webkit-slider-thumb` e `::-moz-range-thumb`, definindo o marcador de controle com diâmetro de 10px perfeitamente alinhado ao centro da faixa de 4px.

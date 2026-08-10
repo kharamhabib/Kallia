@@ -415,7 +415,7 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 		}
 
 		// 2. Webhook do Chatwoot tem segurança interna por token em query param
-		if strings.HasSuffix(path, "/chatwoot/webhook") {
+		if strings.HasSuffix(strings.TrimRight(path, "/"), "/chatwoot/webhook") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -526,17 +526,28 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 				}
 			}
 
+			var sessRow *sessionRow
+			var err error
 			if sid != "" {
-				sessRow, err := s.sessions.store.getRawSession(r.Context(), sid)
-				if err == nil && sessRow != nil && sessRow.APIKey == connAPIKey {
-					ctx := context.WithValue(r.Context(), ctxKeyUserID, "api-key-system")
-					ctx = context.WithValue(ctx, ctxKeyUserRole, "admin")
-					ctx = context.WithValue(ctx, ctxKeyProjectID, sessRow.ProjectID)
-					ctx = context.WithValue(ctx, ctxKeyPlanStatus, "active")
-
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
+				sRow, e := s.sessions.store.getRawSession(r.Context(), sid)
+				if e == nil && sRow != nil && sRow.APIKey == connAPIKey {
+					sessRow = sRow
 				}
+			} else {
+				sessRow, err = s.sessions.store.getSessionByAPIKey(r.Context(), connAPIKey)
+				if err != nil {
+					sessRow = nil
+				}
+			}
+
+			if sessRow != nil {
+				ctx := context.WithValue(r.Context(), ctxKeyUserID, "api-key-system")
+				ctx = context.WithValue(ctx, ctxKeyUserRole, "admin")
+				ctx = context.WithValue(ctx, ctxKeyProjectID, sessRow.ProjectID)
+				ctx = context.WithValue(ctx, ctxKeyPlanStatus, "active")
+
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
 			}
 		}
 
