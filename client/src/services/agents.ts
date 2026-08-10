@@ -11,6 +11,8 @@ export interface Agent {
   inbound: boolean;
   outbound: boolean;
   aiConfig: {
+    provider?: string;
+    modelName?: string;
     systemInstruction?: string;
     voiceName?: string;
     languageCode?: string;

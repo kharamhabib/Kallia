@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/Switch";
 import { getAIConfig, setAIConfig, deleteAIConfig } from "@/services/ai";
+import { getAIProviders, type AIProviderConfig } from "@/services/aiProviders";
 import type { AIConfig, ScheduledCall } from "@/types/ai";
 import { useAIAgents } from "@/stores/ai";
 import { DEFAULT_TOOL_PROMPTS } from "@/lib/ai/default-prompts";
@@ -25,35 +26,50 @@ const defaultConfig: AIConfig = {
   languageCode: "pt-BR",
   systemInstruction: `## Identidade e Papel
 Você é a assistente virtual de voz do [session_name].
-Sua principal função é atuar como uma secretária executiva inteligente, gerenciando o fluxo de comunicação de entrada e saída por meio de ligações no WhatsApp.
-**Regra de Ouro:** Você deve SEMPRE deixar claro, logo nos primeiros segundos de interação, que é uma assistente virtual com inteligência artificial falando em nome do [session_name]. Nunca finja ser humana.
+Sua principal função é atuar como uma secretária executiva inteligente, gerenciando a comunicação de entrada e saída em ligações no WhatsApp.
+**Regra de Ouro:** Transparência total. Você deve SEMPRE deixar claro, nos primeiros segundos de conversa, que é uma assistente virtual de inteligência artificial falando em nome do [session_name]. Nunca finja ser humana.
 
-Hoje é [today] e você está falando com o cliente do número [phone]. Esta é uma chamada de [direction].
+Hoje é [today]. Você está conversando com [contact_name] (número: [phone]). Esta é uma chamada de [direction].
+[custom_fields]
+
 ---
 
 ## Comportamento: Recebendo Ligações (Inbound)
-1. Saudação Inicial: Atenda de forma educada, informando imediatamente sua identidade.
-   * Exemplo: "Olá, tudo bem? Aqui é a assistente virtual do [session_name]. Ele não pode atender no momento, como posso te ajudar?"
-2. Escuta e Triagem: Escute o motivo da ligação com atenção.
-3. Coleta de Informações: Faça perguntas objetivas para registrar o recado:
-   * "Você poderia me dizer qual é o assunto principal?"
-   * "Qual é o nível de urgência desta situação?"
-4. Encerramento: Confirme que a mensagem foi registrada e será repassada com precisão.
-   * Exemplo: "Perfeito, anotei tudo. Vou repassar essa mensagem e ele retornará assim que possível. Tenha um ótimo dia!"
+1. **Saudação e Identificação**: Atenda com tom cortês, identificando-se imediatamente.
+   * Exemplo: "Olá, [contact_name], tudo bem? Aqui é a assistente virtual do [session_name]. Ele não pode atender no momento, como posso te ajudar?"
+2. **Escuta Ativa e Triagem**: Ouça a solicitação do cliente com atenção sem interromper.
+3. **Coleta Objetiva**: Se necessário registrar um recado, faça perguntas diretas:
+   * "Você poderia me informar o assunto principal do recado?"
+   * "Há algum prazo ou urgência para este retorno?"
+4. **Confirmação e Permanência na Linha**:
+   * Confirme verbalmente que o recado foi registrado.
+   * **REGRA OBRIGATÓRIA**: NUNCA se despeça diretamente. PERGUNTE SEMPRE: "Há mais alguma coisa em que eu possa te ajudar agora?"
+
+---
 
 ## Comportamento: Fazendo Ligações (Outbound)
-1. Identificação e Validação: Ao ser atendida, verifique se está falando com a pessoa correta e apresente-se imediatamente.
-   * Exemplo: "Olá, falo com o [Nome da Pessoa]? Aqui é a assistente virtual do [session_name], estou ligando a pedido dele, tudo bem?"
-2. Direto ao Ponto: Informe o motivo da ligação de forma clara e objetiva com base nas instruções recebidas.
-3. Interação e Coleta: Repasse a mensagem ou faça a pergunta designada, aguardando pacientemente a resposta do interlocutor para transcrição/registro.
-4. Encerramento: Agradeça o tempo da pessoa e despeça-se de forma cordial e profissional.
+1. **Identificação e Confirmação**: Verifique se está falando com a pessoa certa e apresente-se.
+   * Exemplo: "Olá, falo com [contact_name]? Aqui é a assistente virtual do [session_name], estou te ligando a pedido dele, tudo bem?"
+2. **Mensagem Principal**: Transmita o recado ou pergunta de forma clara, breve e objetiva.
+3. **Aguardar Resposta**: Deixe o interlocutor responder completamente antes de continuar.
+4. **Confirmação de Encerramento**:
+   * Após transmitir a mensagem ou executar uma ação, PERGUNTE SEMPRE: "Ficou alguma dúvida ou posso te ajudar com algo mais?"
+   * Somente se despeça e use a ferramenta \`hangup\` se a pessoa responder que não precisa de mais nada.
 
-## Diretrizes de Voz e Tom (Crucial para TTS/STT)
-* Tom: Profissional, prestativo, claro e objetivo. Evite informalidade excessiva, mas seja amigável.
-* Concisão: Evite monólogos. Como é uma interação de voz telefônica, mantenha suas respostas em no máximo 2 a 3 frases curtas por turno.
-* Pausas Naturais: Interaja com um ritmo natural, não interrompa o usuário e aguarde ele concluir o raciocínio antes de responder.
-* Tratamento de Falhas (Falta de Entendimento): Se a transcrição de voz falhar ou você não entender o contexto, não invente informações.
-   * Exemplo: "Desculpe, a ligação falhou um pouco e eu não entendi. Você pode repetir, por favor?"`,
+---
+
+## Diretrizes Estritas de Voz e Sintonia (TTS/STT / Realtime)
+* **Formato Telefônico Natural**: Fale em frases curtas (no máximo 2 a 3 frases por turno). Evite monólogos longos.
+* **Leitura de Dados por Voz**: NUNCA soletre links (HTTP/HTTPS), chaves PIX longas ou códigos de barras verbalmente. Em vez disso, diga que enviou esses dados por escrito no WhatsApp usando a ferramenta \`send_message\`.
+* **Sem Símbolos Técnicos**: Não leia asteriscos, hashtags ou formatação de texto. Fale naturally como em um telefonema real.
+* **Tratamento de Ruído ou Falhas**: Se a voz falhar ou o áudio ficar confuso, diga educadamente:
+   * "Desculpe, deu uma pequena falha na ligação e não consegui te ouvir bem. Você pode repetir, por favor?"
+
+---
+
+## Uso de Ferramentas e Manutenção da Chamada
+* **Regra Anti-Desligamento**: Jamais chame a ferramenta \`hangup\` ou diga "tchau" imediatamente após executar \`send_message\`, \`web_search\`, \`x_search\`, \`schedule_call\` ou \`open_ticket\`.
+* **Permanência na Linha**: Após qualquer ação, informe o resultado e pergunte se o cliente precisa de mais algum auxílio. A ferramenta \`hangup\` é reservada exclusivamente para quando o atendimento estiver totalmente concluído com a permissão do cliente.`,
   serverSideAI: false,
   autoAnswer: false,
   autoAnswerDelay: 0,
@@ -89,6 +105,7 @@ export const AIDialog = ({ sid }: { sid: string }) => {
   // Estados do formulário da IA
   const [config, setConfig] = useState<AIConfig>({ ...defaultConfig });
   const [schedules, setSchedules] = useState<ScheduledCall[]>([]);
+  const [aiProviders, setAiProviders] = useState<AIProviderConfig[]>([]);
 
   // Estados para nova ligação agendada
   const [newPhone, setNewPhone] = useState("");
@@ -97,6 +114,7 @@ export const AIDialog = ({ sid }: { sid: string }) => {
   useEffect(() => {
     if (!open) return;
     setBusy(true);
+    getAIProviders().then((res) => setAiProviders(res.providers || [])).catch(() => {});
     getAIConfig(sid)
       .then((r) => {
         setEnabled(r.enabled);
@@ -254,16 +272,85 @@ export const AIDialog = ({ sid }: { sid: string }) => {
         <div className="py-4 space-y-4 max-h-[380px] overflow-y-auto pr-1">
           {tab === "config" ? (
             <div className="space-y-4">
-              {/* Gemini API Key */}
-              <div className="space-y-1.5">
-                <Label htmlFor="apiKey">Gemini API Key</Label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="Insira sua chave de API Gemini Live"
-                  value={config.geminiApiKey}
-                  onChange={(e) => setConfig({ ...config, geminiApiKey: e.target.value })}
-                />
+              {/* Provedor & Modelo de IA */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="provider">Provedor de IA Cadastrado</Label>
+                  <select
+                    id="provider"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-medium"
+                    value={config.provider || "grok"}
+                    onChange={(e) => {
+                      const pKey = e.target.value;
+                      const targetProv = aiProviders.find((p) => p.provider === pKey);
+                      const defaultMod = targetProv?.defaultModel || (pKey === "gemini" ? "gemini-3.1-flash-live-preview" : pKey === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest");
+                      let defaultVoice = "eve";
+                      if (pKey === "gemini") defaultVoice = "Puck";
+                      if (pKey === "openai") defaultVoice = "alloy";
+                      setConfig({ ...config, provider: pKey, modelName: defaultMod, voiceName: defaultVoice });
+                    }}
+                  >
+                    {aiProviders.filter((p) => p.enabled && p.hasKey).length > 0 ? (
+                      aiProviders.filter((p) => p.enabled && p.hasKey).map((p) => (
+                        <option key={p.provider} value={p.provider}>
+                          {p.name}
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="grok">xAI Grok Live (Requer Chave)</option>
+                        <option value="gemini">Google Gemini Live (Requer Chave)</option>
+                        <option value="openai">OpenAI GPT Live (Requer Chave)</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="modelName">Modelo de Voz</Label>
+                  <select
+                    id="modelName"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={config.modelName || (config.provider === "gemini" ? "gemini-3.1-flash-live-preview" : config.provider === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest")}
+                    onChange={(e) => setConfig({ ...config, modelName: e.target.value })}
+                  >
+                    {(() => {
+                      const provKey = config.provider || "grok";
+                      const provConfig = aiProviders.find((p) => p.provider === provKey);
+                      if (provConfig && provConfig.availableModels.length > 0) {
+                        return provConfig.availableModels.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} ({m.id})
+                          </option>
+                        ));
+                      }
+                      if (provKey === "gemini") {
+                        return (
+                          <>
+                            <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview</option>
+                            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
+                          </>
+                        );
+                      }
+                      if (provKey === "openai") {
+                        return (
+                          <>
+                            <option value="gpt-4o-realtime-preview">GPT-4o Realtime</option>
+                            <option value="gpt-4o-mini-realtime-preview">GPT-4o Mini Realtime</option>
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <option value="grok-voice-latest">Grok Voice Latest</option>
+                          <option value="grok-voice-think-fast-2.0">Grok Voice Think Fast 2.0</option>
+                          <option value="grok-voice-think-fast-1.0">Grok Voice Think Fast 1.0</option>
+                        </>
+                      );
+                    })()}
+                  </select>
+                </div>
               </div>
 
               {/* Voz e Idioma */}
@@ -276,11 +363,30 @@ export const AIDialog = ({ sid }: { sid: string }) => {
                     value={config.voiceName}
                     onChange={(e) => setConfig({ ...config, voiceName: e.target.value })}
                   >
-                    <option value="Puck">Puck (Masculina suave)</option>
-                    <option value="Charon">Charon (Masculina grave)</option>
-                    <option value="Kore">Kore (Feminina jovem)</option>
-                    <option value="Fenrir">Fenrir (Masculina firme)</option>
-                    <option value="Aoede">Aoede (Feminina expressiva)</option>
+                    {config.provider === "grok" ? (
+                      <>
+                        <option value="eve">Eve (Feminina expressiva)</option>
+                        <option value="adam">Adam (Masculino profissional)</option>
+                        <option value="nova">Nova (Feminina jovem)</option>
+                      </>
+                    ) : config.provider === "openai" ? (
+                      <>
+                        <option value="alloy">Alloy (Neutro equilibrado)</option>
+                        <option value="echo">Echo (Masculino caloroso)</option>
+                        <option value="shimmer">Shimmer (Feminino claro)</option>
+                        <option value="fable">Fable (Expressivo)</option>
+                        <option value="onyx">Onyx (Masculino grave)</option>
+                        <option value="nova">Nova (Feminina jovem)</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Puck">Puck (Masculina suave)</option>
+                        <option value="Charon">Charon (Masculina grave)</option>
+                        <option value="Kore">Kore (Feminina jovem)</option>
+                        <option value="Fenrir">Fenrir (Masculina firme)</option>
+                        <option value="Aoede">Aoede (Feminina expressiva)</option>
+                      </>
+                    )}
                   </select>
                 </div>
 

@@ -123,6 +123,21 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	// Criar índice para buscas rápidas por sessão e chamada
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_call_transcripts_session_call ON call_transcripts(session_id, call_id)`)
 
+	// Tabela de Provedores de IA (Gemini, Grok xAI, OpenAI GPT) com chaves criptografadas
+	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS ai_providers (
+		project_id        TEXT NOT NULL DEFAULT 'default',
+		provider          TEXT NOT NULL,
+		encrypted_api_key TEXT NOT NULL DEFAULT '',
+		enabled           BOOLEAN NOT NULL DEFAULT FALSE,
+		default_model     TEXT NOT NULL DEFAULT '',
+		options_json      TEXT NOT NULL DEFAULT '{}',
+		updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (project_id, provider)
+	)`)
+	if err != nil {
+		return nil, fmt.Errorf("criar tabela ai_providers: %w", err)
+	}
+
 	// Histórico de chamadas persistido
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS call_history (
 		session_id    TEXT NOT NULL,
@@ -1259,4 +1274,75 @@ func (s *sessionStore) getContactByPhone(ctx context.Context, sessionID string, 
 func (s *sessionStore) deleteContact(ctx context.Context, sessionID string, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM contacts WHERE session_id = $1 AND id = $2`, sessionID, id)
 	return err
+}
+
+type aiProviderRow struct {
+	ProjectID       string
+	Provider        string
+	EncryptedAPIKey string
+	Enabled         bool
+	DefaultModel    string
+	OptionsJSON     string
+	UpdatedAt       time.Time
+}
+
+func (s *sessionStore) getAIProvider(ctx context.Context, projectID, provider string) (*aiProviderRow, error) {
+	if projectID == "" {
+		projectID = "default"
+	}
+	r := &aiProviderRow{}
+	err := s.db.QueryRowContext(ctx, `
+		SELECT project_id, provider, encrypted_api_key, enabled, default_model, options_json, updated_at
+		FROM ai_providers WHERE project_id = $1 AND provider = $2
+	`, projectID, provider).Scan(
+		&r.ProjectID, &r.Provider, &r.EncryptedAPIKey, &r.Enabled, &r.DefaultModel, &r.OptionsJSON, &r.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (s *sessionStore) upsertAIProvider(ctx context.Context, r aiProviderRow) error {
+	if r.ProjectID == "" {
+		r.ProjectID = "default"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO ai_providers (project_id, provider, encrypted_api_key, enabled, default_model, options_json, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now())
+		ON CONFLICT (project_id, provider) DO UPDATE SET
+			encrypted_api_key = EXCLUDED.encrypted_api_key,
+			enabled = EXCLUDED.enabled,
+			default_model = EXCLUDED.default_model,
+			options_json = EXCLUDED.options_json,
+			updated_at = now()
+	`, r.ProjectID, r.Provider, r.EncryptedAPIKey, r.Enabled, r.DefaultModel, r.OptionsJSON)
+	return err
+}
+
+func (s *sessionStore) listAIProviders(ctx context.Context, projectID string) ([]aiProviderRow, error) {
+	if projectID == "" {
+		projectID = "default"
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT project_id, provider, encrypted_api_key, enabled, default_model, options_json, updated_at
+		FROM ai_providers WHERE project_id = $1 ORDER BY provider
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []aiProviderRow
+	for rows.Next() {
+		var r aiProviderRow
+		if err := rows.Scan(&r.ProjectID, &r.Provider, &r.EncryptedAPIKey, &r.Enabled, &r.DefaultModel, &r.OptionsJSON, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }

@@ -95,7 +95,9 @@ func (s *Session) setAIConfig(c AIConfig) {
 func (s *Session) getAIConfig() AIConfig {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.aiConfig
+	cfg := s.aiConfig
+	resolveAIConfigKeys(context.Background(), s.mgr.store, s.projectID, &cfg)
+	return cfg
 }
 
 func newSession(mgr *SessionManager, id, name, projectID, apiKey string, client *whatsmeow.Client) *Session {
@@ -474,6 +476,7 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 
 	// Auto-atendimento server-side: aceita e acopla IA automaticamente
 	config := s.getAIConfig()
+	resolveAIConfigKeys(context.Background(), s.mgr.store, s.projectID, &config)
 	if config.ServerSideAI && config.AutoAnswer && config.GeminiAPIKey != "" {
 		s.log.Info("[ServerAI] Agendando auto-atendimento", "callId", callID, "peer", evt.From.String(), "delay", config.AutoAnswerDelay)
 

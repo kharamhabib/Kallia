@@ -101,9 +101,14 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{sid}/agents/{agentId}/set-active", s.handleSetActiveAgent)
 	mux.HandleFunc("POST /api/sessions/{sid}/calls/{callId}/transfer-agent", s.handleTransferCallAgent)
 
-	// Proxy do Gemini (a API key nunca sai do servidor: o navegador conecta aqui)
+	// Configurações Globais de Provedores de IA (Gemini, Grok xAI, OpenAI GPT)
+	mux.HandleFunc("GET /api/ai-providers", s.handleListAIProviders)
+	mux.HandleFunc("POST /api/ai-providers/{provider}", s.handleUpdateAIProvider)
+
+	// Proxy do Gemini e do Grok (as API keys nunca saem do servidor)
 	mux.HandleFunc("GET /api/sessions/{sid}/gemini/ws", s.handleGeminiWS)
 	mux.HandleFunc("POST /api/sessions/{sid}/gemini/generateContent", s.handleGeminiGenerateContent)
+	mux.HandleFunc("GET /api/sessions/{sid}/grok/ws", s.handleGrokWS)
 
 	// Gravações de áudio e NPS
 	mux.HandleFunc("GET /api/sessions/{sid}/recordings/{callId}", s.handleGetCallRecording)
@@ -812,6 +817,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 	}
 	owner := clientID(r)
 	config := sess.getAIConfig()
+	resolveAIConfigKeys(r.Context(), sess.mgr.store, sess.projectID, &config)
 	isServerAI := body.AI && config.ServerSideAI && config.GeminiAPIKey != ""
 	if isServerAI {
 		owner = serverOwnerID
@@ -919,6 +925,7 @@ func (s *server) doAccept(sess *Session, w http.ResponseWriter, r *http.Request)
 
 	owner := clientID(r)
 	config := sess.getAIConfig()
+	resolveAIConfigKeys(r.Context(), sess.mgr.store, sess.projectID, &config)
 	isServerAI := body.AI && config.ServerSideAI && config.GeminiAPIKey != ""
 	if isServerAI {
 		owner = serverOwnerID

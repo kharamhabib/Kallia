@@ -39,9 +39,6 @@ func envInt(key, fallbackKey string, def int) int {
 }
 
 func loadDotEnv() {
-	if os.Getenv("KALLIA_PG_URL") != "" || os.Getenv("WACALLS_PG_URL") != "" {
-		return
-	}
 	paths := []string{".env", "../.env", "../../.env"}
 	for _, p := range paths {
 		data, err := os.ReadFile(p)

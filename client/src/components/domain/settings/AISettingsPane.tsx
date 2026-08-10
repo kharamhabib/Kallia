@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { Sparkles, Target, Bot, Plus, Trash2 } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Sparkles, Target, ShieldAlert, PhoneCall, Globe } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type { AIConfig } from "@/types/ai";
 import { Switch } from "@/components/ui/Switch";
 import { listAgents, type Agent } from "@/services/agents";
+import { getAIProviders, type AIProviderConfig } from "@/services/aiProviders";
 
 interface AISettingsPaneProps {
   config: AIConfig;
@@ -18,32 +18,44 @@ interface AISettingsPaneProps {
 export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPaneProps) => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentToAdd, setSelectedAgentToAdd] = useState<string>("");
-  const isFirstUtteranceActive = !!(config.firstUtterance && config.firstUtterance.trim() !== "");
+  const [aiProviders, setAiProviders] = useState<AIProviderConfig[]>([]);
+  const [loadingProviders, setLoadingProviders] = useState(true);
+
   const isSpecialistTransferEnabled = config.enableSpecialistTransfer ?? true;
 
   useEffect(() => {
+    getAIProviders()
+      .then((res) => {
+        setAiProviders(res.providers || []);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingProviders(false));
+
     if (sid) {
-      listAgents(sid).then((res) => {
-        setAgents(res);
-        // Se ainda não houver filtro definido (undefined), inicializa com todos os especialistas disponíveis
-        if (config.allowedSpecialistIds === undefined) {
-          const defaultSpecIds = res.filter((a) => !a.inbound && !a.outbound).map((a) => a.id);
-          onChange({ ...config, allowedSpecialistIds: defaultSpecIds });
-        }
-      }).catch(() => {});
+      listAgents(sid)
+        .then((res) => {
+          setAgents(res);
+          if (config.allowedSpecialistIds === undefined) {
+            const defaultSpecIds = res.filter((a) => !a.inbound && !a.outbound).map((a) => a.id);
+            onChange({ ...config, allowedSpecialistIds: defaultSpecIds });
+          }
+        })
+        .catch(() => {});
     }
   }, [sid]);
 
-  // Todos os agentes especialistas da conexão (que não são Principal Inbound/Outbound)
+  // Provedores efetivamente configurados com API key ativa no banco
+  const activeProviders = aiProviders.filter((p) => p.enabled && p.hasKey);
+
+  // Provedor selecionado no config ou fallback inteligente para o primeiro ativo
+  const currentProviderKey = config.provider || (activeProviders[0]?.provider ?? "grok");
+
+  // Dados do provedor selecionado
+  const currentProviderConfig = aiProviders.find((p) => p.provider === currentProviderKey);
+
   const availableSpecialists = agents.filter((a) => !a.inbound && !a.outbound);
-
-  // Lista dos IDs atualmente selecionados/permitidos para transferência
   const allowedIds = config.allowedSpecialistIds || [];
-
-  // Agentes que o usuário efetivamente adicionou para a transferência
   const activeSpecialists = availableSpecialists.filter((a) => allowedIds.includes(a.id));
-
-  // Agentes ainda não adicionados
   const unaddedSpecialists = availableSpecialists.filter((a) => !allowedIds.includes(a.id));
 
   const handleAddSpecialist = () => {
@@ -58,33 +70,117 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
     onChange({ ...config, allowedSpecialistIds: nextIds });
   };
 
+  const handleProviderChange = (pKey: string) => {
+    const targetProv = aiProviders.find((p) => p.provider === pKey);
+    const defaultMod = targetProv?.defaultModel || (pKey === "gemini" ? "gemini-3.1-flash-live-preview" : pKey === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest");
+    let defaultVoice = "eve";
+    if (pKey === "gemini") defaultVoice = "Puck";
+    if (pKey === "openai") defaultVoice = "alloy";
+
+    onChange({
+      ...config,
+      provider: pKey,
+      modelName: defaultMod,
+      voiceName: defaultVoice,
+    });
+  };
+
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Status indicator */}
       <div className="flex items-center gap-2 px-1">
-        <Sparkles className="h-4 w-4 text-warning-text fill-warning/20" />
-        <span className="text-sm font-medium">
-          Integração de Voz IA (Gemini Live)
-        </span>
-        <span className={`ml-auto text-xs font-medium px-2 py-0.5 rounded-full ${
-          enabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-        }`}>
+        <Sparkles className="h-4 w-4 text-primary fill-primary/20" />
+        <span className="text-sm font-medium">Integração de Voz</span>
+        <span
+          className={`ml-auto text-xs font-medium px-2 py-0.5 rounded-full ${
+            enabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+          }`}
+        >
           {enabled ? "Ativa" : "Inativa"}
         </span>
       </div>
 
-      {/* API Key */}
+      {/* Se nenhum provedor estiver configurado nas Configurações Gerais */}
+      {!loadingProviders && activeProviders.length === 0 && (
+        <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 flex items-start gap-3">
+          <ShieldAlert className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-xs font-semibold">Nenhum Provedor de IA de Voz Configurado</p>
+            <p className="text-xs text-muted-foreground">
+              Para utilizar a integração de voz nos agentes, cadastre a API Key de pelo menos um provedor (xAI Grok, Google Gemini ou OpenAI) na aba <strong>Configurações &gt; Provedores de IA</strong>.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Provedores & Modelos */}
       <Card className="card-premium">
         <CardContent className="p-4 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="apiKey">Gemini API Key</Label>
-            <Input
-              id="apiKey"
-              type="password"
-              placeholder="Insira sua chave de API Gemini Live"
-              value={config.geminiApiKey}
-              onChange={(e) => onChange({ ...config, geminiApiKey: e.target.value })}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="provider">Provedor de IA Cadastrado</Label>
+              <select
+                id="provider"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-medium"
+                value={currentProviderKey}
+                onChange={(e) => handleProviderChange(e.target.value)}
+              >
+                {activeProviders.length > 0 ? (
+                  activeProviders.map((p) => (
+                    <option key={p.provider} value={p.provider}>
+                      {p.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="grok">xAI Grok Live (Requer Chave)</option>
+                    <option value="gemini">Google Gemini Live (Requer Chave)</option>
+                    <option value="openai">OpenAI GPT Live (Requer Chave)</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="modelName">Modelo de Voz</Label>
+              <select
+                id="modelName"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={config.modelName || currentProviderConfig?.defaultModel || "grok-voice-latest"}
+                onChange={(e) => onChange({ ...config, modelName: e.target.value })}
+              >
+                {currentProviderConfig && currentProviderConfig.availableModels.length > 0 ? (
+                  currentProviderConfig.availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} ({m.id})
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    {currentProviderKey === "gemini" && (
+                      <>
+                        <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview</option>
+                        <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
+                      </>
+                    )}
+                    {currentProviderKey === "openai" && (
+                      <>
+                        <option value="gpt-4o-realtime-preview">GPT-4o Realtime</option>
+                        <option value="gpt-4o-mini-realtime-preview">GPT-4o Mini Realtime</option>
+                      </>
+                    )}
+                    {currentProviderKey === "grok" && (
+                      <>
+                        <option value="grok-voice-latest">Grok Voice Latest</option>
+                        <option value="grok-voice-think-fast-2.0">Grok Voice Think Fast 2.0</option>
+                        <option value="grok-voice-think-fast-1.0">Grok Voice Think Fast 1.0</option>
+                      </>
+                    )}
+                  </>
+                )}
+              </select>
+            </div>
           </div>
 
           {/* Voice & Language */}
@@ -97,11 +193,53 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
                 value={config.voiceName}
                 onChange={(e) => onChange({ ...config, voiceName: e.target.value })}
               >
-                <option value="Puck">Puck (Masculina suave)</option>
-                <option value="Charon">Charon (Masculina grave)</option>
-                <option value="Kore">Kore (Feminina jovem)</option>
-                <option value="Fenrir">Fenrir (Masculina firme)</option>
-                <option value="Aoede">Aoede (Feminina expressiva)</option>
+                {currentProviderKey === "grok" ? (
+                  <>
+                    <option value="eve">Eve ⭐ (Feminina expressiva — Recomendada pt-BR)</option>
+                    <option value="sal">Sal ⭐ (Neutro equilibrado — Recomendada pt-BR)</option>
+                    <option value="ara">Ara (Feminina clara)</option>
+                    <option value="carina">Carina (Feminina suave)</option>
+                    <option value="luna">Luna (Feminina jovem)</option>
+                    <option value="iris">Iris (Feminina elegante)</option>
+                    <option value="celeste">Celeste (Feminina serena)</option>
+                    <option value="ursa">Ursa (Feminina marcante)</option>
+                    <option value="zagan">Zagan (Masculino grave)</option>
+                    <option value="helix">Helix (Masculino moderno)</option>
+                    <option value="orion">Orion (Masculino firme)</option>
+                    <option value="altair">Altair (Masculino técnico)</option>
+                    <option value="zenith">Zenith (Masculino refinado)</option>
+                    <option value="perseus">Perseus (Masculino forte)</option>
+                    <option value="helios">Helios (Masculino vibrante)</option>
+                    <option value="kepler">Kepler (Masculino calmo)</option>
+                    <option value="rigel">Rigel (Masculino formal)</option>
+                    <option value="sirius">Sirius (Masculino confiante)</option>
+                    <option value="castor">Castor (Masculino articulado)</option>
+                    <option value="naksh">Naksh (Masculino dinâmico)</option>
+                    <option value="atlas">Atlas (Masculino autoritário)</option>
+                    <option value="leo">Leo (Masculino jovem)</option>
+                    <option value="rex">Rex (Masculino firme)</option>
+                    <option value="lux">Lux (Neutro brilhante)</option>
+                    <option value="cosmo">Cosmo (Neutro amigável)</option>
+                    <option value="lumen">Lumen (Neutro claro)</option>
+                  </>
+                ) : currentProviderKey === "openai" ? (
+                  <>
+                    <option value="alloy">Alloy (Neutro equilibrado)</option>
+                    <option value="echo">Echo (Masculino caloroso)</option>
+                    <option value="shimmer">Shimmer (Feminino claro)</option>
+                    <option value="fable">Fable (Expressivo)</option>
+                    <option value="onyx">Onyx (Masculino grave)</option>
+                    <option value="nova">Nova (Feminina jovem)</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="Puck">Puck (Masculina suave)</option>
+                    <option value="Charon">Charon (Masculina grave)</option>
+                    <option value="Kore">Kore (Feminina jovem)</option>
+                    <option value="Fenrir">Fenrir (Masculina firme)</option>
+                    <option value="Aoede">Aoede (Feminina expressiva)</option>
+                  </>
+                )}
               </select>
             </div>
             <div className="space-y-1.5">
@@ -112,10 +250,269 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
                 value={config.languageCode}
                 onChange={(e) => onChange({ ...config, languageCode: e.target.value })}
               >
-                <option value="pt-BR">Português (pt-BR)</option>
+                <option value="pt-BR">Português Brasil (pt-BR)</option>
+                <option value="pt-PT">Português Portugal (pt-PT)</option>
                 <option value="en-US">Inglês (en-US)</option>
-                <option value="es-ES">Espanhol (es-ES)</option>
+                <option value="es-ES">Espanhol Espanha (es-ES)</option>
+                <option value="es-MX">Espanhol México (es-MX)</option>
+                <option value="fr">Francês (fr)</option>
+                <option value="de">Alemão (de)</option>
+                <option value="it">Italiano (it)</option>
+                <option value="ja">Japonês (ja)</option>
+                <option value="ko">Coreano (ko)</option>
+                <option value="zh">Chinês (zh)</option>
+                <option value="auto">Detecção Automática</option>
               </select>
+            </div>
+          </div>
+
+          {/* Ferramentas Nativas & Configurações xAI Grok */}
+          {currentProviderKey === "grok" && (
+            <div className="space-y-3.5 rounded-xl border border-primary/25 bg-primary/5 p-4 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-primary" />
+                <h4 className="font-semibold text-sm text-foreground">
+                  Recursos Avançados da xAI (Grok Realtime)
+                </h4>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Configure o nível de raciocínio e as ferramentas nativas de busca do Grok em tempo real.
+              </p>
+
+              <div className="space-y-3.5 pt-2 border-t border-primary/10">
+                {/* Reasoning Effort Selector */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="grokReasoningEffort" className="text-xs font-semibold">
+                    Nível de Raciocínio (Reasoning Effort)
+                  </Label>
+                  <select
+                    id="grokReasoningEffort"
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-medium"
+                    value={config.grokReasoningEffort || "high"}
+                    onChange={(e) => onChange({ ...config, grokReasoningEffort: e.target.value })}
+                  >
+                    <option value="high">🧠 Alta Precisão & Raciocínio (high - Recomendado)</option>
+                    <option value="none">⚡ Resposta Ultrarrápida / Sem Raciocínio (none)</option>
+                  </select>
+                  <p className="text-[11px] text-muted-foreground">
+                    'high' ativa a reflexão profunda antes de responder. 'none' reduz a latência ao mínimo para respostas instantâneas.
+                  </p>
+                </div>
+
+                {/* Output Speed Slider */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="grokOutputSpeed" className="text-xs font-semibold">
+                    🎙️ Velocidade da Fala ({(config.grokOutputSpeed || 1.0).toFixed(1)}x)
+                  </Label>
+                  <input
+                    id="grokOutputSpeed"
+                    type="range"
+                    min="0.7"
+                    max="1.5"
+                    step="0.1"
+                    value={config.grokOutputSpeed || 1.0}
+                    onChange={(e) => onChange({ ...config, grokOutputSpeed: parseFloat(e.target.value) })}
+                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span>0.7x (Lento)</span>
+                    <span>1.0x (Normal)</span>
+                    <span>1.5x (Rápido)</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="enableGrokWebSearch" className="cursor-pointer text-xs font-semibold">
+                      🌐 Pesquisa e Navegação Web (Web Search)
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Permite que o robô pesquise na internet em tempo real para responder dados atualizados.
+                    </p>
+                  </div>
+                  <Switch
+                    id="enableGrokWebSearch"
+                    checked={config.enableGrokWebSearch ?? true}
+                    onChange={(v) => onChange({ ...config, enableGrokWebSearch: v })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="enableGrokXSearch" className="cursor-pointer text-xs font-semibold">
+                      🐦 Pesquisa no X / ex-Twitter (X Search)
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      Permite que o robô busque postagens, tendências e notícias atualizadas na rede social X.
+                    </p>
+                  </div>
+                  <Switch
+                    id="enableGrokXSearch"
+                    checked={config.enableGrokXSearch ?? true}
+                    onChange={(v) => onChange({ ...config, enableGrokXSearch: v })}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+          {/* Parâmetros de Conversação */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border/50">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="temperature" className="text-xs font-semibold">
+                  Temperatura ({config.temperature ?? 1.1})
+                </Label>
+              </div>
+              <input
+                id="temperature"
+                type="range"
+                min={0}
+                max={2}
+                step={0.1}
+                value={config.temperature ?? 1.1}
+                onChange={(e) => onChange({ ...config, temperature: parseFloat(e.target.value) })}
+                className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="maxDurationMin" className="text-xs font-semibold">
+                Duração Máxima (Minutos)
+              </Label>
+              <input
+                id="maxDurationMin"
+                type="number"
+                min="1"
+                max="60"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={config.maxDurationMin ?? 5}
+                onChange={(e) => onChange({ ...config, maxDurationMin: parseInt(e.target.value) || 5 })}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="firstUtteranceToggle" className="cursor-pointer font-semibold text-sm">
+                  IA fala primeiro ao atender
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Se ativado, a IA iniciará a conversa com uma saudação. Se desativado, a IA aguardará a pessoa falar primeiro.
+                </p>
+              </div>
+              <Switch
+                id="firstUtteranceToggle"
+                checked={!!config.firstUtterance}
+                onChange={(checked) => onChange({ ...config, firstUtterance: checked ? "Olá! Como posso ajudar?" : "" })}
+              />
+            </div>
+            {!!config.firstUtterance && (
+              <div className="pt-1 animate-fade-in">
+                <input
+                  type="text"
+                  placeholder="Digite a mensagem de saudação inicial..."
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={config.firstUtterance}
+                  onChange={(e) => onChange({ ...config, firstUtterance: e.target.value })}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Comportamento */}
+          <div className="space-y-3.5 rounded-xl border bg-muted/15 p-4 border-border/50">
+            <h4 className="font-semibold text-sm flex items-center gap-1.5 text-foreground">
+              <PhoneCall className="h-4 w-4 text-primary" />
+              Comportamento do Atendimento
+            </h4>
+
+            <div className="space-y-3.5 divide-y divide-border/40">
+              <div className="flex items-center justify-between pt-1">
+                <div className="space-y-0.5">
+                  <Label htmlFor="serverSideAI" className="cursor-pointer font-medium text-sm">
+                    IA Autônoma no Servidor
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    O servidor gerencia IA e agendamentos sem necessidade do navegador aberto
+                  </p>
+                </div>
+                <Switch
+                  id="serverSideAI"
+                  checked={config.serverSideAI ?? true}
+                  onChange={(v) => onChange({ ...config, serverSideAI: v })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="autoAnswer" className="cursor-pointer font-medium text-sm">
+                    Atendimento Automático
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Atender ligações de voz recebidas pela IA
+                  </p>
+                </div>
+                <Switch
+                  id="autoAnswer"
+                  checked={config.autoAnswer ?? true}
+                  onChange={(v) => onChange({ ...config, autoAnswer: v })}
+                />
+              </div>
+
+              {(config.autoAnswer ?? true) && (
+                <div className="space-y-2 border-l-2 border-primary/30 pl-4 py-2 mt-2 bg-background/40 rounded-r-lg">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Tempo de toque antes de atender
+                    </Label>
+                    <span className="text-xs font-bold text-primary">
+                      {config.autoAnswerDelay === 0 ? "Imediatamente" : `${config.autoAnswerDelay ?? 9}s`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={config.autoAnswerDelay ?? 9}
+                    onChange={(e) => onChange({ ...config, autoAnswerDelay: parseInt(e.target.value) || 0 })}
+                    className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="silenceOperator" className="cursor-pointer font-medium text-sm">
+                    Modo Silencioso do Operador
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Mutar reprodução de áudio no seu navegador
+                  </p>
+                </div>
+                <Switch
+                  id="silenceOperator"
+                  checked={config.silenceOperator ?? false}
+                  onChange={(v) => onChange({ ...config, silenceOperator: v })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3">
+                <div className="space-y-0.5">
+                  <Label htmlFor="transcribeAudio" className="cursor-pointer font-medium text-sm">
+                    Transcrição em Tempo Real
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Transcrever diálogos de áudio em texto
+                  </p>
+                </div>
+                <Switch
+                  id="transcribeAudio"
+                  checked={config.transcribeAudio ?? true}
+                  onChange={(v) => onChange({ ...config, transcribeAudio: v })}
+                />
+              </div>
             </div>
           </div>
 
@@ -159,208 +556,50 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
                   <Button
                     type="button"
                     size="sm"
-                    className="h-9 gap-1.5 text-xs rounded-md shrink-0"
-                    disabled={!selectedAgentToAdd}
                     onClick={handleAddSpecialist}
+                    disabled={!selectedAgentToAdd}
+                    className="h-9 gap-1 text-xs font-semibold px-4"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Adicionar Especialista</span>
+                    Adicionar
                   </Button>
                 </div>
 
-                {availableSpecialists.length === 0 && (
-                  <div className="rounded-lg border border-dashed bg-background/60 p-3.5 text-center space-y-1">
-                    <p className="text-xs text-muted-foreground">
-                      Nenhum agente especialista encontrado nesta conexão.
-                    </p>
-                    <p className="text-[11px] text-muted-foreground/80">
-                      Crie agentes com descrições específicas na aba <strong>"Agentes IA"</strong> para adicioná-los aqui.
-                    </p>
-                  </div>
-                )}
-
-                {activeSpecialists.length === 0 && availableSpecialists.length > 0 && (
-                  <div className="rounded-lg border border-dashed bg-background/60 p-3.5 text-center space-y-1">
-                    <p className="text-xs text-muted-foreground font-semibold">
-                      Nenhum especialista ativado para esta conexão.
-                    </p>
-                    <p className="text-[11px] text-muted-foreground/80">
-                      Selecione um agente no menu acima e clique em <strong>"Adicionar Especialista"</strong>.
-                    </p>
-                  </div>
-                )}
-
-                {activeSpecialists.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      Especialistas Ativos para Transferência ({activeSpecialists.length})
-                    </p>
-                    {activeSpecialists.map((ag) => (
-                      <div key={ag.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-card text-xs shadow-2xs">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0 font-bold mt-0.5">
-                            <Bot className="h-4 w-4" />
-                          </div>
-                          <div className="space-y-0.5 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-foreground truncate">{ag.name}</span>
-                              <span className="bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0">
-                                Ativo
-                              </span>
-                            </div>
-                            <p className="text-muted-foreground text-[11px] line-clamp-2">
-                              {ag.description || "Sem descrição (edite o agente na aba 'Agentes IA' para definir sua especialidade)."}
-                            </p>
-                          </div>
-                        </div>
-
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0 text-destructive hover:bg-destructive/10"
-                          onClick={() => handleRemoveSpecialist(ag.id)}
-                          title="Remover especialista das regras de transferência"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* First Utterance Toggle */}
-          <div className="space-y-3 rounded-xl border bg-muted/20 p-3.5">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label htmlFor="firstUtteranceToggle" className="text-sm font-medium cursor-pointer">
-                  IA fala primeiro ao atender
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Se ativado, a IA iniciará a conversa com uma saudação. Se desativado, a IA aguardará a pessoa falar primeiro.
-                </p>
-              </div>
-              <Switch
-                id="firstUtteranceToggle"
-                checked={isFirstUtteranceActive}
-                onChange={(checked) => {
-                  if (checked) {
-                    onChange({
-                      ...config,
-                      firstUtterance: config.firstUtterance || "Alô? Boa tarde, sou a assistente virtual e estou ligando...",
-                    });
-                  } else {
-                    onChange({ ...config, firstUtterance: "" });
-                  }
-                }}
-              />
-            </div>
-
-            {isFirstUtteranceActive && (
-              <div className="space-y-1.5 pt-2 border-t border-border/50 animate-fade-in">
-                <Label htmlFor="firstUtteranceText" className="text-xs font-semibold text-muted-foreground">
-                  Mensagem da Primeira Fala
-                </Label>
-                <textarea
-                  id="firstUtteranceText"
-                  rows={2}
-                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
-                  placeholder="Ex: Alô? Boa tarde, sou a assistente virtual e estou ligando..."
-                  value={config.firstUtterance}
-                  onChange={(e) => onChange({ ...config, firstUtterance: e.target.value })}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Temperature & Duration */}
-          <div className="grid grid-cols-2 gap-3 items-center">
-            <div className="space-y-1.5">
-              <Label htmlFor="temp">Temperatura ({config.temperature ?? 1.0})</Label>
-              <input
-                id="temp"
-                type="range"
-                min="0.2"
-                max="1.8"
-                step="0.1"
-                className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                value={config.temperature ?? 1.0}
-                onChange={(e) => onChange({ ...config, temperature: parseFloat(e.target.value) })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="duration">Duração Máxima (Minutos)</Label>
-              <Input
-                id="duration"
-                type="number"
-                min="1"
-                max="60"
-                value={config.maxDurationMin ?? 15}
-                onChange={(e) => onChange({ ...config, maxDurationMin: parseInt(e.target.value) || 15 })}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Toggles */}
-      <Card className="card-premium">
-        <CardContent className="p-4 space-y-4">
-          <h3 className="text-sm font-semibold text-muted-foreground">
-            Comportamento
-          </h3>
-          <div className="space-y-3.5">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium cursor-pointer" htmlFor="serverSideAI">IA Autônoma no Servidor</Label>
-                <p className="text-xs text-muted-foreground">O servidor gerencia IA e agendamentos sem necessidade do navegador aberto</p>
-              </div>
-              <Switch id="serverSideAI" checked={config.serverSideAI} onChange={(v) => onChange({ ...config, serverSideAI: v })} />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium cursor-pointer" htmlFor="autoAnswer">Atendimento Automático</Label>
-                <p className="text-xs text-muted-foreground">Atender ligações de voz recebidas pela IA</p>
-              </div>
-              <Switch id="autoAnswer" checked={config.autoAnswer} onChange={(v) => onChange({ ...config, autoAnswer: v })} />
-            </div>
-
-            {config.autoAnswer && (
-              <div className="space-y-2 border-l-2 border-primary/20 pl-4 py-1">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-medium text-muted-foreground">Tempo de toque antes de atender</Label>
-                  <span className="text-xs font-semibold text-primary">
-                    {config.autoAnswerDelay === 0 ? "Imediatamente" : `${config.autoAnswerDelay}s`}
+                {/* Active Specialists List */}
+                <div className="space-y-1.5 pt-1">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Especialistas Autorizados para Transferência ({activeSpecialists.length})
                   </span>
+                  {activeSpecialists.length === 0 ? (
+                    <div className="p-3 text-center rounded-lg border border-dashed text-xs text-muted-foreground bg-background/50">
+                      Nenhum agente especialista adicionado. O robô principal não poderá realizar transferências.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {activeSpecialists.map((ag) => (
+                        <div
+                          key={ag.id}
+                          className="flex items-center justify-between p-2.5 rounded-lg border border-border/60 bg-background/80 shadow-2xs hover:border-primary/40 transition-colors"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-medium text-xs truncate text-foreground">{ag.name}</span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveSpecialist(ag.id)}
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            title="Remover especialista"
+                          >
+                            <ShieldAlert className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={60}
-                  step={1}
-                  value={config.autoAnswerDelay ?? 0}
-                  onChange={(e) => onChange({ ...config, autoAnswerDelay: parseInt(e.target.value) })}
-                  className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
-                />
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium cursor-pointer" htmlFor="silenceOperator">Modo Silencioso do Operador</Label>
-                <p className="text-xs text-muted-foreground">Mutar reprodução de áudio no seu navegador</p>
-              </div>
-              <Switch id="silenceOperator" checked={config.silenceOperator} onChange={(v) => onChange({ ...config, silenceOperator: v })} />
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium cursor-pointer" htmlFor="transcribeAudio">Transcrição em Tempo Real</Label>
-                <p className="text-xs text-muted-foreground">Transcrever diálogos de áudio em texto</p>
-              </div>
-              <Switch id="transcribeAudio" checked={config.transcribeAudio} onChange={(v) => onChange({ ...config, transcribeAudio: v })} />
-            </div>
           </div>
         </CardContent>
       </Card>

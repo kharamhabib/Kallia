@@ -637,3 +637,23 @@ func Downsample24to16(in []float32) []float32 {
 	}
 	return out
 }
+
+// Upsample16to24 reamostra áudio de 16kHz para 24kHz (ratio 2:3).
+func Upsample16to24(in []float32) []float32 {
+	if len(in) == 0 {
+		return nil
+	}
+	outLen := int(math.Floor(float64(len(in)) * 3.0 / 2.0))
+	out := make([]float32, outLen)
+	for i := 0; i < outLen; i++ {
+		srcPos := float64(i) * 2.0 / 3.0
+		idx := int(srcPos)
+		frac := float32(srcPos - float64(idx))
+		if idx+1 < len(in) {
+			out[i] = in[idx]*(1-frac) + in[idx+1]*frac
+		} else if idx < len(in) {
+			out[i] = in[idx]
+		}
+	}
+	return out
+}

@@ -25,6 +25,7 @@ import {
   type Agent,
 } from "@/services/agents";
 import { getAIConfig, setAIConfig } from "@/services/ai";
+import { getAIProviders, type AIProviderConfig } from "@/services/aiProviders";
 import type { AIConfig } from "@/types/ai";
 import { useAIAgents } from "@/stores/ai";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
@@ -34,8 +35,6 @@ import { AISettingsPane } from "@/components/domain/settings/AISettingsPane";
 import { ToolsSettingsPane } from "@/components/domain/settings/ToolsSettingsPane";
 import { PostCallSettingsPane } from "@/components/domain/settings/PostCallSettingsPane";
 import { FollowupSettingsPane } from "@/components/domain/settings/FollowupSettingsPane";
-
-const VOICES = ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Orbit", "Zephyr", "Leda"];
 
 const systemPromptTags: PromptTag[] = [
   { tag: "[today]", description: "Data e hora atual" },
@@ -51,24 +50,50 @@ const defaultConfig: AIConfig = {
   languageCode: "pt-BR",
   systemInstruction: `## Identidade e Papel
 Você é a assistente virtual de voz do [session_name].
-Sua principal função é atuar como uma secretária executiva inteligente, gerenciando o fluxo de comunicação de entrada e saída por meio de ligações no WhatsApp.
-**Regra de Ouro:** Você deve SEMPRE deixar claro, logo nos primeiros segundos de interação, que é uma assistente virtual com inteligência artificial falando em nome do [session_name]. Nunca finja ser humana.
+Sua principal função é atuar como uma secretária executiva inteligente, gerenciando a comunicação de entrada e saída em ligações no WhatsApp.
+**Regra de Ouro:** Transparência total. Você deve SEMPRE deixar claro, nos primeiros segundos de conversa, que é uma assistente virtual de inteligência artificial falando em nome do [session_name]. Nunca finja ser humana.
 
-Hoje é [today] e você está falando com o cliente do número [phone]. Esta é uma chamada de [direction].
+Hoje é [today]. Você está conversando com [contact_name] (número: [phone]). Esta é uma chamada de [direction].
+[custom_fields]
+
 ---
 
 ## Comportamento: Recebendo Ligações (Inbound)
-1. Saudação Inicial: Atenda de forma educada, informando imediatamente sua identidade.
-   * Exemplo: "Olá, tudo bem? Aqui é a assistente virtual do [session_name]. Ele não pode atender no momento, como posso te ajudar?"
-2. Escuta e Triagem: Escute o motivo da ligação com atenção.
-3. Coleta de Informações: Faça perguntas objetivas para registrar o recado.
-4. Encerramento: Confirme que a mensagem foi registrada e será repassada com precisão.
+1. **Saudação e Identificação**: Atenda com tom cortês, identificando-se imediatamente.
+   * Exemplo: "Olá, [contact_name], tudo bem? Aqui é a assistente virtual do [session_name]. Ele não pode atender no momento, como posso te ajudar?"
+2. **Escuta Ativa e Triagem**: Ouça a solicitação do cliente com atenção sem interromper.
+3. **Coleta Objetiva**: Se necessário registrar um recado, faça perguntas diretas:
+   * "Você poderia me informar o assunto principal do recado?"
+   * "Há algum prazo ou urgência para este retorno?"
+4. **Confirmação e Permanência na Linha**:
+   * Confirme verbalmente que o recado foi registrado.
+   * **REGRA OBRIGATÓRIA**: NUNCA se despeça diretamente. PERGUNTE SEMPRE: "Há mais alguma coisa em que eu possa te ajudar agora?"
+
+---
 
 ## Comportamento: Fazendo Ligações (Outbound)
-1. Identificação e Validação: Ao ser atendida, verifique se está falando com a pessoa correta e apresente-se imediatamente.
-2. Direto ao Ponto: Informe o motivo da ligação de forma clara e objetiva com base nas instruções recebidas.
-3. Interação e Coleta: Repasse a mensagem ou faça a pergunta designada, aguardando pacientemente a resposta.
-4. Encerramento: Agradeça o tempo da pessoa e despeça-se de forma cordial e profissional.`,
+1. **Identificação e Confirmação**: Verifique se está falando com a pessoa certa e apresente-se.
+   * Exemplo: "Olá, falo com [contact_name]? Aqui é a assistente virtual do [session_name], estou te ligando a pedido dele, tudo bem?"
+2. **Mensagem Principal**: Transmita o recado ou pergunta de forma clara, breve e objetiva.
+3. **Aguardar Resposta**: Deixe o interlocutor responder completamente antes de continuar.
+4. **Confirmação de Encerramento**:
+   * Após transmitir a mensagem ou executar uma ação, PERGUNTE SEMPRE: "Ficou alguma dúvida ou posso te ajudar com algo mais?"
+   * Somente se despeça e use a ferramenta \`hangup\` se a pessoa responder que não precisa de mais nada.
+
+---
+
+## Diretrizes Estritas de Voz e Sintonia (TTS/STT / Realtime)
+* **Formato Telefônico Natural**: Fale em frases curtas (no máximo 2 a 3 frases por turno). Evite monólogos longos.
+* **Leitura de Dados por Voz**: NUNCA soletre links (HTTP/HTTPS), chaves PIX longas ou códigos de barras verbalmente. Em vez disso, diga que enviou esses dados por escrito no WhatsApp usando a ferramenta \`send_message\`.
+* **Sem Símbolos Técnicos**: Não leia asteriscos, hashtags ou formatação de texto. Fale naturalmente como em um telefonema real.
+* **Tratamento de Ruído ou Falhas**: Se a voz falhar ou o áudio ficar confuso, diga educadamente:
+   * "Desculpe, deu uma pequena falha na ligação e não consegui te ouvir bem. Você pode repetir, por favor?"
+
+---
+
+## Uso de Ferramentas e Manutenção da Chamada
+* **Regra Anti-Desligamento**: Jamais chame a ferramenta \`hangup\` ou diga "tchau" imediatamente após executar \`send_message\`, \`web_search\`, \`x_search\`, \`schedule_call\` ou \`open_ticket\`.
+* **Permanência na Linha**: Após qualquer ação, informe o resultado e pergunte se o cliente precisa de mais algum auxílio. A ferramenta \`hangup\` é reservada exclusivamente para quando o atendimento estiver totalmente concluído com a permissão do cliente.`,
   serverSideAI: false,
   autoAnswer: false,
   autoAnswerDelay: 0,
@@ -81,10 +106,10 @@ Hoje é [today] e você está falando com o cliente do número [phone]. Esta é 
   toolsEnabled: false,
   predefinedTools: ["hangup", "open_ticket", "send_message", "schedule_call"],
   toolPrompts: {
-    hangup: "* Ferramenta hangup (Desligar Chamada): Quando a conversa estiver resolvida, o cliente se despedir e não houver mais nenhuma pendência, agradeça pelo contato, despeça-se educadamente e chame a ferramenta hangup para desligar a ligação.",
-    open_ticket: "* Ferramenta open_ticket (Abrir Chamado): Use esta ferramenta quando o cliente solicitar falar com um atendente humano, suporte ou precisar de ajuda especializada que a IA não consiga resolver.",
-    send_message: "* Ferramenta send_message (Enviar WhatsApp): Use esta ferramenta quando o cliente solicitar que você envie informações por escrito no WhatsApp.",
-    schedule_call: "* Ferramenta schedule_call (Reagendar/Agendar Ligação): Se o cliente pedir para retornar mais tarde, solicite a data e hora desejada e execute esta ferramenta."
+    hangup: "* Ferramenta hangup (Desligar Chamada): Use esta ferramenta APENAS E EXCLUSIVAMENTE quando o cliente disser explicitamente que não precisa de mais nada e se despedir. NUNCA chame esta ferramenta automaticamente após executar outras ferramentas.",
+    open_ticket: "* Ferramenta open_ticket (Abrir Chamado): Use esta ferramenta quando o cliente solicitar suporte humano. Informe que o chamado foi registrado e PERGUNTE se ele precisa de ajuda com mais alguma coisa. Não desligue a chamada.",
+    send_message: "* Ferramenta send_message (Enviar WhatsApp): Use esta ferramenta quando o cliente solicitar informações por escrito no WhatsApp. Diga que está enviando, execute a ferramenta e PERGUNTE educadamente se ele precisa de mais alguma coisa. JAMAIS se despeça após enviar a mensagem.",
+    schedule_call: "* Ferramenta schedule_call (Reagendar/Agendar Ligação): Solicite a data e hora desejada e execute a ferramenta. Confirme o agendamento e PERGUNTE se há algo mais em que possa ajudar antes de encerrar."
   },
   customTools: [],
   postCall: {
@@ -96,6 +121,10 @@ Hoje é [today] e você está falando com o cliente do número [phone]. Esta é 
     webhookUrl: "",
   },
   customFields: "",
+  enableGrokWebSearch: true,
+  enableGrokXSearch: true,
+  grokReasoningEffort: "high",
+  grokOutputSpeed: 1.0,
 };
 
 type MasterSubTab = "voice" | "instructions" | "tools" | "post_call";
@@ -112,17 +141,23 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
   const [deletingAgent, setDeletingAgent] = useState<Agent | null>(null);
   const [showPromptModal, setShowPromptModal] = useState(false);
 
+  const [aiProviders, setAiProviders] = useState<AIProviderConfig[]>([]);
+
   // Form State para Agente Especialista Selecionado
   const [specForm, setSpecForm] = useState<{
     name: string;
     description: string;
+    provider: string;
+    modelName: string;
     voiceName: string;
     systemInstruction: string;
     outbound: boolean;
   }>({
     name: "",
     description: "",
-    voiceName: "Puck",
+    provider: "grok",
+    modelName: "grok-voice-latest",
+    voiceName: "eve",
     systemInstruction: "",
     outbound: false,
   });
@@ -131,18 +166,24 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
     if (!sid) return;
     setLoading(true);
     try {
-      const [resAgents, resConfig] = await Promise.all([
+      const [resAgents, resConfig, resProviders] = await Promise.all([
         listAgents(sid).catch(() => []),
         getAIConfig(sid).catch(() => null),
+        getAIProviders().catch(() => ({ providers: [] })),
       ]);
       setAgents(resAgents);
+      setAiProviders(resProviders.providers || []);
       if (resConfig) {
         setEnabled(resConfig.enabled);
         const c = resConfig.aiConfig || defaultConfig;
         setAiConfig({
+          ...defaultConfig,
+          ...c,
           serverSideAI: !!c.serverSideAI,
+          provider: c.provider || "grok",
+          modelName: c.modelName || "grok-voice-latest",
           geminiApiKey: c.geminiApiKey || "",
-          voiceName: c.voiceName || "Puck",
+          voiceName: c.voiceName || (c.provider === "gemini" ? "Puck" : "eve"),
           languageCode: c.languageCode || "pt-BR",
           systemInstruction: c.systemInstruction || defaultConfig.systemInstruction,
           autoAnswer: !!c.autoAnswer,
@@ -159,6 +200,10 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
           customTools: c.customTools || [],
           postCall: c.postCall || { ...defaultConfig.postCall },
           customFields: c.customFields || "",
+          enableGrokWebSearch: c.enableGrokWebSearch ?? true,
+          enableGrokXSearch: c.enableGrokXSearch ?? true,
+          grokReasoningEffort: c.grokReasoningEffort || "high",
+          grokOutputSpeed: c.grokOutputSpeed ?? 1.0,
         });
       }
     } catch (err) {
@@ -178,10 +223,16 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
     if (selectedId !== "master") {
       const target = agents.find((a) => a.id === selectedId);
       if (target) {
+        const prov = target.aiConfig?.provider || "grok";
+        const mod = target.aiConfig?.modelName || (prov === "gemini" ? "gemini-3.1-flash-live-preview" : prov === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest");
+        const v = target.aiConfig?.voiceName || (prov === "gemini" ? "Puck" : prov === "openai" ? "alloy" : "eve");
+
         setSpecForm({
           name: target.name,
           description: target.description || "",
-          voiceName: target.aiConfig?.voiceName || "Puck",
+          provider: prov,
+          modelName: mod,
+          voiceName: v,
           systemInstruction: target.aiConfig?.systemInstruction || "",
           outbound: target.outbound,
         });
@@ -225,6 +276,8 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
         inbound: false,
         outbound: specForm.outbound,
         aiConfig: {
+          provider: specForm.provider,
+          modelName: specForm.modelName,
           voiceName: specForm.voiceName,
           systemInstruction: specForm.systemInstruction.trim(),
         },
@@ -242,13 +295,20 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
   const handleCreateSpecialist = async () => {
     setSaveBusy(true);
     try {
+      const activeProvs = aiProviders.filter((p) => p.enabled && p.hasKey);
+      const defaultProv = activeProvs[0]?.provider || "grok";
+      const defaultMod = activeProvs[0]?.defaultModel || (defaultProv === "gemini" ? "gemini-3.1-flash-live-preview" : defaultProv === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest");
+      const defaultVoice = defaultProv === "gemini" ? "Puck" : defaultProv === "openai" ? "alloy" : "eve";
+
       const newAgent = await createAgent(sid, {
         name: "Novo Especialista",
         description: "Descreva quando a IA deve transferir para este agente",
         inbound: false,
         outbound: false,
         aiConfig: {
-          voiceName: "Puck",
+          provider: defaultProv,
+          modelName: defaultMod,
+          voiceName: defaultVoice,
           systemInstruction: "Você é um agente especialista em atendimento.",
         },
       });
@@ -671,25 +731,118 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
                     </p>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-muted-foreground">Voz da IA</Label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {VOICES.map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() => setSpecForm({ ...specForm, voiceName: v })}
-                          className={cn(
-                            "rounded-xl border p-2.5 text-xs font-bold text-center transition-all cursor-pointer",
-                            specForm.voiceName === v
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-card hover:border-primary/40 text-muted-foreground",
-                          )}
-                        >
-                          {v}
-                        </button>
-                      ))}
+                  {/* Provedor & Modelo do Especialista */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-muted-foreground">Provedor de IA</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-medium"
+                        value={specForm.provider || "grok"}
+                        onChange={(e) => {
+                          const pKey = e.target.value;
+                          const targetProv = aiProviders.find((p) => p.provider === pKey);
+                          const defaultMod = targetProv?.defaultModel || (pKey === "gemini" ? "gemini-3.1-flash-live-preview" : pKey === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest");
+                          let defaultVoice = "eve";
+                          if (pKey === "gemini") defaultVoice = "Puck";
+                          if (pKey === "openai") defaultVoice = "alloy";
+                          setSpecForm({ ...specForm, provider: pKey, modelName: defaultMod, voiceName: defaultVoice });
+                        }}
+                      >
+                        {aiProviders.filter((p) => p.enabled && p.hasKey).length > 0 ? (
+                          aiProviders.filter((p) => p.enabled && p.hasKey).map((p) => (
+                            <option key={p.provider} value={p.provider}>
+                              {p.name}
+                            </option>
+                          ))
+                        ) : (
+                          <>
+                            <option value="grok">xAI Grok Live (Requer Chave)</option>
+                            <option value="gemini">Google Gemini Live (Requer Chave)</option>
+                            <option value="openai">OpenAI GPT Live (Requer Chave)</option>
+                          </>
+                        )}
+                      </select>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-muted-foreground">Modelo de Voz</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        value={specForm.modelName || (specForm.provider === "gemini" ? "gemini-3.1-flash-live-preview" : specForm.provider === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest")}
+                        onChange={(e) => setSpecForm({ ...specForm, modelName: e.target.value })}
+                      >
+                        {(() => {
+                          const provKey = specForm.provider || "grok";
+                          const provConfig = aiProviders.find((p) => p.provider === provKey);
+                          if (provConfig && provConfig.availableModels.length > 0) {
+                            return provConfig.availableModels.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.id})
+                              </option>
+                            ));
+                          }
+                          if (provKey === "gemini") {
+                            return (
+                              <>
+                                <option value="gemini-3.1-flash-live-preview">Gemini 3.1 Flash Live Preview</option>
+                                <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
+                              </>
+                            );
+                          }
+                          if (provKey === "openai") {
+                            return (
+                              <>
+                                <option value="gpt-4o-realtime-preview">GPT-4o Realtime</option>
+                                <option value="gpt-4o-mini-realtime-preview">GPT-4o Mini Realtime</option>
+                              </>
+                            );
+                          }
+                          return (
+                            <>
+                              <option value="grok-voice-latest">Grok Voice Latest</option>
+                              <option value="grok-voice-think-fast-2.0">Grok Voice Think Fast 2.0</option>
+                              <option value="grok-voice-think-fast-1.0">Grok Voice Think Fast 1.0</option>
+                            </>
+                          );
+                        })()}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Voz da IA do Especialista */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-muted-foreground">Voz da IA do Especialista</Label>
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-xs shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring font-medium"
+                      value={specForm.voiceName}
+                      onChange={(e) => setSpecForm({ ...specForm, voiceName: e.target.value })}
+                    >
+                      {specForm.provider === "grok" ? (
+                        <>
+                          <option value="eve">Eve (Feminina expressiva)</option>
+                          <option value="adam">Adam (Masculino profissional)</option>
+                          <option value="nova">Nova (Feminina jovem)</option>
+                        </>
+                      ) : specForm.provider === "openai" ? (
+                        <>
+                          <option value="alloy">Alloy (Neutro equilibrado)</option>
+                          <option value="echo">Echo (Masculino caloroso)</option>
+                          <option value="shimmer">Shimmer (Feminino claro)</option>
+                          <option value="fable">Fable (Expressivo)</option>
+                          <option value="onyx">Onyx (Masculino grave)</option>
+                          <option value="nova">Nova (Feminina jovem)</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="Puck">Puck (Masculina suave)</option>
+                          <option value="Charon">Charon (Masculina grave)</option>
+                          <option value="Kore">Kore (Feminina jovem)</option>
+                          <option value="Fenrir">Fenrir (Masculina firme)</option>
+                          <option value="Aoede">Aoede (Feminina expressiva)</option>
+                        </>
+                      )}
+                    </select>
                   </div>
 
                   <div className="pt-2">

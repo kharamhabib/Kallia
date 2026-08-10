@@ -1,10 +1,16 @@
 # Arquitetura do Sistema: Kallia
 
-O **Kallia** (plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e **WaCalls**) é uma solução profissional SaaS de atendimento, CRM de contatos e inteligência de voz baseada em WhatsApp que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos projetos e conexões, e automatizar atendimentos com agentes de IA (Gemini Live).
+O **Kallia** (plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e **WaCalls**) é uma solução profissional SaaS de atendimento, CRM de contatos e inteligência de voz baseada em WhatsApp que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos projetos e conexões, e automatizar atendimentos com agentes de IA multi-provedor.
 
-O sistema suporta dois modos de operação para a **API Gemini Live** (Google):
+O sistema suporta **múltiplos provedores de IA de voz em tempo real**:
 
-1. **Server-Side (Autônoma/Principal)**: O servidor Go gerencia tudo diretamente em background (WebSocket + CGO Opus/MLow + Pipeline de Áudio), sem necessidade de manter abas de navegador abertas. Suporta múltiplos agentes especialistas e transferência de chamadas em tempo real.
+- **Google Gemini Live** (`gemini_live.go`) — API nativa de voz bidirecional do Google.
+- **xAI Grok Realtime** (`grok_live.go`) — API de voz em tempo real da xAI com suporte a Web Search, X Search, reasoning effort e 26 vozes nativas.
+- **OpenAI Realtime** (planejado) — Estrutura preparada para integração futura.
+
+Modos de operação:
+
+1. **Server-Side (Autônoma/Principal)**: O servidor Go gerencia tudo diretamente em background (WebSocket + CGO Opus/MLow + Pipeline de Áudio), sem necessidade de manter abas de navegador abertas. Suporta múltiplos agentes especialistas, transferência de chamadas em tempo real e troca dinâmica de provedor (Gemini ↔ Grok) durante a chamada.
 2. **Client-Side (Híbrida/Navegador)**: O áudio é roteado através do navegador do operador via WebRTC, gerenciando a conexão com a IA.
 
 ---
@@ -24,7 +30,7 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
    - Integração direta entre o CRM e o Webphone: ao clicar no ícone de telefone de qualquer contato, o sistema navega reativamente para a tela de discagem e preenche automaticamente o número do destinatário.
    - Resolução de contato centralizada (`useContactDisplay` e `useContactInfo`), exibindo o nome real e avatar do cliente no Dashboard, Histórico, Notificações de Chamadas e Webphone.
 4. **Backend (Go)**:
-   - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow`, controla chamadas VoIP, encapsula sinalização WebRTC, realiza a persistência no PostgreSQL (banco por sessão), executa o cliente nativo Gemini Live (`gemini_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`) e expõe a API HTTP/SSE autenticada por JWT.
+   - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow`, controla chamadas VoIP, encapsula sinalização WebRTC, realiza a persistência no PostgreSQL (banco por sessão), executa os clientes nativos Gemini Live (`gemini_live.go`) e Grok Realtime (`grok_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`), gerencia provedores de IA com chaves criptografadas (`ai_providers.go`, `crypto.go`) e expõe a API HTTP/SSE autenticada por JWT.
 5. **Frontend (React 19, TypeScript, Vite)**:
    - Painel do operador com Login JWT (sem necessidade de digitar URL do servidor), escopo automático do projeto ativo, discador VoIP, gerenciamento de agentes, módulo de CRM, histórico interativo, modais reutilizáveis (`ConfirmModal`) e widget embutível para o Chatwoot.
 
@@ -43,7 +49,7 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 │                                  BACKEND (Go Server)                                   │
 │                                                                                        │
 │ ┌────────────────┐      ┌─────────────────────────┐ (Se Server-Side) ┌────────────────┐│
-│ │ JWT / REST /   │◄────►│ ServerAIAgent / Transfer│◄───────────────►│ Google Gemini  ││
+│ │ JWT / REST /   │◄────►│ ServerAIAgent / Transfer│◄───────────────►│ Gemini / Grok  ││
 │ │ SSE Broker     │      │ (Agentes Especialistas) │                 │ (Bidi WebSocket││
 │ └────────────────┘      └────────────┬────────────┘                 └────────────────┘│
 │                                      ▼                                                 │
@@ -62,11 +68,12 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 
 - **Linguagem**: Go (Golang) 1.26+
 - **Autenticação**: JWT nativo (HMAC-SHA256) com controle de perfis (`appadmin`, `admin`, `normal`).
-- **Banco de Dados**: PostgreSQL (banco principal `kallia_main` + 1 banco por sessão `kallia_<session_id>`, com detecção automática de fallback para bancos legados `wacalls_main`).
+- **Banco de Dados**: PostgreSQL (banco principal `kallia_main` + 1 banco por sessão `kallia_<session_id>`, com detecção automática de fallback para bancos legados `wacalls_main`). Inclui tabela `ai_providers` para armazenamento de provedores de IA com chaves criptografadas (AES-256-GCM).
 - **Processamento de Mídia**: CGO com wrapping de codecs Opus nativos (`opus_mlow` do WhatsApp).
 - **Gravação de Áudio Dual-Channel**: Gravação e mixagem estocástica em tempo real dos dois canais de áudio (Cliente + IA) salvas em `storage/recordings/YYYYMMDD_HHMMSS_Contato_CallID.wav` com player autenticado.
 - **Protocolo**: Sinalização de VoIP via nós binários do WhatsApp e transporte de mídia UDP (SRTP) intermediado por WebRTC.
-- **Comunicação Gemini**: WebSocket bidirecional nativo (`github.com/gorilla/websocket`) para comunicação direta com a API Gemini Live.
+- **Comunicação IA Multi-Provedor**: WebSocket bidirecional nativo (`github.com/gorilla/websocket`) para comunicação com Gemini Live (`generativelanguage.googleapis.com`) e Grok Realtime (`wss://api.x.ai/v1/realtime`).
+- **Criptografia de Chaves de API**: Chaves de API dos provedores de IA (Gemini, Grok, OpenAI) são criptografadas com AES-256-GCM no banco e descriptografadas em runtime com a variável `KALLIA_AI_ENCRYPTION_KEY`.
 
 ### Frontend
 
@@ -93,19 +100,22 @@ Kallia/
 │       ├── db.go                    # dbProvider com suporte inteligente a namespaces (kallia_main / fallback wacalls)
 │       ├── project.go               # Handlers de gerenciamento de projetos, planos e limites de conexões
 │       ├── agents.go                # Handlers REST para CRUD e vinculação de Agentes Especialistas por conexão
-│       ├── ai_agent.go              # Agente de voz server-side (WA<->Gemini + tools + transfer + post-call)
+│       ├── ai_agent.go              # Agente de voz server-side (WA<->Gemini/Grok + tools + transfer + post-call)
+│       ├── ai_providers.go          # CRUD e gerenciamento de provedores de IA (tabela ai_providers, criptografia)
 │       ├── ai_scheduler.go          # Scheduler background de ligações programadas do servidor
-│       ├── aiconfig.go              # Handlers REST de configuração da IA
+│       ├── aiconfig.go              # Handlers REST de configuração da IA (AIConfig struct multi-provedor)
 │       ├── authticket.go            # Tickets de uso único (30s) p/ SSE/WebSocket sem exposição de chave na URL
-│       ├── gemini_live.go           # Cliente WebSocket nativo em Go para a API Gemini Live
+│       ├── crypto.go                # Criptografia AES-256-GCM para chaves de API dos provedores
+│       ├── gemini_live.go           # Cliente WebSocket nativo para a API Gemini Live (Google)
 │       ├── gemini_proxy.go          # Proxy WS/REST do Gemini (a key nunca sai do servidor)
+│       ├── grok_live.go             # Cliente WebSocket nativo para a API Grok Realtime (xAI)
 │       ├── httpapi.go               # Rotas da API HTTP/WebRTC, SSE, CORS, rate limit, health/metrics
 │       ├── safehttp.go              # Guarda anti-SSRF (validação de URL/DNS/IP + redirects)
 │       ├── util.go                  # Helpers de fuso, retry HTTP e goroutines seguras (goSafe)
 │       ├── server.go                # Inicialização do servidor + hidratação do histórico do banco
 │       ├── session.go               # Estado WhatsApp/VoIP, auto-atendimento, attachServerAI
 │       ├── sessionmanager.go        # Ciclo de vida e restauração de sessões do banco
-│       └── sessionstore.go          # Operações no Postgres (users, projects, contacts, call_history, agents)
+│       └── sessionstore.go          # Operações no Postgres (users, projects, contacts, call_history, agents, ai_providers)
 ├── internal/
 │   └── voip/
 │       ├── call/                    # Máquina de estados das chamadas e CallManager (CGO + Mutexes)
@@ -133,7 +143,7 @@ Kallia/
 │       │       │   └── SummaryModal.tsx       # Modal de resumo por IA
 │       │       │       ├── settings/
 │       │       │   ├── SettingsTab.tsx        # Configurações de sistema (Chatwoot, Geral e Webhook)
-│       │       │   ├── AISettingsPane.tsx     # Painel de Voz, Chave Gemini e automação de atendimento
+│       │       │   ├── AISettingsPane.tsx     # Painel de Integração de Voz multi-provedor (Gemini/Grok/OpenAI), vozes, idioma, reasoning effort
 │       │       │   ├── ToolsSettingsPane.tsx    # Painel de Ferramentas e Ações da IA
 │       │       │   ├── PostCallSettingsPane.tsx# Notificações e resumos pós-chamada
 │       │       │   ├── NPSSettingsPane.tsx    # Pesquisa de satisfação pós-atendimento (NPS)
@@ -199,16 +209,32 @@ Cada conexão do WhatsApp pode estar vinculada a múltiplos agentes especialista
 - Realização de ligações ativas (**Outbound**).
 - Ambos ou Agente Padrão.
 
-### 5.2 Transferência Dinâmica entre Agentes (`TransferTo`)
+### 5.2 Provedores de IA Multi-Provedor
+
+O sistema suporta múltiplos provedores de IA de voz, gerenciados via tabela `ai_providers` no PostgreSQL:
+
+- **Google Gemini Live**: Vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo no `session.update`.
+- **xAI Grok Realtime**: 26 vozes nativas (Eve ⭐, Sal ⭐, Ara, Carina, Luna, Iris, Celeste, Ursa, Zagan, Helix, Orion, Altair, Zenith, Perseus, Helios, Kepler, Rigel, Sirius, Castor, Naksh, Atlas, Leo, Rex, Lux, Cosmo, Lumen). Funcionalidades exclusivas:
+  - **Reasoning Effort**: `high` (raciocínio profundo) ou `none` (resposta ultrarrápida) via query param `reasoning.effort`.
+  - **Ferramentas Nativas**: `web_search` (busca na web em tempo real) e `x_search` (busca no X/Twitter).
+  - **Transcrição Nativa**: Motor `grok-transcribe` com parâmetro de `language`.
+  - **Diretiva de Idioma**: Injeção textual explícita nas `instructions` do Grok (não possui campo `language` nativo no `session.update`).
+  - **VAD Ajustado**: `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 500`.
+  - **Interrupção Instantânea (Barge-in)**: Evento `input_audio_buffer.speech_started` limpa a fila de áudio da IA.
+- **OpenAI Realtime** (planejado): Estrutura preparada.
+
+As chaves de API são armazenadas criptografadas com **AES-256-GCM** na tabela `ai_providers` e descriptografadas em runtime.
+
+### 5.3 Transferência Dinâmica entre Agentes (`TransferTo`)
 
 Durante uma chamada em andamento operada pelo `ServerAIAgent`:
 
 1. A IA detecta que o assunto requer um especialista (ex: "Transferir para o suporte técnico").
 2. A IA aciona a ferramenta de transferência (`transfer_to_agent`).
 3. O método `ServerAIAgent.TransferTo(targetAgentID)` é executado no servidor:
-   - Desconecta a sessão atual do Gemini Live de forma limpa.
+   - Desconecta a sessão atual do provedor de IA (Gemini ou Grok) de forma limpa.
    - Carrega as instruções e o prompt do novo agente especialista.
-   - Conecta a nova sessão do Gemini Live injetando a nova persona e o histórico recente do diálogo.
+   - Conecta a nova sessão no provedor configurado, injetando a nova persona e o histórico recente do diálogo.
    - Mantém a mesma mídia VoIP do WhatsApp 100% ativa sem que a ligação caia!
 
 ---
@@ -246,6 +272,7 @@ Durante uma chamada em andamento operada pelo `ServerAIAgent`:
 ## 7. Segurança e Hardening
 
 - **Autenticação por JWT**: Senhas salvas via `bcrypt`. Tokens assinados com HMAC-SHA256 (`KALLIA_JWT_SECRET`).
+- **Criptografia de Chaves de IA (AES-256-GCM)**: Chaves de API dos provedores (Gemini, Grok, OpenAI) são criptografadas no banco (`ai_providers.api_key_encrypted`) com a variável `KALLIA_AI_ENCRYPTION_KEY` e descriptografadas apenas em runtime. Nunca transitam em plain text.
 - **Chaves de Conexão Individuais (`kc_*`)**: Cada conexão de WhatsApp gera uma API key única (`kc_...`) para consumo externo via header `X-Connection-API-Key`.
 - **Tickets de Uso Único para SSE/WebSockets**: O SSE (`/api/events`) e os proxies usam tickets gerados via `POST /api/events/ticket` com validade de 30s.
 - **Proteção Anti-SSRF (`safehttp.go`)**: URLs externas de mídia e webhooks são validadas contra endereços IP privados/reservados.

@@ -43,6 +43,8 @@ export type TransferRule = {
 
 export type AIConfig = {
   serverSideAI: boolean; // Se true, o servidor gerencia IA de voz e agendamentos autonomamente
+  provider?: string; // "gemini" | "grok" | "openai"
+  modelName?: string; // ex: "grok-voice-latest", "gemini-2.5-flash"
   geminiApiKey: string;
   voiceName: string;
   languageCode: string;
@@ -67,6 +69,10 @@ export type AIConfig = {
   enableSpecialistTransfer?: boolean;
   allowedSpecialistIds?: string[];
   chatwootEnabled?: boolean; // preenchido em runtime pelo agente (não vem do backend)
+  enableGrokWebSearch?: boolean;
+  enableGrokXSearch?: boolean;
+  grokReasoningEffort?: string; // "high" | "none"
+  grokOutputSpeed?: number; // 0.7–1.5, default 1.0
 };
 
 export type ScheduledCall = {

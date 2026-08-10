@@ -25,6 +25,13 @@ const (
 	ctxKeyPlanStatus contextKey = "planStatus"
 )
 
+func projectIDFromContext(ctx context.Context) string {
+	if pid, ok := ctx.Value(ctxKeyProjectID).(string); ok && pid != "" {
+		return pid
+	}
+	return "default"
+}
+
 var jwtSecret []byte
 
 func initJWTSecret() {

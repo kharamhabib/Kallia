@@ -2,9 +2,9 @@
 
 # 📞 Kallia
 
-**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado e Agentes de IA em Go puro, direto do navegador — pronta para produção.**
+**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado e Agentes de IA Multi-Provedor em Go puro, direto do navegador — pronta para produção.**
 
-Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos e permissões RBAC), IA de voz Gemini Live, transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks, integração nativa com **Chatwoot** e deploy containerizado (Docker / VPS).
+Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos e permissões RBAC), IA de voz **Gemini Live** + **xAI Grok Realtime** (26 vozes, Web Search, X Search, Reasoning Effort), transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks, integração nativa com **Chatwoot**, chaves de API criptografadas (AES-256-GCM) e deploy containerizado (Docker / VPS).
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -17,13 +17,13 @@ Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos 
 
 ---
 
-> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), módulo de CRM de contatos por sessão, autenticação JWT, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA Gemini Live, gravação de chamadas no servidor, **PostgreSQL por sessão**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy em Docker / VPS**. Todos os créditos dos projetos originários estão preservados em [Colaboradores](#-colaboradores).
+> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), módulo de CRM de contatos por sessão, autenticação JWT, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA multi-provedor (**Gemini Live** + **xAI Grok Realtime**), chaves de API criptografadas com AES-256-GCM, gravação de chamadas no servidor, **PostgreSQL por sessão**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy em Docker / VPS**. Todos os créditos dos projetos originários estão preservados em [Colaboradores](#-colaboradores).
 
 ---
 
 ## 📋 Visão Geral
 
-O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas por projetos, gerenciar uma base de contatos em formato CRM e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
+O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas por projetos, gerenciar uma base de contatos em formato CRM e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA multi-provedor. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
 
 Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem **RTP/SRTP**, **STUN**, o transporte **WebRTC/SCTP relay** e a sinalização `<call>`, integrados ao [**whatsmeow**](https://github.com/tulir/whatsmeow) e servidos a um cliente **React 19**. A dependência em C é o codec `opus_mlow` (via cgo) — que pode ser compilado via `-tags mlow`. Sem ela, o servidor roda em modo **somente sinalização**.
 
@@ -52,11 +52,16 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Limites de Conexão**: Cada plano define a quantidade máxima de WhatsApps conectados em simultâneo (ex: Básico 1 conexão, Advantage 3 conexões, Expert 8 conexões).
 - **Controle de Vigência & Status**: Bloqueio automatizado de novas conexões caso o plano do projeto esteja inativo ou vencido.
 
-### 🤖 Agentes Especialistas, Prompt Master & Transferência (`TransferTo`)
+### 🤖 Agentes Especialistas, IA Multi-Provedor & Transferência (`TransferTo`)
 
 - **Central de Agentes & Aba "Instruções & Prompt"**: Interface unificada contendo o editor de prompt do sistema em tela cheia (`PromptEditorModal`), gerenciamento de persona e injeção de **Tags Dinâmicas** (`[today]`, `[phone]`, `[direction]`, `[session_name]`, `[custom_fields]`).
+- **Provedores de IA Multi-Provedor**:
+  - **Google Gemini Live**: Vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo.
+  - **xAI Grok Realtime**: 26 vozes (Eve ⭐, Sal ⭐ recomendadas para pt-BR), Reasoning Effort (`high`/`none`), ferramentas nativas (`web_search`, `x_search`), transcrição `grok-transcribe`, VAD ajustado, interrupção instantânea (barge-in) e diretiva de idioma via instructions.
+  - **OpenAI Realtime** (planejado): Estrutura preparada.
+- **Chaves de API Criptografadas**: Chaves dos provedores armazenadas com AES-256-GCM na tabela `ai_providers` e descriptografadas em runtime.
 - **Modos Inbound / Outbound**: Agentes dedicados para receber ligações, fazer chamadas ativas ou atuar como padrão.
-- **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa.
+- **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa. Funciona entre provedores diferentes (Gemini ↔ Grok).
 
 ### ⚡ Resiliência VoIP, Sinalização sem Bloqueio & Sincronização Multi-Device
 
@@ -109,6 +114,7 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 │  Projects / Plans gestão de planos e limite de conexões por projeto        │
 │  CRM Contacts     gerenciador do banco de contatos da sessão               │
 │  Agents           gerenciador de agentes especialistas e transferências    │
+│  AI Providers     gerenciamento de provedores (Gemini/Grok/OpenAI)         │
 │  Broker           hub SSE (sessões, auth, ciclo de vida das chamadas)       │
 │  Bridge           ponte pion WebRTC (Opus do navegador ⇄ PCM 16 kHz)        │
 │                                                                            │
@@ -149,6 +155,7 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 | `KALLIA_CORS_ORIGINS`         | `*`                | Origens CORS permitidas                                                 |
 | `KALLIA_TRUSTED_PROXIES`      | —                  | IPs/CIDRs de proxy confiável                                            |
 | `KALLIA_ALLOW_PRIVATE_URLS`   | `false`            | Permite destinos de IP privado em tool-proxy/mídia (SSRF)               |
+| `KALLIA_AI_ENCRYPTION_KEY`    | —                  | Chave de criptografia AES-256-GCM para chaves de API dos provedores de IA |
 
 ---
 
@@ -186,6 +193,12 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - `DELETE /api/sessions/{sid}/calls/{id}` — Encerra chamada ativa.
 - `GET /api/sessions/{sid}/history` — Consulta histórico de chamadas.
 - `DELETE /api/sessions/{sid}/history/{callId}` — Exclui registro do histórico (autenticado por JWT).
+
+### Provedores de IA
+
+- `GET /api/ai-providers` — Lista provedores de IA cadastrados.
+- `POST /api/ai-providers` — Cria/atualiza um provedor de IA (chave criptografada com AES-256-GCM).
+- `DELETE /api/ai-providers/{id}` — Remove um provedor de IA.
 
 ---
 

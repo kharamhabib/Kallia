@@ -472,7 +472,7 @@ ${transcriptText}`;
     // mascarada (a key real nunca sai do servidor).
     const summaryEndpoint = isMaskedKey(this.config.geminiApiKey)
       ? apiUrl(`/api/sessions/${call.sessionId}/gemini/generateContent`)
-      : `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.config.geminiApiKey}`;
+      : `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${this.config.geminiApiKey}`;
 
     const headers: HeadersInit = { "Content-Type": "application/json" };
     let data: { candidates?: { content?: { parts?: { text?: string }[] } }[] };

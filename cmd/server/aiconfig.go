@@ -50,15 +50,17 @@ type TransferRule struct {
 }
 
 var DefaultToolPrompts = map[string]string{
-	"hangup":         "* Ferramenta hangup (Desligar Chamada): Quando a conversa estiver resolvida, o cliente se despedir e não houver mais nenhuma pendência, agradeça pelo contato, despeça-se educadamente e chame a ferramenta hangup para desligar a ligação. Nunca deixe a ligação em silêncio ou pendente após a despedida.",
-	"open_ticket":    "* Ferramenta open_ticket (Abrir Chamado): Use esta ferramenta quando o cliente solicitar falar com um atendente humano, suporte ou precisar de ajuda especializada que a IA não consiga resolver. Pergunte brevemente o motivo do chamado, informe ao cliente que o chamado foi registrado/aberto e pergunte educadamente se há mais alguma coisa em que você possa ajudar. Não desligue a chamada após usar esta ferramenta — apenas aguarde a resposta do cliente e use a ferramenta hangup para finalizar quando ele não precisar de mais nada.",
-	"send_message":   "* Ferramenta send_message (Enviar WhatsApp): Use esta ferramenta quando o cliente solicitar que você envie informações por escrito, como um código de barras, chave Pix, link de confirmação, ou endereço. Diga ao cliente: \"Estou te enviando esses dados agora mesmo no seu WhatsApp\" e execute a ferramenta.",
-	"schedule_call":  "* Ferramenta schedule_call (Reagendar/Agendar Ligação): Se o cliente disser que não pode falar no momento, pedir para retornar mais tarde, ou solicitar um lembrete (ex: \"me ligue e confirme a reunião as 10 da manhã\"), pergunte educadamente pela data e hora desejada. Calcule a data/hora exata relativa ao horário atual ([today]) e execute esta ferramenta preenchendo o parâmetro 'datetime' em formato ISO e 'prompt' com o roteiro ou lembrete (ex: \"Confirmar reunião\"). Confirme para o cliente o agendamento antes de desligar.",
-	"transfer_agent": "* Ferramenta transfer_agent (Transferir para Agente Especialista): Use esta ferramenta quando o cliente solicitar ou se enquadrar em uma das regras de transferência para um agente especialista (ex: Vendas, Suporte Técnico, Financeiro). Diga verbalmente ao cliente: \"Vou te transferir para o especialista, só um instante por favor...\" e execute a ferramenta fornecendo o parâmetro 'target_agent_id'. APÓS EXECUTAR A FERRAMENTA, PERMANEÇA EM SILÊNCIO E NÃO DIGA MAIS NADA (não confirme que a transferência foi concluída ou realizada).",
+	"hangup":         "* Ferramenta hangup (Desligar Chamada): Use esta ferramenta APENAS E EXCLUSIVAMENTE quando o cliente disser explicitamente que não precisa de mais nada, se despedir ou confirmar que o atendimento está encerrado. NUNCA chame esta ferramenta automaticamente após executar outras ferramentas (como enviar mensagem no WhatsApp, agendar ligação ou pesquisar na web). Sempre pergunte ao cliente se ele precisa de algo mais antes de despedir-se.",
+	"open_ticket":    "* Ferramenta open_ticket (Abrir Chamado): Use esta ferramenta quando o cliente solicitar falar com um atendente humano, suporte ou precisar de ajuda especializada que a IA não consiga resolver. Informe ao cliente que o chamado foi aberto e PERGUNTE se ele precisa de ajuda com mais alguma coisa. Não desligue a chamada após usar esta ferramenta.",
+	"send_message":   "* Ferramenta send_message (Enviar WhatsApp): Use esta ferramenta quando o cliente solicitar que você envie informações por escrito no WhatsApp (ex: chave Pix, links, endereços, confirmações). Diga ao cliente: \"Estou te enviando esses dados agora mesmo no seu WhatsApp\", execute a ferramenta e PERGUNTE educadamente se ele precisa de mais alguma coisa. JAMAIS se despeça ou chame a ferramenta hangup imediatamente após enviar a mensagem.",
+	"schedule_call":  "* Ferramenta schedule_call (Reagendar/Agendar Ligação): Se o cliente disser que não pode falar no momento ou solicitar um lembrete, pergunte pela data e hora desejada e execute a ferramenta. Confirme o agendamento e PERGUNTE se há algo mais em que você possa ajudar antes de encerrar.",
+	"transfer_agent": "* Ferramenta transfer_agent (Transferir para Agente Especialista): Use esta ferramenta quando o cliente solicitar ou se enquadrar em uma das regras de transferência. Diga verbalmente: \"Vou te transferir para o especialista, só um instante por favor...\" e execute a ferramenta fornecendo o 'target_agent_id'. APÓS EXECUTAR A FERRAMENTA, PERMANEÇA EM SILÊNCIO E NÃO DIGA MAIS NADA.",
 }
 
 type AIConfig struct {
 	ServerSideAI      bool                 `json:"serverSideAI"`
+	Provider          string               `json:"provider"`  // "gemini", "grok", "openai"
+	ModelName         string               `json:"modelName"` // ex: "grok-voice-latest", "gemini-2.5-flash"
 	GeminiAPIKey      string               `json:"geminiApiKey"`
 	VoiceName         string               `json:"voiceName"`
 	LanguageCode      string               `json:"languageCode"`
@@ -83,6 +85,10 @@ type AIConfig struct {
 	EnableSpecialistTransfer bool                 `json:"enableSpecialistTransfer"`
 	AllowedSpecialistIDs     []string             `json:"allowedSpecialistIds"`
 	ChatwootEnabled          bool                 `json:"chatwootEnabled"`
+	EnableGrokWebSearch      bool                 `json:"enableGrokWebSearch"`
+	EnableGrokXSearch        bool                 `json:"enableGrokXSearch"`
+	GrokReasoningEffort      string               `json:"grokReasoningEffort"` // "high", "none"
+	GrokOutputSpeed          float64              `json:"grokOutputSpeed"`     // 0.7–1.5, padrão 1.0
 }
 
 func (s *server) handleSetAIConfig(w http.ResponseWriter, r *http.Request) {

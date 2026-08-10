@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -34,12 +35,15 @@ var geminiRestClient = &http.Client{Timeout: 60 * time.Second}
 // ServerAIAgent orquestra a ponte de áudio entre o WhatsApp e o Gemini Live no servidor.
 type ServerAIAgent struct {
 	gemini       *GeminiLiveClient
+	grok         *GrokLiveClient
+	provider     string
 	cm           *call.CallManager
 	sess         *Session
 	callID       string
 	peer         string
 	direction    string
 	log          *slog.Logger
+	config       AIConfig
 
 	mu           sync.Mutex
 	detached     bool
@@ -59,14 +63,20 @@ type ServerAIAgent struct {
 
 // NewServerAIAgent cria e acopla um agente de IA ao CallManager.
 func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.CallManager, config AIConfig, log *slog.Logger) *ServerAIAgent {
+	resolveAIConfigKeys(context.Background(), sess.mgr.store, sess.projectID, &config)
 	config.ChatwootEnabled = sess.getChatwoot().valid()
+	if config.Provider == "" {
+		config.Provider = "gemini"
+	}
 	agent := &ServerAIAgent{
 		sess:        sess,
 		callID:      callID,
 		peer:        peer,
 		direction:   direction,
 		cm:          cm,
-		log:         log.With("agent_call", callID),
+		provider:    config.Provider,
+		config:      config,
+		log:         log.With("agent_call", callID, "provider", config.Provider),
 		pacedStop:   make(chan struct{}),
 		inboundStop: make(chan struct{}),
 	}
@@ -84,8 +94,17 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 			}
 		}
 		if len(toolRules) > 0 {
-			config.SystemInstruction += "\n\n### REGRAS PARA O USO DE FERRAMENTAS (APIS):\n* Se a ferramenta exigir argumentos (como a mensagem de texto ou número no send_message), extraia-os naturalmente da fala do usuário ou use os valores padrões fornecidos, sem soletrar os parâmetros tecnicamente para o cliente.\n" + strings.Join(toolRules, "\n")
+			config.SystemInstruction += "\n\n### REGRAS OBRIGATÓRIAS DE MANUTENÇÃO DA CHAMADA APÓS O USO DE FERRAMENTAS:\n" +
+				"1. REGRA ABSOLUTA: JAMAIS se despeça ou execute a ferramenta `hangup` automaticamente logo após executar qualquer ferramenta (como `send_message`, `web_search`, `x_search`, `schedule_call` ou `open_ticket`).\n" +
+				"2. FLUXO OBRIGATÓRIO APÓS FERRAMENTAS: Assim que qualquer ferramenta for executada, informe verbalmente a confirmação para o cliente e PERGUNTE SEMPRE: \"Há mais alguma coisa em que eu possa te ajudar?\".\n" +
+				"3. USO DA FERRAMENTA HANGUP: A ferramenta `hangup` deve ser chamada APENAS E EXCLUSIVAMENTE quando o cliente responder que NÃO precisa de mais nada e se despedir expressamente.\n" +
+				"4. PARÂMETROS TÉCNICOS: Extraia os argumentos naturalmente da fala do usuário sem soletrar termos de código ou nomes de parâmetros.\n\n" +
+				strings.Join(toolRules, "\n")
 		}
+	} else if config.EnableGrokWebSearch || config.EnableGrokXSearch {
+		config.SystemInstruction += "\n\n### REGRAS OBRIGATÓRIAS PARA PESQUISAS NA INTERNET/X:\n" +
+			"1. Após realizar uma busca na web ou no X (web_search / x_search), transmita a resposta ao cliente e PERGUNTE SEMPRE: \"Há mais alguma informação que você gostaria de saber?\".\n" +
+			"2. NUNCA se despeça ou desligue a chamada imediatamente após responder aos resultados da pesquisa."
 	}
 
 	// Injetar a lista de especialistas disponíveis para transferência se houver
@@ -245,31 +264,41 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 		}
 	}
 
-	agent.gemini = NewGeminiLiveClient(config, log)
+	if config.Provider == "grok" {
+		if !config.EnableGrokWebSearch && !config.EnableGrokXSearch {
+			config.EnableGrokWebSearch = true
+			config.EnableGrokXSearch = true
+		}
+		agent.grok = NewGrokLiveClient(config.GeminiAPIKey, config, log)
+	} else {
+		agent.gemini = NewGeminiLiveClient(config, log)
+	}
 	return agent
 }
 
-// Start conecta ao Gemini, acopla o pipeline de áudio e inicia o agente.
-func (a *ServerAIAgent) Start(ctx context.Context) error {
-	a.log.Info("[ServerAIAgent] Iniciando agente de voz server-side")
-
-	// Conecta ao Gemini Live
-	err := a.gemini.Connect(
-		// onAudio: áudio da IA → WhatsApp (salva na fila para reprodução ritmada/paced)
-		func(pcm24k []float32) {
-			pcm16k := Downsample24to16(pcm24k)
-			if len(pcm16k) == 0 {
-				return
+func (a *ServerAIAgent) connectGrok(ctx context.Context) error {
+	return a.grok.Connect(
+		ctx,
+		func(b64 string) {
+			data, err := base64.StdEncoding.DecodeString(b64)
+			if err == nil && len(data) >= 2 {
+				pcm24k := make([]float32, len(data)/2)
+				for i := 0; i < len(pcm24k); i++ {
+					sample := int16(data[i*2]) | (int16(data[i*2+1]) << 8)
+					pcm24k[i] = float32(sample) / 32768.0
+				}
+				pcm16k := Downsample24to16(pcm24k)
+				if len(pcm16k) > 0 {
+					a.queueMu.Lock()
+					a.audioQueue = append(a.audioQueue, pcm16k...)
+					if len(a.audioQueue) > maxAudioQueueSamples {
+						a.audioQueue = a.audioQueue[len(a.audioQueue)-maxAudioQueueSamples:]
+						a.log.Warn("[ServerAIAgent] Audio queue truncada (excedeu cap)")
+					}
+					a.queueMu.Unlock()
+				}
 			}
-			a.queueMu.Lock()
-			a.audioQueue = append(a.audioQueue, pcm16k...)
-			if len(a.audioQueue) > maxAudioQueueSamples {
-				a.audioQueue = a.audioQueue[len(a.audioQueue)-maxAudioQueueSamples:]
-				a.log.Warn("[ServerAIAgent] Audio queue truncada (excedeu cap)")
-			}
-			a.queueMu.Unlock()
 		},
-		// onText: transcrições (log + emitir via SSE se frontend estiver aberto)
 		func(speaker, text string) {
 			prefix := "🎤 Cliente disse:"
 			if speaker == "ai" {
@@ -285,16 +314,63 @@ func (a *ServerAIAgent) Start(ctx context.Context) error {
 				"text":      text,
 			})
 		},
-		// onToolCall: handlers de ferramentas
+		func(callID, name, argsJSON string) {
+			var args map[string]any
+			json.Unmarshal([]byte(argsJSON), &args)
+			res := a.handleToolCall(ctx, name, args)
+			resBytes, _ := json.Marshal(res)
+			_ = a.grok.SendToolResult(callID, string(resBytes))
+		},
+		func() {
+			a.queueMu.Lock()
+			a.audioQueue = nil
+			a.queueMu.Unlock()
+			a.log.Info("[ServerAIAgent] Interrupção detectada no Grok: descartando áudio pendente da IA")
+		},
+		func(err error) {
+			a.log.Warn("[ServerAIAgent] Sessão Grok fechou inesperadamente", "err", err)
+			a.Detach()
+		},
+	)
+}
+
+func (a *ServerAIAgent) connectGemini(ctx context.Context) error {
+	return a.gemini.Connect(
+		func(pcm24k []float32) {
+			pcm16k := Downsample24to16(pcm24k)
+			if len(pcm16k) == 0 {
+				return
+			}
+			a.queueMu.Lock()
+			a.audioQueue = append(a.audioQueue, pcm16k...)
+			if len(a.audioQueue) > maxAudioQueueSamples {
+				a.audioQueue = a.audioQueue[len(a.audioQueue)-maxAudioQueueSamples:]
+				a.log.Warn("[ServerAIAgent] Audio queue truncada (excedeu cap)")
+			}
+			a.queueMu.Unlock()
+		},
+		func(speaker, text string) {
+			prefix := "🎤 Cliente disse:"
+			if speaker == "ai" {
+				prefix = "📝 IA disse:"
+			}
+			a.log.Info("[ServerAI] transcrição", "origem", prefix, "texto", text)
+
+			a.sess.mgr.broker.broadcast(map[string]any{
+				"type":      "ai-transcript",
+				"sessionId": a.sess.id,
+				"callId":    a.callID,
+				"speaker":   speaker,
+				"text":      text,
+			})
+		},
 		func(name string, args map[string]any) map[string]any {
 			return a.handleToolCall(ctx, name, args)
 		},
-		// onClose: sessão Gemini fechou
 		func() {
 			a.log.Warn("[ServerAIAgent] Sessão Gemini fechou inesperadamente")
 			a.Detach()
 		},
-		// onInterrupt: usuário interrompeu a IA
 		func() {
 			a.mu.Lock()
 			transferring := a.transferring
@@ -308,15 +384,27 @@ func (a *ServerAIAgent) Start(ctx context.Context) error {
 			a.log.Info("[ServerAIAgent] Fila de áudio de saída limpa devido a interrupção")
 		},
 	)
+}
+
+// Start conecta ao provedor configurado, acopla o pipeline de áudio e inicia o agente.
+func (a *ServerAIAgent) Start(ctx context.Context) error {
+	a.log.Info("[ServerAIAgent] Iniciando agente de voz server-side", "provider", a.provider)
+
+	var err error
+	if a.provider == "grok" && a.grok != nil {
+		err = a.connectGrok(ctx)
+	} else if a.gemini != nil {
+		err = a.connectGemini(ctx)
+	}
 	if err != nil {
-		return fmt.Errorf("gemini connect: %w", err)
+		return fmt.Errorf("provider connect (%s): %w", a.provider, err)
 	}
 
 	// Inicia os pacers para reprodução e captura estáveis
 	go a.startPacedSender(ctx)
 	go a.startInboundPacer(ctx)
 
-	// Acopla o callback de áudio do peer (WhatsApp → Gemini) com fila e contador para monitorar se estamos ouvindo o cliente
+	// Acopla o callback de áudio do peer (WhatsApp → AI) com fila e contador para monitorar se estamos ouvindo o cliente
 	var peerPackets uint64
 	a.cm.SetOnPeerAudio(func(pcm16 []float32) {
 		a.mu.Lock()
@@ -350,13 +438,13 @@ func (a *ServerAIAgent) Start(ctx context.Context) error {
 	})
 
 	// Primeira fala (saudação)
-	if a.gemini.config.FirstUtterance != "" {
-		a.gemini.SendText(a.gemini.config.FirstUtterance)
+	if a.config.FirstUtterance != "" {
+		a.sendTextToAI(a.config.FirstUtterance)
 	}
 
 	// Timer de duração máxima
-	if a.gemini.config.MaxDurationMin > 0 {
-		dur := time.Duration(a.gemini.config.MaxDurationMin) * time.Minute
+	if a.config.MaxDurationMin > 0 {
+		dur := time.Duration(a.config.MaxDurationMin) * time.Minute
 		a.maxTimer = time.AfterFunc(dur, func() {
 			a.log.Info("[ServerAIAgent] Duração máxima atingida, encerrando")
 			a.Detach()
@@ -466,15 +554,15 @@ func (a *ServerAIAgent) startInboundPacer(ctx context.Context) {
 			a.queueMu.Unlock()
 
 			if aiSpeaking {
-				a.gemini.SendAudio(silenceFrame)
+				a.sendAudioToAI(silenceFrame)
 			} else {
-				a.gemini.SendAudio(frame)
+				a.sendAudioToAI(frame)
 			}
 		}
 	}
 }
 
-// Detach desacopla o agente, fecha o Gemini e executa post-call actions.
+// Detach desacopla o agente, fecha a conexão com a IA e executa post-call actions.
 func (a *ServerAIAgent) Detach() {
 	a.mu.Lock()
 	if a.detached {
@@ -495,7 +583,7 @@ func (a *ServerAIAgent) Detach() {
 	// Limpa callback de áudio
 	a.cm.SetOnPeerAudio(nil)
 
-	a.gemini.Close()
+	a.closeCurrentProvider()
 
 	// Post-call actions em background
 	go a.executePostCallActions()
@@ -622,8 +710,19 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 		return fmt.Errorf("deserializar ai_config do agente: %w", err)
 	}
 
-	if newCfg.GeminiAPIKey == "" {
-		newCfg.GeminiAPIKey = a.sess.getAIConfig().GeminiAPIKey
+	masterCfg := a.sess.getAIConfig()
+	if newCfg.Provider == "" {
+		newCfg.Provider = masterCfg.Provider
+	}
+	if newCfg.ModelName == "" {
+		newCfg.ModelName = masterCfg.ModelName
+	}
+	resolveAIConfigKeys(context.Background(), a.sess.mgr.store, a.sess.projectID, &newCfg)
+
+	// Combinar Instruções Globais do Agente Principal + Instruções Específicas do Agente Especialista
+	if masterCfg.SystemInstruction != "" {
+		specInstruction := newCfg.SystemInstruction
+		newCfg.SystemInstruction = masterCfg.SystemInstruction + "\n\n### REGRAS E INSTRUÇÕES ESPECÍFICAS DO ESPECIALISTA (" + targetRow.Name + "):\n" + specInstruction
 	}
 	newCfg.ChatwootEnabled = a.sess.getChatwoot().valid()
 
@@ -632,7 +731,7 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 	newCfg.PredefinedTools = []string{"hangup", "open_ticket", "send_message", "schedule_call", "transfer_agent"}
 
 	// Adiciona o contexto completo do atendimento anterior + opções de transferência de volta/outros agentes
-	lines := a.gemini.Transcript()
+	lines := a.getTranscriptLines()
 	var extraContext strings.Builder
 
 	if len(lines) > 0 {
@@ -667,7 +766,7 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 
 	newCfg.SystemInstruction += extraContext.String()
 
-	a.log.Info("[ServerAIAgent] Transferindo chamada para novo agente especialista", "target_id", targetRow.ID, "target_name", targetRow.Name)
+	a.log.Info("[ServerAIAgent] Transferindo chamada para novo agente especialista", "target_id", targetRow.ID, "target_name", targetRow.Name, "new_provider", newCfg.Provider)
 
 	// 1. Aguarda a fala atual da IA terminar 100% de ser reproduzida no WhatsApp antes de trocar
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -680,8 +779,19 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 	a.audioQueue = append(a.audioQueue, chimePCM...)
 	a.queueMu.Unlock()
 
-	// 3. Enquanto o toque de transferência toca para o cliente (2.2s), reconecta o Gemini com o especialista em paralelo
-	reconnectErr := a.gemini.ReconnectWithConfig(newCfg)
+	// 3. Enquanto o toque de transferência toca para o cliente (2.2s), reconecta o provedor com o especialista em paralelo
+	a.closeCurrentProvider()
+	a.config = newCfg
+	a.provider = newCfg.Provider
+
+	var reconnectErr error
+	if a.provider == "grok" {
+		a.grok = NewGrokLiveClient(newCfg.GeminiAPIKey, newCfg, a.log)
+		reconnectErr = a.connectGrok(context.Background())
+	} else {
+		a.gemini = NewGeminiLiveClient(newCfg, a.log)
+		reconnectErr = a.connectGemini(context.Background())
+	}
 	if reconnectErr != nil {
 		return reconnectErr
 	}
@@ -691,7 +801,7 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 	if greeting == "" {
 		greeting = fmt.Sprintf("Olá! Sou o especialista em %s. Vi aqui no histórico o seu pedido, como posso te ajudar?", targetRow.Name)
 	}
-	a.gemini.SendText(greeting)
+	a.sendTextToAI(greeting)
 
 	// 5. Aguarda a conclusão do toque de transferência para a fala do especialista ser transmitida sem cortes
 	chimeCtx, chimeCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -865,12 +975,52 @@ func (a *ServerAIAgent) toolScheduleCall(ctx context.Context, args map[string]an
 	return map[string]any{"status": "ligação agendada com sucesso", "time": scheduledDate.Format(time.RFC3339)}
 }
 
+func (a *ServerAIAgent) sendAudioToAI(pcm16 []float32) {
+	if a.grok != nil {
+		a.grok.SendAudio(pcm16)
+	} else if a.gemini != nil {
+		a.gemini.SendAudio(pcm16)
+	}
+}
+
+func (a *ServerAIAgent) sendTextToAI(text string) {
+	if text == "" {
+		return
+	}
+	if a.grok != nil {
+		a.grok.SendText(text)
+	} else if a.gemini != nil {
+		a.gemini.SendText(text)
+	}
+}
+
+func (a *ServerAIAgent) getTranscriptLines() []TranscriptLine {
+	if a.grok != nil {
+		return a.grok.Transcript()
+	}
+	if a.gemini != nil {
+		return a.gemini.Transcript()
+	}
+	return nil
+}
+
+func (a *ServerAIAgent) closeCurrentProvider() {
+	if a.gemini != nil {
+		a.gemini.Close()
+		a.gemini = nil
+	}
+	if a.grok != nil {
+		a.grok.Close()
+		a.grok = nil
+	}
+}
+
 // toolCustomWebhook executa uma tool customizada via webhook proxy.
 func (a *ServerAIAgent) toolCustomWebhook(ctx context.Context, name string, args map[string]any) map[string]any {
 	var tool *CustomTool
-	for i := range a.gemini.config.CustomTools {
-		if a.gemini.config.CustomTools[i].Name == name {
-			tool = &a.gemini.config.CustomTools[i]
+	for i := range a.config.CustomTools {
+		if a.config.CustomTools[i].Name == name {
+			tool = &a.config.CustomTools[i]
 			break
 		}
 	}
@@ -905,7 +1055,7 @@ func (a *ServerAIAgent) toolCustomWebhook(ctx context.Context, name string, args
 
 // executePostCallActions gera o resumo e executa ações pós-chamada.
 func (a *ServerAIAgent) executePostCallActions() {
-	transcript := a.gemini.Transcript()
+	transcript := a.getTranscriptLines()
 	if len(transcript) == 0 {
 		a.log.Info("[ServerAIAgent] Sem transcrição para processar pós-chamada")
 		return
@@ -923,7 +1073,7 @@ func (a *ServerAIAgent) executePostCallActions() {
 		})
 	}
 
-	config := a.gemini.config
+	config := a.config
 	if !config.PostCall.SummaryEnabled {
 		return
 	}
@@ -996,7 +1146,7 @@ Transcrição:
 %s`, contactInfo, formattedDate, dir, transcriptText)
 
 	// Chama a API REST do Gemini para gerar o resumo
-	geminiURL := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=%s", config.GeminiAPIKey)
+	geminiURL := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=%s", config.GeminiAPIKey)
 	body := map[string]any{
 		"contents": []map[string]any{{
 			"parts": []map[string]any{{"text": prompt}},
@@ -1081,7 +1231,7 @@ Transcrição:
 			ticketReason = hCall.TicketReason
 		}
 
-		transcript := a.gemini.Transcript()
+		transcript := a.getTranscriptLines()
 
 		webhookBody, _ := json.Marshal(map[string]any{
 			"sessionId":    a.sess.id,

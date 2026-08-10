@@ -17,7 +17,7 @@ import (
 //	POST /api/sessions/{sid}/gemini/generateContent  → proxy REST (resumo pós-chamada)
 
 const geminiLiveWSURL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent"
-const geminiGenerateContentURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+const geminiGenerateContentURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
 
 var geminiWSUpgrader = websocket.Upgrader{
 	// A autenticação já foi feita pelo middleware (ticket/X-API-Key); o Origin
