@@ -121,7 +121,7 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 	}
 
 	// Se a instrução de sistema não contiver o histórico do Chatwoot, resolve o histórico no backend
-	cleanPhone := agent.resolveContactPhone(context.Background())
+	cleanPhone := agent.resolveContactPhone()
 	if cleanPhone != "" && !strings.Contains(config.SystemInstruction, "CONTEXTO DA CONVERSA ANTERIOR NO CHATWOOT:") {
 		if history := sess.fetchChatwootContext(cleanPhone); history != "" {
 			config.SystemInstruction += "\n\n" + history
@@ -639,7 +639,7 @@ func (a *ServerAIAgent) handleToolCall(ctx context.Context, name string, args ma
 			goSafe(a.log, func() {
 				adminJid, err := resolveRecipient(config.PostCall.AdminNumber)
 				if err == nil {
-					contactName := a.resolveContactPhone(context.Background())
+					contactName := a.resolveContactPhone()
 					msg := fmt.Sprintf("⚠️ *Novo Chamado Aberto pela IA*\n\n• *Cliente:* %s\n• *Sessão:* %s\n• *Motivo:* %s\n• *ID Chamada:* %s", contactName, a.sess.name, reason, a.callID)
 					_, _ = a.sess.getClient().SendMessage(context.Background(), adminJid, &waE2E.Message{
 						Conversation: proto.String(msg),
@@ -652,7 +652,7 @@ func (a *ServerAIAgent) handleToolCall(ctx context.Context, name string, args ma
 
 	case "fetch_chatwoot_history":
 		a.log.Info("[ServerAIAgent] Tool fetch_chatwoot_history disparada")
-		cleanPhone := a.resolveContactPhone(ctx)
+		cleanPhone := a.resolveContactPhone()
 		if history := a.sess.fetchChatwootContext(cleanPhone); history != "" {
 			return map[string]any{"history": history}
 		}
@@ -898,7 +898,7 @@ func (a *ServerAIAgent) toolSendMessage(ctx context.Context, args map[string]any
 }
 
 // resolveContactPhone resolve o JID do peer para retornar o número de telefone (PN) real, convertendo de LID se necessário.
-func (a *ServerAIAgent) resolveContactPhone(ctx context.Context) string {
+func (a *ServerAIAgent) resolveContactPhone() string {
 	raw := a.peer
 	if !strings.Contains(raw, "@") {
 		if a.cm != nil {
@@ -949,7 +949,7 @@ func (a *ServerAIAgent) toolScheduleCall(ctx context.Context, args map[string]an
 
 	newCall := map[string]any{
 		"id":     fmt.Sprintf("srv_%d", time.Now().UnixNano()),
-		"phone":  normalizePhone(a.resolveContactPhone(ctx)),
+		"phone":  normalizePhone(a.resolveContactPhone()),
 		"time":   scheduledDate.Format(time.RFC3339),
 		"active": true,
 	}

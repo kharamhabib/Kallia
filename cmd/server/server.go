@@ -16,22 +16,23 @@ type server struct {
 	broker    *Broker
 	sessions  *SessionManager
 	scheduler *AIScheduler
+	queue     *QueueManager
 	log       *slog.Logger
 	staticDir string
 	tickets   *ticketStore
 	startedAt time.Time
 }
 
-// newServer monta o provedor de banco (Postgres, 1 banco por sessão no estilo
-// WAHA), abre o banco principal e inicializa o gerenciador de sessões.
-func newServer(ctx context.Context, pgURL, pgNamespace, staticDir string, maxCalls int, log *slog.Logger) (*server, error) {
+// newServer monta o provedor de banco SQLite e whatsmeow, inicializa o Redis Queue,
+// abre a base local e inicia o gerenciador de sessões.
+func newServer(ctx context.Context, storageDir, redisURL, staticDir string, maxCalls int, log *slog.Logger) (*server, error) {
 	store.SetOSInfo("Kallia Call", [3]uint32{1, 0, 0})
 	waLogger := waLog.Noop
 	if log.Enabled(ctx, slog.LevelDebug) {
 		waLogger = waLog.Stdout("WA", "DEBUG", true)
 	}
 
-	provider, err := newDBProvider(ctx, pgURL, pgNamespace, waLogger, log)
+	provider, err := newDBProvider(ctx, storageDir, waLogger, log)
 	if err != nil {
 		return nil, err
 	}
@@ -41,24 +42,26 @@ func newServer(ctx context.Context, pgURL, pgNamespace, staticDir string, maxCal
 		provider.close()
 		return nil, err
 	}
-	store, err := newSessionStore(ctx, mainDB)
+	sStore, err := newSessionStore(ctx, mainDB)
 	if err != nil {
 		mainDB.Close()
 		provider.close()
 		return nil, err
 	}
 
+	queue := NewQueueManager(ctx, redisURL, log)
 	broker := NewBroker()
-	mgr := newSessionManager(ctx, provider, broker, store, waLogger, log, maxCalls)
+	mgr := newSessionManager(ctx, provider, broker, sStore, waLogger, log, maxCalls)
+	mgr.Queue = queue
 	broker.SnapshotFn = mgr.snapshotEvents
-	broker.History = &pgHistoryPersister{store: store, log: log}
+	broker.History = &pgHistoryPersister{store: sStore, log: log}
 	scheduler := NewAIScheduler(mgr, log)
 	mgr.Scheduler = scheduler
 	getSession := func(sessionID string) *Session {
 		s, _ := mgr.Get(sessionID)
 		return s
 	}
-	mgr.nps = newNPSEngine(log, store, getSession)
+	mgr.nps = newNPSEngine(log, sStore, getSession)
 	mgr.followup = newFollowupEngine(log, getSession)
 
 	return &server{
@@ -67,6 +70,7 @@ func newServer(ctx context.Context, pgURL, pgNamespace, staticDir string, maxCal
 		broker:    broker,
 		sessions:  mgr,
 		scheduler: scheduler,
+		queue:     queue,
 		log:       log,
 		staticDir: staticDir,
 		tickets:   newTicketStore(),
@@ -75,6 +79,9 @@ func newServer(ctx context.Context, pgURL, pgNamespace, staticDir string, maxCal
 }
 
 func (s *server) Close() {
+	if s.queue != nil {
+		s.queue.Close()
+	}
 	if s.mainDB != nil {
 		_ = s.mainDB.Close()
 	}
@@ -83,8 +90,7 @@ func (s *server) Close() {
 	}
 }
 
-// hydrateHistory carrega o histórico de chamadas persistido no Postgres para o
-// cache em memória do broker (chamado uma vez no boot, após o Restore).
+// hydrateHistory carrega o histórico de chamadas persistido para o cache em memória do broker.
 func (s *server) hydrateHistory(ctx context.Context) {
 	loaded := 0
 	for _, info := range s.sessions.infos() {
@@ -99,6 +105,6 @@ func (s *server) hydrateHistory(ctx context.Context) {
 		}
 	}
 	if loaded > 0 {
-		s.log.Info("histórico de chamadas hidratado a partir do Postgres", "records", loaded)
+		s.log.Info("histórico de chamadas hidratado", "registros", loaded)
 	}
 }

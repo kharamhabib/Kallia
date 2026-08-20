@@ -21,8 +21,9 @@ type SessionManager struct {
 	store    *sessionStore
 	waLogger waLog.Logger
 	log      *slog.Logger
-	maxCalls  int
+	maxCalls int
 	Scheduler *AIScheduler
+	Queue     *QueueManager
 	nps       *NPSEngine
 	followup  *FollowupEngine
 

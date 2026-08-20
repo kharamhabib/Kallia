@@ -235,7 +235,7 @@ export const AIDialog = ({ sid }: { sid: string }) => {
           Configurar IA
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[480px]">
+      <DialogContent className="sm:max-w-120">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-warning-text fill-warning/25" />
@@ -272,7 +272,7 @@ export const AIDialog = ({ sid }: { sid: string }) => {
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
 
-        <div className="py-4 space-y-4 max-h-[380px] overflow-y-auto pr-1">
+        <div className="py-4 space-y-4 max-h-95 overflow-y-auto pr-1">
           {tab === "config" ? (
             <div className="space-y-4">
               {/* Provedor & Modelo de IA */}

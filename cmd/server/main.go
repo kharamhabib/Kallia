@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-// envStr lê uma string de uma variável de ambiente primária (KALLIA_*) ou fallback (WACALLS_*).
+// envStr lê uma string de uma variável de ambiente primária (KALLIA_*) ou fallback.
 func envStr(key, fallbackKey, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -27,7 +27,7 @@ func envStr(key, fallbackKey, def string) string {
 	return def
 }
 
-// envInt lê um inteiro de uma variável de ambiente primária (KALLIA_*) ou fallback (WACALLS_*).
+// envInt lê um inteiro de uma variável de ambiente primária (KALLIA_*) ou fallback.
 func envInt(key, fallbackKey string, def int) int {
 	vStr := envStr(key, fallbackKey, "")
 	if vStr != "" {
@@ -69,9 +69,8 @@ func main() {
 	loadDotEnv()
 	initJWTSecret()
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	// Storage: Postgres (1 banco por sessão). URL de manutenção em KALLIA_PG_URL
-	pgURL := flag.String("pg-url", envStr("KALLIA_PG_URL", "WACALLS_PG_URL", ""), "Postgres maintenance URL")
-	pgNS := flag.String("pg-namespace", envStr("KALLIA_PG_NAMESPACE", "WACALLS_PG_NAMESPACE", "kallia"), "prefix for per-session databases")
+	storageDir := flag.String("storage", envStr("KALLIA_STORAGE_DIR", "WACALLS_STORAGE_DIR", "./storage"), "directory for SQLite & recordings storage")
+	redisURL := flag.String("redis-url", envStr("REDIS_URL", "KALLIA_REDIS_URL", "redis://localhost:6379"), "Redis connection URL for queue management")
 	staticDir := flag.String("static", "client/dist", "static client directory (optional)")
 	debug := flag.Bool("debug", false, "verbose logging")
 	maxCalls := flag.Int("max-calls-per-session", envInt("KALLIA_MAX_CALLS", "WACALLS_MAX_CALLS", 8), "max concurrent calls per session (0 = unlimited)")
@@ -97,7 +96,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := newServer(ctx, *pgURL, *pgNS, *staticDir, *maxCalls, log)
+	srv, err := newServer(ctx, *storageDir, *redisURL, *staticDir, *maxCalls, log)
 	if err != nil {
 		log.Error("startup failed", "err", err)
 		os.Exit(1)
@@ -110,8 +109,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Hidrata o histórico de chamadas em memória a partir do Postgres
-	// (summaries e chamados sobrevivem a restarts).
+	// Hidrata o histórico de chamadas em memória a partir do banco de dados
 	srv.hydrateHistory(ctx)
 
 	// Recalcula o total de agendamentos ativos ao iniciar
@@ -123,8 +121,6 @@ func main() {
 	httpSrv := &http.Server{
 		Addr:    *addr,
 		Handler: srv.routes(),
-		// Timeouts de leitura protegem contra Slowloris. WriteTimeout fica 0
-		// porque o SSE (/api/events) é uma resposta de longa duração.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -138,7 +134,6 @@ func main() {
 
 	<-ctx.Done()
 	log.Info("shutting down")
-	// Para o scheduler e desacopla os agentes IA (fecha sessões Gemini Live).
 	srv.scheduler.Stop()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -2,22 +2,23 @@
 
 # 📞 Kallia
 
-**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado e Agentes de IA Multi-Provedor em Go puro, direto do navegador — pronta para produção.**
+**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado, Backend OpenSource PocketBase, Fila Redis e Agentes de IA Multi-Provedor em Go puro — pronta para deploy no Coolify.**
 
-Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos e permissões RBAC), IA de voz **Gemini Live** + **xAI Grok Realtime** (26 vozes, Web Search, X Search, Reasoning Effort), transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks, integração nativa com **Chatwoot**, chaves de API criptografadas (AES-256-GCM) e deploy containerizado (Docker / VPS).
+Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos e permissões RBAC: `appadmin`, `creator`, `normal`), login por E-mail e **Google OAuth2**, IA de voz **Gemini Live** + **xAI Grok Realtime** (26 vozes, Web Search, X Search, Reasoning Effort), transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks com retries exponenciais e fila Redis, integração nativa com **Chatwoot**, chaves de API criptografadas (AES-256-GCM) e **deploy monolítico containerizado no Coolify via `docker-compose.yml`**.
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![PocketBase](https://img.shields.io/badge/PocketBase-0.22+-B8272C?logo=pocketbase&logoColor=white)](https://pocketbase.io)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io)
 [![whatsmeow](https://img.shields.io/badge/whatsmeow-VoIP-25D366?logo=whatsapp&logoColor=white)](https://github.com/tulir/whatsmeow)
 [![pion](https://img.shields.io/badge/pion-WebRTC-FF6B6B)](https://github.com/pion/webrtc)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](#-licença)
 
 </div>
 
 ---
 
-> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), módulo de CRM de contatos por sessão, autenticação JWT, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA multi-provedor (**Gemini Live** + **xAI Grok Realtime**), chaves de API criptografadas com AES-256-GCM, gravação de chamadas no servidor, **PostgreSQL por sessão**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy em Docker / VPS**. Todos os créditos dos projetos originários estão preservados em [Colaboradores](#-colaboradores).
+> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), módulo de CRM de contatos por sessão, autenticação via **PocketBase com Google OAuth2**, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA multi-provedor (**Gemini Live** + **xAI Grok Realtime**), chaves de API criptografadas com AES-256-GCM, gravação de chamadas no servidor, **armazenamento SQLite isolado por sessão**, **gerenciamento de filas e concorrência via Redis 7**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy monolítico no Coolify**.
 
 ---
 
@@ -25,76 +26,38 @@ Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos 
 
 O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas por projetos, gerenciar uma base de contatos em formato CRM e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA multi-provedor. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
 
-Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem **RTP/SRTP**, **STUN**, o transporte **WebRTC/SCTP relay** e a sinalização `<call>`, integrados ao [**whatsmeow**](https://github.com/tulir/whatsmeow) e servidos a um cliente **React 19**. A dependência em C é o codec `opus_mlow` (via cgo) — que pode ser compilado via `-tags mlow`. Sem ela, o servidor roda em modo **somente sinalização**.
+Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem **RTP/SRTP**, **STUN**, o transporte **WebRTC/SCTP relay** e a sinalização `<call>`, integrados ao [**whatsmeow**](https://github.com/tulir/whatsmeow) com persistência em SQLite puro e servidos a um cliente **React 19**.
 
 ---
 
 ## 🚀 Recursos e Funcionalidades do Kallia
 
 ### 👥 Módulo de CRM de Contatos Integrado
-
-- **Base de Dados por Sessão (`session_contacts`)**: Armazenamento completo de clientes contendo Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
+- **Base de Dados por Sessão (`contacts`)**: Armazenamento completo de clientes contendo Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
 - **Discagem Direta p/ o Webphone**: Ao clicar no ícone de telefone em qualquer contato da lista, o sistema navega reativamente para a tela do discador e preenche o número automaticamente.
 - **Resolução Reativa de Identidade (`useContactDisplay`)**: Exibição automática do nome cadastrado no CRM e avatar do cliente nas telas de Dashboard, Histórico de Chamadas, Notificações e Webphone.
 
-### 🏢 Multi-Tenancy & Autenticação JWT
-
-- **Login e Registro por E-mail/Senha**: Autenticação segura via `JWT Bearer` no frontend React.
+### 🏢 Multi-Tenancy & Autenticação PocketBase (Google OAuth2 + E-mail)
+- **Autenticação Dupla**: Login e Registro por E-mail/Senha e **Google OAuth2** integrado com popup nativo.
 - **Controle de Acesso por Roles (RBAC)**:
   - `appadmin`: Superadministrador com visão global de todos os projetos, usuários e conexões.
-  - `admin`: Gerencia seu próprio projeto, membros, chaves de API e agentes de IA.
+  - `creator`: Proprietário/Criador do projeto/tenant. Gerencia conexões, membros, agentes de IA e planos.
   - `normal`: Operador com perfil de atendimento (sem permissão para excluir conexões ou alterar configurações críticas).
-- **Simplificação de Login**: O frontend detecta automaticamente o servidor atual (`window.location.origin`), dispensando o preenchimento de URLs de servidor.
+- **Onboarding Automático**: Usuários criados via Google OAuth2 recebem automaticamente o papel `creator` e um novo projeto com plano `trial`.
 
-### 💳 Gestão de Planos & Limites (Billing)
-
-- **Planos por Projeto**: `basic`, `advantage`, `expert`.
-- **Limites de Conexão**: Cada plano define a quantidade máxima de WhatsApps conectados em simultâneo (ex: Básico 1 conexão, Advantage 3 conexões, Expert 8 conexões).
-- **Controle de Vigência & Status**: Bloqueio automatizado de novas conexões caso o plano do projeto esteja inativo ou vencido.
+### ⚡ Gerenciamento de Filas & Concorrência (Redis 7)
+- **Outbound Call Queue**: Fila de discagem por projeto/sessão com controle estrito de capacidade simultânea e rate limiter anti-spam para proteger números WhatsApp de bloqueios.
+- **Webhook Delivery Worker**: Fila assíncrona para entrega de webhooks com retries exponenciais e Dead-Letter Queue (DLQ).
 
 ### 🤖 Agentes Especialistas, IA Multi-Provedor & Transferência (`TransferTo`)
-
-- **Central de Agentes & Aba "Instruções & Prompt"**: Interface unificada contendo o editor de prompt do sistema em tela cheia (`PromptEditorModal`), gerenciamento de persona e injeção de **Tags Dinâmicas** (`[today]`, `[phone]`, `[direction]`, `[session_name]`, `[custom_fields]`).
-- **Provedores de IA Multi-Provedor**:
+- **Provedores Suportados**:
   - **Google Gemini Live**: Vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo.
-  - **xAI Grok Realtime**: 26 vozes (Eve ⭐, Sal ⭐ recomendadas para pt-BR), Reasoning Effort (`high`/`none`), ferramentas nativas (`web_search`, `x_search`), transcrição `grok-transcribe`, VAD ajustado, interrupção instantânea (barge-in) e diretiva de idioma via instructions.
-  - **OpenAI Realtime** (planejado): Estrutura preparada.
-- **Chaves de API Criptografadas**: Chaves dos provedores armazenadas com AES-256-GCM na tabela `ai_providers` e descriptografadas em runtime.
-- **Modos Inbound / Outbound**: Agentes dedicados para receber ligações, fazer chamadas ativas ou atuar como padrão.
-- **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa. Funciona entre provedores diferentes (Gemini ↔ Grok).
+  - **xAI Grok Realtime**: 26 vozes (Eve ⭐, Sal ⭐), Reasoning Effort (`high`/`none`), ferramentas nativas (`web_search`, `x_search`), transcrição `grok-transcribe`.
+- **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa.
 
-### ⚡ Resiliência VoIP, Sinalização sem Bloqueio & Sincronização Multi-Device
-
-- **Sinalização Instantânea (0ms Delay de Toque)**: A resolução de telefones reais (PN) a partir de LIDs de dispositivos secundários de um servidor ou celular (`realPhone`) é executada de forma **100% assíncrona** (`goSafe`) com um limite estrito de timeout (`context.WithTimeout(2s)`) e sanitização `.ToNonAD()`. O sinal de chamada recebida e o modal de toque disparam no frontend no mesmo milissegundo.
-- **Parser de Sinalização Resiliente (`ExtractNodeInfo`)**: Varre a árvore XML em busca do nó de comando VoIP verdadeiro (`offer`, `accept`, `terminate`, `reject`, `transport`, `preaccept`), ignorando estrofes secundárias de latência ou transporte como `<relaylatency>` ou `<te>`.
-- **Sincronização entre Celular Principal e Servidor (`accepted_elsewhere`)**: Quando a chamada é atendida no celular físico ou em outro aparelho, o WhatsApp transmite um evento de término por `reason="accepted_elsewhere"`. O servidor processa a estrofe e notifica o frontend, que fecha o modal `incoming` e interrompe o som de toque imediatamente.
-
-### 🎨 CRM Enriquecido, Modais & Player de Áudio
-
-- **Perfil CRM Completo**: Fotos de alta definição (`avatarUrl`), selo visual de **WhatsApp Business** (ícone ✨ e badge em verde), status/recado formatado em citação (`" "`), data e hora da última sincronização (`enrichedAt`), empresa, e-mail, tags e identificadores de privacidade (LID).
-- **Paridade entre Tabela e Cards (`HistoryItem`)**: Cards do Histórico e Dashboard reformulados com badges explícitos de Direção (`Entrada` / `Saída` com ícone colorido) e status conciso sem frases redundantes.
-- **Modal Reutilizável (`ConfirmModal`)**: Componente global de confirmação com suporte a ações destrutivas e indicador de carregamento para remoção segura de contatos e chamadas.
-- **Player com Linha do Tempo Customizada (`.audio-slider`)**: Ajuste técnico no indicador deslizante (*thumb slider* de 10px), eliminando sobreposição visual nos carimbos de tempo.
-- **Modais de Transcrição & Resumo IA**: Acesso instantâneo a resumos e transcrições completas via modais interativos tanto no Histórico quanto no Dashboard.
-
-### 🔑 Chaves de API por Conexão (`kc_*`)
-
-- Chave de API exclusiva (`kc_...`) gerada automaticamente por conexão para chamadas de API externas isoladas por WhatsApp.
-
-### 🗄️ Persistência em PostgreSQL (1 banco por sessão)
-
-- Modelo de bancos isolados: um banco **principal** (`kallia_main`, com tabelas de projetos, usuários e conexões) + **um banco por sessão** (`kallia_<id>`, com o store do whatsmeow daquela conta e contatos do CRM).
-- **Detecção Inteligente de Legado**: Caso a namespace `kallia_main` não exista mas haja uma base `wacalls_main`, o servidor utiliza automaticamente o namespace legado sem perda de dados.
-
-### 💬 API de Mensagens & Webhooks
-
-- `POST /api/sessions/{sid}/messages/{text|image|audio|video|document|poll|interactive}` (envio via base64, URL com guarda anti-SSRF, enquetes ou botões/listas interativos nativos).
-- **Injeção de Nós Binários**: Injeção automática de metadados `<biz>` e `<bot>` via `whatsmeow` para forçar a exibição correta de botões interativos enviados por conexões Multi-Device.
-- `GET/POST/DELETE /api/sessions/{sid}/webhook` com retries e entrega assíncrona.
-
-### 🤝 Integração Nativa e Widget para Chatwoot
-
-- Mensagens e chamadas integradas ao Chatwoot. O `widget.js` embutível permite atender e fazer chamadas diretamente da caixa de entrada do atendente com resolução reativa de contatos.
+### 🗄️ Persistência Leve em SQLite & PocketBase
+- **Whatsmeow SQLite Isolado**: Cada sessão WhatsApp mantém suas credenciais e chaves criptográficas em `./storage/whatsapp/{id}.db`.
+- **Coleções no PocketBase**: `users`, `projects`, `sessions`, `agents`, `contacts`, `call_history`, `call_transcripts`, `ai_providers`, `call_ratings`, `sent_polls`.
 
 ---
 
@@ -104,128 +67,53 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 ┌──────────────────────────────────────────────────────────────────────────┐
 │          BROWSER (cliente React 19 + CRM + Discador Webphone)            │
 │   mic + alto-falante  ·  WebRTC (Opus)  ·  HTTP REST (JWT) + SSE         │
-└───────────────────────────────┬──────────────────────────────────────────┘
-                                 │  POST /api/sessions/{sid}/calls/{id}/webrtc
-                                 │  GET  /api/events (ticket temporário)
-                                 ▼
-┌──────────────────────────── GO SERVER (cmd/server) ────────────────────────┐
-│  SessionManager   registry de contas escopadas por projeto                 │
-│  Auth (JWT)       middleware RBAC (appadmin, admin, normal)                │
-│  Projects / Plans gestão de planos e limite de conexões por projeto        │
-│  CRM Contacts     gerenciador do banco de contatos da sessão               │
-│  Agents           gerenciador de agentes especialistas e transferências    │
-│  AI Providers     gerenciamento de provedores (Gemini/Grok/OpenAI)         │
-│  Broker           hub SSE (sessões, auth, ciclo de vida das chamadas)       │
-│  Bridge           ponte pion WebRTC (Opus do navegador ⇄ PCM 16 kHz)        │
-│                                                                            │
-│  internal/wa      adaptador VoipSocket sobre whatsmeow                     │
-│  internal/voip    call · signaling · media · transport · core · wanode     │
-└───────────────┬──────────────────────────────────────┬────────────────────┘
-                │ sinalização <call>                    │ mídia SRTP
-                ▼                                        ▼
-        ┌───────────────┐                    ┌──────────────────────┐
-        │  WhatsApp WS  │                    │   relay do WhatsApp   │
-        │  (whatsmeow)  │                    │  (SRTP sobre SCTP/DC) │
-        └───────────────┘                    └──────────────────────┘
-                                                         │
-                                              ┌──────────────────────┐
-                                              │  PostgreSQL 16        │
-                                              │  kallia_main + 1/db  │
-                                              └──────────────────────┘
+└───────────────┬───────────────────────────────┬──────────────────────────┘
+                │ Auth & CRM                    │ WebRTC & VoIP
+                ▼                               ▼
+    ┌──────────────────────┐      ┌────────────────────────────┐
+    │  PocketBase (:8090)  │      │     Kallia Server (:8080)   │
+    │  Users, Collections  │      │  WebRTC, Pion, whatsmeow   │
+    │  & Google OAuth2     │      └──────────────┬─────────────┘
+    └───────────┬──────────┘                     │
+                │ SQLite                         ▼
+                │                    ┌────────────────────────────┐
+                ▼                    │   Redis 7 (:6379)          │
+     ┌──────────────────────┐        │   Filas de Discagem &      │
+     │  Volume ./storage    │        │   Rate Limiter Anti-Spam   │
+     │  (pb_data + *.db)    │        └────────────────────────────┘
+     └──────────────────────┘
 ```
 
 ---
 
-## 📋 Variáveis de Ambiente (`KALLIA_*`)
+## 🚀 Deploy Monolítico no Coolify
 
-| Variável / Flag               | Padrão             | Descrição                                                               |
-| ----------------------------- | ------------------ | ----------------------------------------------------------------------- |
-| `KALLIA_PG_URL`               | —                  | URL do Postgres (ex.: `postgresql://user:pass@localhost:5432/postgres`) |
-| `KALLIA_PG_NAMESPACE`         | `kallia`           | Prefixo dos bancos por sessão                                           |
-| `KALLIA_ADMIN_EMAIL`          | `admin@kallia.com` | E-mail do usuário admin criado automaticamente no bootstrap             |
-| `KALLIA_ADMIN_PASSWORD`       | `123456`           | Senha do usuário admin inicial                                          |
-| `KALLIA_INITIAL_PROJECT_NAME` | `Projeto Inicial`  | Nome do projeto inicial criado no bootstrap                             |
-| `KALLIA_INITIAL_PROJECT_PLAN` | `expert`           | Plano inicial do projeto (`basic`\|`advantage`\|`expert`)               |
-| `KALLIA_JWT_SECRET`           | —                  | Segredo HMAC para assinatura de tokens JWT                              |
-| `KALLIA_MAX_CALLS`            | `8`                | Chamadas simultâneas padrão por sessão                                  |
-| `KALLIA_API_KEY`              | —                  | Chave de API mestre global                                              |
-| `KALLIA_PUBLIC_IP`            | `auto`             | IP público p/ NAT 1:1 / ICE-TCP (`auto` detecta automaticamente)        |
-| `KALLIA_UDP_PORT`             | `50000`            | Porta de mídia VoIP WebRTC                                              |
-| `KALLIA_LOG_LEVEL`            | `info`             | Nível de log (`debug\|info\|warn\|error`)                               |
-| `KALLIA_CORS_ORIGINS`         | `*`                | Origens CORS permitidas                                                 |
-| `KALLIA_TRUSTED_PROXIES`      | —                  | IPs/CIDRs de proxy confiável                                            |
-| `KALLIA_ALLOW_PRIVATE_URLS`   | `false`            | Permite destinos de IP privado em tool-proxy/mídia (SSRF)               |
-| `KALLIA_AI_ENCRYPTION_KEY`    | —                  | Chave de criptografia AES-256-GCM para chaves de API dos provedores de IA |
+O projeto está configurado para deploy imediato no **Coolify** via `docker-compose.yml`.
+
+### 1. Pré-requisitos
+- VPS com Docker e Coolify instalado (ex: Hostinger KVM 16GB RAM).
+- Dois subdomínios apontando para o servidor:
+  - `app.seudominio.com` (Frontend React + Servidor VoIP)
+  - `pb.seudominio.com` (PocketBase REST API e Admin UI)
+
+### 2. Passo a Passo no Coolify
+1. Crie uma nova aplicação do tipo **Docker Compose** no Coolify.
+2. Aponte para o repositório Git do Kallia.
+3. Configure as variáveis de ambiente baseadas no `.env.example`.
+4. Mapeie a porta UDP `50000` para o tráfego de voz WebRTC.
+5. Inicie o deploy. O PocketBase executará as migrações automáticas em `pb_migrations/` e o servidor estará pronto para uso.
 
 ---
 
-## 🔌 API Endpoints Principais
+## 📋 Variáveis de Ambiente
 
-### Autenticação & Usuários
-
-- `POST /api/auth/login` — Login por email/senha (retorna token JWT + dados do usuário).
-- `POST /api/auth/register` — Registro de novo usuário/empresa.
-- `GET /api/auth/me` — Dados do usuário logado.
-
-### Sessões & Conexões (WhatsApp)
-
-- `GET /api/sessions` — Lista conexões do projeto ativo.
-- `POST /api/sessions` — Cria uma nova conexão (valida limite do plano).
-- `DELETE /api/sessions/{sid}` — Remove a conexão e derruba o banco da sessão.
-
-### CRM de Contatos
-
-- `GET /api/sessions/{sid}/contacts` — Busca contatos do CRM com suporte a parâmetro `q` (nome, telefone ou e-mail).
-- `POST /api/sessions/{sid}/contacts` — Cria ou atualiza um contato no CRM da sessão.
-- `DELETE /api/sessions/{sid}/contacts/{id}` — Exclui um contato do CRM.
-
-### Agentes Especialistas
-
-- `GET /api/sessions/{sid}/agents` — Lista agentes cadastrados na conexão.
-- `POST /api/sessions/{sid}/agents` — Cria um novo agente especialista.
-- `PUT /api/sessions/{sid}/agents/{agentId}` — Atualiza configurações/prompts do agente.
-- `DELETE /api/sessions/{sid}/agents/{agentId}` — Remove o agente especialista.
-
-### Chamadas & Histórico
-
-- `POST /api/sessions/{sid}/calls` — Inicia chamada de saída.
-- `POST /api/sessions/{sid}/calls/{id}/accept` — Atende chamada recebida.
-- `DELETE /api/sessions/{sid}/calls/{id}` — Encerra chamada ativa.
-- `GET /api/sessions/{sid}/history` — Consulta histórico de chamadas.
-- `DELETE /api/sessions/{sid}/history/{callId}` — Exclui registro do histórico (autenticado por JWT).
-
-### Provedores de IA
-
-- `GET /api/ai-providers` — Lista provedores de IA cadastrados.
-- `POST /api/ai-providers` — Cria/atualiza um provedor de IA (chave criptografada com AES-256-GCM).
-- `DELETE /api/ai-providers/{id}` — Remove um provedor de IA.
-
----
-
-## 🧪 Testes
-
-```bash
-# Testes unitários do Backend Go
-go test ./cmd/server ./internal/...
-
-# Verificação estrita de tipos no Frontend React/TypeScript
-cd client && npx tsc --noEmit
-```
-
----
-
-## 👥 Colaboradores & Créditos
-
-O **Kallia** é construído sobre o excelente trabalho da comunidade e dos desenvolvedores originários do **WaCalls** e **AstraCalls**:
-
-<div align="center">
-
-<a href="https://github.com/jotadev66"><img src="https://github.com/jotadev66.png" width="72" height="72" style="border-radius:50%" alt="jotadev66"/></a>
-<a href="https://github.com/edgardmessias"><img src="https://github.com/edgardmessias.png" width="72" height="72" style="border-radius:50%" alt="edgardmessias"/></a>
-<a href="https://github.com/w3nder"><img src="https://github.com/w3nder.png" width="72" height="72" style="border-radius:50%" alt="w3nder"/></a>
-
-[**@jotadev66**](https://github.com/jotadev66) · [**@edgardmessias**](https://github.com/edgardmessias) · [**@w3nder**](https://github.com/w3nder)
-
-**Projetos originais:** [WaCalls](https://github.com/JotaDev66/WaCalls) · AstraCalls
-
-</div>
+| Variável | Padrão | Descrição |
+| :--- | :--- | :--- |
+| `POCKETBASE_URL` | `http://pocketbase:8090` | URL interna de comunicação com o PocketBase |
+| `REDIS_URL` | `redis://redis:6379` | URL de conexão com a fila Redis |
+| `KALLIA_MAX_CALLS` | `8` | Limite de chamadas simultâneas padrão por sessão |
+| `KALLIA_STORAGE_DIR` | `./storage` | Diretório de persistência SQLite e gravações |
+| `KALLIA_UDP_PORT` | `50000` | Porta UDP para fluxo de áudio WebRTC / RTP |
+| `KALLIA_PUBLIC_IP` | `auto` | IP público para anúncio ICE no WebRTC |
+| `KALLIA_JWT_SECRET` | — | Chave secreta HMAC para assinatura de tokens JWT |
+| `KALLIA_ENCRYPTION_KEY`| — | Chave mestre AES-256 para criptografia de chaves de IA |

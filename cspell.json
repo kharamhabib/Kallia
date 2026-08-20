@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "language": "en,pt,pt-BR",
+  "words": [
+    "kallia",
+    "whatsmeow",
+    "chatwoot",
+    "apikey",
+    "descriptografa",
+    "descriptografar",
+    "descriptografada",
+    "generativelanguage",
+    "grok",
+    "xai",
+    "gemini",
+    "appadmin",
+    "zagan",
+    "naksh",
+    "rtk",
+    "shadcn",
+    "lucide",
+    "wacalls",
+    "unadded",
+    "autonomamente",
+    "ultrarrápido",
+    "gosafely",
+    "subagent",
+    "antigravity"
+  ],
+  "ignorePaths": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "storage/**",
+    "*.exe",
+    ".git/**"
+  ]
+}

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { setAuth } from "@/lib/auth";
+import { pb } from "@/lib/pocketbase";
 
 type AuthMode = "login" | "register" | "forgot_request" | "forgot_reset";
 
@@ -23,6 +24,33 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
   const resetMessages = () => {
     setErr("");
     setSuccessMsg("");
+  };
+
+  const handleGoogleLogin = async () => {
+    setBusy(true);
+    resetMessages();
+    try {
+      const authData = await pb.collection("users").authWithOAuth2({ provider: "google" });
+      if (authData && authData.token) {
+        setAuth(base, authData.token, {
+          id: authData.record.id,
+          email: authData.record.email,
+          role: authData.record.role || "creator",
+          projectId: (authData.record as any).project_id || "",
+          name: (authData.record as any).name || "",
+        });
+        onSuccess();
+      }
+    } catch (err: any) {
+      if (err?.name === "ClientResponseError" && err.status === 0) {
+        setErr("Login com Google cancelado ou janela fechada.");
+      } else {
+        // Fallback suave
+        setErr(err?.message || "Não foi possível autenticar com o Google no momento.");
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleLoginOrRegister = async () => {
@@ -47,7 +75,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
           }
           return;
         }
-        setSuccessMsg("Conta criada! Entrando...");
+        setSuccessMsg("Conta criada com sucesso! Entrando...");
       }
 
       const loginRes = await fetch(`${base}/api/auth/login`, {
@@ -83,14 +111,11 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
       });
       const data = await res.json();
       if (!res.ok) {
-        setErr(data.error || "Erro ao solicitar código de recuperação");
+        setErr(data.error || "Erro ao solicitar recuperação de senha");
         return;
       }
 
-      setSuccessMsg(data.message || "Código gerado com sucesso!");
-      if (data.code) {
-        setResetCode(data.code);
-      }
+      setSuccessMsg(data.message || "Instruções enviadas com sucesso!");
       setMode("forgot_reset");
     } catch {
       setErr("Erro ao conectar ao servidor para recuperação.");
@@ -155,12 +180,53 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
               </h1>
               <p className="text-sm text-slate-400 mt-1">
                 {mode === "register" && "Crie sua conta e inicie seu projeto"}
-                {mode === "login" && "Acesse com seu e-mail e senha"}
+                {mode === "login" && "Acesse com sua conta ou Google"}
                 {mode === "forgot_request" && "Recuperação de Senha"}
                 {mode === "forgot_reset" && "Digite o código e sua nova senha"}
               </p>
             </div>
           </div>
+
+          {/* Google OAuth2 Button (Login / Register) */}
+          {(mode === "login" || mode === "register") && (
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-10 border-slate-800 bg-slate-900/80 hover:bg-slate-800 text-slate-100 font-medium flex items-center justify-center gap-2.5 transition-all shadow-sm"
+                onClick={handleGoogleLogin}
+                disabled={busy}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                Continuar com Google
+              </Button>
+
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-slate-800 w-full" />
+                <span className="bg-slate-950 px-2 text-xs text-slate-500 uppercase tracking-wider font-semibold">
+                  ou e-mail
+                </span>
+                <div className="border-t border-slate-800 w-full" />
+              </div>
+            </div>
+          )}
 
           {/* Form Content */}
           <div className="space-y-4">
@@ -172,13 +238,13 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                 <Input
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="Ex: Minha Empresa CallCenter"
+                  placeholder="Ex: Minha Empresa"
                   className="bg-slate-900/60 border-slate-800 focus-visible:ring-indigo-500 text-slate-100 placeholder:text-slate-600"
                 />
               </div>
             )}
 
-            {/* Email Field (Always visible) */}
+            {/* Email Field */}
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
                 <Mail className="h-3.5 w-3.5" /> E-mail
@@ -199,7 +265,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
               />
             </div>
 
-            {/* Password Field (for Login/Register) */}
+            {/* Password Field */}
             {(mode === "login" || mode === "register") && (
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -235,7 +301,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
               </div>
             )}
 
-            {/* Reset Code & New Password Fields (for Forgot Reset) */}
+            {/* Reset Code & New Password Fields */}
             {mode === "forgot_reset" && (
               <>
                 <div className="space-y-1.5">
@@ -284,7 +350,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                 onClick={handleLoginOrRegister}
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                {mode === "register" ? "Cadastrar Projeto" : "Entrar"}
+                {mode === "register" ? "Criar Projeto e Entrar" : "Entrar com E-mail"}
               </Button>
             )}
 
@@ -295,7 +361,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                 onClick={handleRequestCode}
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Gerar Código de Recuperação
+                Enviar Código de Recuperação
               </Button>
             )}
 
@@ -313,7 +379,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
 
           {/* Footer Options */}
           <div className="text-center space-y-2 pt-2 border-t border-slate-800/60">
-            {(mode === "forgot_request" || mode === "forgot_reset") ? (
+            {mode === "forgot_request" || mode === "forgot_reset" ? (
               <button
                 type="button"
                 onClick={() => {
@@ -335,14 +401,14 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
               >
                 {mode === "register"
                   ? "Já possui uma conta? Faça login"
-                  : "Não tem uma conta? Cadastre aqui"}
+                  : "Não tem uma conta? Cadastre-se aqui"}
               </button>
             )}
           </div>
         </div>
 
         <p className="text-center text-xs text-slate-500 mt-4">
-          WhatsApp voice calls with AI-powered agents
+          Kallia VoIP & AI Multi-Provider Platform
         </p>
       </div>
     </div>

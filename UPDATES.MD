@@ -4,17 +4,18 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 
 ---
 
-## 🎯 Concluído Recentemente (Milestone Rebranding & SaaS)
+## 🎯 Concluído Recentemente (Milestone PocketBase & Redis SaaS Monolith)
 
-- [x] **Autenticação JWT & Perfis (RBAC)**: Login por e-mail/senha com papéis `appadmin`, `admin` e `normal`.
-- [x] **Projetos & Billing (Planos de Cobrança)**: Tabela de projetos com planos `basic`, `advantage` e `expert`, controle de vigência e limitação dinâmica de conexões.
+- [x] **Backend Integrado OpenSource (PocketBase)**: Migração do banco de dados e autenticação para o PocketBase com coleções parametrizadas (`users`, `projects`, `sessions`, `agents`, `contacts`, `call_history`, `call_transcripts`, `ai_providers`, `call_ratings`, `sent_polls`).
+- [x] **Autenticação Google OAuth2 & E-mail**: Suporte nativo a login com Google OAuth2 e fluxo seguro de onboarding com criação automática de projeto trial e atribuição do papel `creator`.
+- [x] **Whatsmeow SQLite Isolado por Sessão**: Armazenamento de credenciais e chaves criptográficas em arquivos SQLite locais (`./storage/whatsapp/{id}.db`), eliminando 100% da dependência de PostgreSQL.
+- [x] **Gerenciamento de Fila & Concorrência com Redis 7**: Módulo de fila (`queue.go`) para controle de taxa de discagem outbound anti-bloqueio WhatsApp, semáforo de concorrência por plano e entrega assíncrona de webhooks com retries exponenciais e DLQ.
+- [x] **Deploy Monolítico no Coolify**: `docker-compose.yml` otimizado contendo serviços `app`, `pocketbase` e `redis` com volumes compartilhados e persistentes em `./storage`.
+- [x] **Auditoria de Segurança & Sizing SaaS**: Conformidade OWASP e dimensionamento para VPS Hostinger 16GB RAM (suportando 250+ sessões WhatsApp e 80-120 chamadas VoIP simultâneas).
+- [x] **Autenticação JWT & Perfis (RBAC)**: Suporte aos papéis `appadmin` (superadministrador), `creator` (proprietário do tenant/projeto) e `normal` (operador de atendimento).
 - [x] **API Keys por Conexão (`kc_*`)**: Geração automática de chaves únicas por sessão para consumo seguro por APIs externas.
 - [x] **Agentes Especialistas & Hot-Swap (`TransferTo`)**: Suporte a personas distintas para chamadas *inbound* e *outbound*, e transferência de chamadas em tempo real entre agentes sem derrubar o canal VoIP.
-- [x] **Rebranding Completo para Kallia**: Módulo Go, imports, docker-compose, Dockerfile, scripts PowerShell/BAT e variáveis de ambiente `KALLIA_*` com fallback gracioso para instalações legadas.
-- [x] **Exclusão Autenticada no Histórico**: Correção e injeção do Bearer Token no frontend para exclusão segura de registros.
-- [x] **Mensagens Interativas com Botões (Multi-Device)**: Injeção automática de nós binários `biz` e `bot` via `whatsmeow` no Go para possibilitar e forçar a exibição de botões interativos nativos enviados por contas pessoais MD.
-- [x] **Atualização Completa da Documentação da API (OpenAPI/Swagger)**: Mapeamento de todas as mais de 20 rotas do projeto (Mensagens, Chatwoot, Agentes, WebRTC, Gemini) no `openapi.yaml`, com suporte a autorização via Connection API Key no Swagger.
-- [x] **Reconexão de Dispositivo & Geração de QR Code**: Adição de botões dedicados de reconexão e regeneração de QR Code em conexões de WhatsApp desconectadas no `ConnectionsPage` e `SessionPairing`.
+- [x] **Mensagens Interativas com Botões (Multi-Device)**: Injeção automática de nós binários `biz` e `bot` via `whatsmeow` no Go para possibilitar exibição de botões interativos nativos enviados por contas pessoais MD.
 
 ---
 
@@ -28,7 +29,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
    - Análise de sentimentos e tempo médio de atendimento (TMA) das ligações operadas por IA.
 
 3. **Integração de Provedores de Voz Adicionais**:
-   - Opção de fallback para ElevenLabs / OpenAI Realtime API além do Google Gemini Live.
+   - Opção de fallback para ElevenLabs / OpenAI Realtime API além do Google Gemini Live e xAI Grok.
 
 4. **Gravação Dual-Channel na Nuvem (S3 / R2)**:
    - Exportação automática dos arquivos WAV de gravação de áudio para buckets S3 ou Cloudflare R2 para economizar espaço de disco no VPS.

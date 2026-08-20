@@ -36,9 +36,9 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		name           TEXT NOT NULL,
 		plan           TEXT NOT NULL DEFAULT 'basic',
 		plan_status    TEXT NOT NULL DEFAULT 'active',
-		plan_starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		plan_ends_at   TIMESTAMPTZ,
-		created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+		plan_starts_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		plan_ends_at   DATETIME,
+		created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela projects: %w", err)
@@ -49,9 +49,9 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		id            TEXT PRIMARY KEY,
 		email         TEXT UNIQUE NOT NULL,
 		password_hash TEXT NOT NULL,
-		role          TEXT NOT NULL DEFAULT 'normal',
+		role          TEXT NOT NULL DEFAULT 'creator',
 		project_id    TEXT REFERENCES projects(id) ON DELETE SET NULL,
-		created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+		created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela users: %w", err)
@@ -65,7 +65,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		webhook    TEXT,
 		chatwoot   TEXT,
 		ai_config  TEXT,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ai_config TEXT`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`)
 	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS api_key TEXT UNIQUE`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
 
 	// 4. Executar migrações de dados de legado
 	_, _ = db.ExecContext(ctx, `UPDATE users SET email = LOWER(TRIM(email))`)
@@ -85,11 +85,11 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 
 	_, _ = db.ExecContext(ctx, `
 		INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
-		VALUES ('default', 'Projeto Padrão', 'basic', 'active', now(), now() + interval '10 years')
+		VALUES ('default', 'Projeto Padrão', 'basic', 'active', CURRENT_TIMESTAMP, datetime('now', '+10 years'))
 		ON CONFLICT (id) DO NOTHING
 	`)
 	_, _ = db.ExecContext(ctx, `UPDATE sessions SET project_id = 'default' WHERE project_id IS NULL`)
-	_, _ = db.ExecContext(ctx, `UPDATE sessions SET api_key = 'kc_' || md5(random()::text) WHERE api_key IS NULL`)
+	_, _ = db.ExecContext(ctx, `UPDATE sessions SET api_key = 'kc_' || hex(randomblob(16)) WHERE api_key IS NULL`)
 
 	// 5. Criar a tabela de agentes (personas)
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS agents (
@@ -98,9 +98,9 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		name        TEXT NOT NULL,
 		description TEXT,
 		ai_config   TEXT NOT NULL,
-		inbound     BOOLEAN NOT NULL DEFAULT FALSE,
-		outbound    BOOLEAN NOT NULL DEFAULT FALSE,
-		created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+		inbound     BOOLEAN NOT NULL DEFAULT 0,
+		outbound    BOOLEAN NOT NULL DEFAULT 0,
+		created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela agents: %w", err)
@@ -109,12 +109,12 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 
 	// Criar a tabela de transcrições de chamada
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS call_transcripts (
-		id         SERIAL PRIMARY KEY,
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		session_id TEXT NOT NULL,
 		call_id    TEXT NOT NULL,
 		speaker    TEXT NOT NULL,
 		text       TEXT NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela call_transcripts: %w", err)
@@ -128,10 +128,10 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		project_id        TEXT NOT NULL DEFAULT 'default',
 		provider          TEXT NOT NULL,
 		encrypted_api_key TEXT NOT NULL DEFAULT '',
-		enabled           BOOLEAN NOT NULL DEFAULT FALSE,
+		enabled           BOOLEAN NOT NULL DEFAULT 0,
 		default_model     TEXT NOT NULL DEFAULT '',
 		options_json      TEXT NOT NULL DEFAULT '{}',
-		updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY (project_id, provider)
 	)`)
 	if err != nil {
@@ -149,7 +149,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		ended_at      BIGINT,
 		end_reason    TEXT,
 		summary       TEXT,
-		ticket_opened BOOLEAN NOT NULL DEFAULT FALSE,
+		ticket_opened BOOLEAN NOT NULL DEFAULT 0,
 		ticket_reason TEXT,
 		recording_url TEXT,
 		PRIMARY KEY (session_id, call_id)
@@ -161,13 +161,13 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 
 	// Criar a tabela de pesquisas NPS
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS call_ratings (
-		id         SERIAL PRIMARY KEY,
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		session_id TEXT NOT NULL,
 		call_id    TEXT NOT NULL,
 		phone      TEXT NOT NULL,
 		score      INT NOT NULL,
 		comment    TEXT,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela call_ratings: %w", err)
@@ -189,7 +189,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 
 	// Criar a tabela de contatos (CRM)
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS contacts (
-		id         SERIAL PRIMARY KEY,
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
 		session_id TEXT NOT NULL,
 		phone      TEXT NOT NULL,
 		name       TEXT NOT NULL DEFAULT '',
@@ -200,22 +200,22 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		lid        TEXT NOT NULL DEFAULT '',
 		jid        TEXT NOT NULL DEFAULT '',
 		tags       TEXT NOT NULL DEFAULT '',
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela contacts: %w", err)
 	}
 	_, _ = db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_session_phone ON contacts(session_id, phone)`)
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_lid ON contacts(session_id, lid)`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS enriched_at TIMESTAMPTZ`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS enriched_at DATETIME`)
 
 	// Criar a tabela de recuperação de senha
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS password_resets (
 		email      TEXT NOT NULL,
 		code       TEXT NOT NULL,
-		expires_at TIMESTAMPTZ NOT NULL,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		expires_at DATETIME NOT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela password_resets: %w", err)
@@ -295,7 +295,7 @@ func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error
 		projectID = newSessionID()
 		_, err = s.db.ExecContext(ctx, `
 			INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
-			VALUES ($1, $2, $3, 'active', now(), now() + interval '10 years')
+			VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, datetime('now', '+10 years'))
 			ON CONFLICT (id) DO NOTHING
 		`, projectID, projectName, projectPlan)
 		if err != nil {
@@ -303,7 +303,7 @@ func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error
 		}
 	}
 
-	// Criar o usuário administrador inicial
+	// Criar o usuário creator inicial
 	hashed, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("gerar hash de senha inicial: %w", err)
@@ -312,7 +312,7 @@ func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error
 	userID := newSessionID()
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO users (id, email, password_hash, role, project_id)
-		VALUES ($1, $2, $3, 'admin', $4)
+		VALUES ($1, $2, $3, 'creator', $4)
 		ON CONFLICT (email) DO NOTHING
 	`, userID, adminEmail, string(hashed), projectID)
 	if err != nil {
@@ -875,7 +875,7 @@ func (s *sessionStore) createProjectAndUser(ctx context.Context, projectID, proj
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
-		VALUES ($1, $2, 'basic', 'active', now(), $3)
+		VALUES ($1, $2, 'basic', 'active', CURRENT_TIMESTAMP, $3)
 	`, projectID, projName, planEnds)
 	if err != nil {
 		return fmt.Errorf("criar projeto: %w", err)
@@ -929,7 +929,7 @@ func (s *sessionStore) getUserByID(ctx context.Context, id string) (*userRow, er
 
 // --- Métodos de Recuperação de Senha ---
 
-func (s *sessionStore) createPasswordResetCode(ctx context.Context, email, code string, expiresAt time.Time) error {
+func (s *sessionStore) createPasswordReset(ctx context.Context, email, code string, expiresAt time.Time) error {
 	cleanEmail := strings.TrimSpace(strings.ToLower(email))
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE LOWER(email) = $1`, cleanEmail)
 	_, err := s.db.ExecContext(ctx, `
@@ -939,12 +939,16 @@ func (s *sessionStore) createPasswordResetCode(ctx context.Context, email, code 
 	return err
 }
 
+func (s *sessionStore) createPasswordResetCode(ctx context.Context, email, code string, expiresAt time.Time) error {
+	return s.createPasswordReset(ctx, email, code, expiresAt)
+}
+
 func (s *sessionStore) verifyPasswordResetCode(ctx context.Context, email, code string) (bool, error) {
 	cleanEmail := strings.TrimSpace(strings.ToLower(email))
 	var count int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM password_resets
-		WHERE LOWER(email) = $1 AND code = $2 AND expires_at > NOW()
+		WHERE LOWER(email) = $1 AND code = $2 AND expires_at > CURRENT_TIMESTAMP
 	`, cleanEmail, strings.TrimSpace(code)).Scan(&count)
 	if err != nil {
 		return false, err
@@ -1312,13 +1316,13 @@ func (s *sessionStore) upsertAIProvider(ctx context.Context, r aiProviderRow) er
 	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ai_providers (project_id, provider, encrypted_api_key, enabled, default_model, options_json, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now())
+		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
 		ON CONFLICT (project_id, provider) DO UPDATE SET
 			encrypted_api_key = EXCLUDED.encrypted_api_key,
 			enabled = EXCLUDED.enabled,
 			default_model = EXCLUDED.default_model,
 			options_json = EXCLUDED.options_json,
-			updated_at = now()
+			updated_at = CURRENT_TIMESTAMP
 	`, r.ProjectID, r.Provider, r.EncryptedAPIKey, r.Enabled, r.DefaultModel, r.OptionsJSON)
 	return err
 }
