@@ -123,8 +123,12 @@ func newSession(mgr *SessionManager, id, name, projectID, apiKey string, client 
 		auth:      AuthSnapshot{State: "connecting"},
 		reg:       newCallRegistry(),
 	}
-	s.client.Store(client)
-	client.AddEventHandler(s.handleEvent)
+	if client != nil {
+		s.client.Store(client)
+		client.AddEventHandler(s.handleEvent)
+	} else {
+		s.auth = AuthSnapshot{State: "disconnected"}
+	}
 	return s
 }
 
@@ -621,13 +625,32 @@ func (s *Session) handleEvent(rawEvt any) {
 }
 
 func (s *Session) connect(ctx context.Context) error {
-	if s.getClient().Store.ID != nil {
-		return s.getClient().Connect()
+	client := s.getClient()
+	if client == nil {
+		return nil
+	}
+	if client.Store != nil && client.Store.ID != nil {
+		return client.Connect()
 	}
 	return s.startPairing(ctx)
 }
 
 func (s *Session) startPairing(ctx context.Context) error {
+	if s.waContainer == nil {
+		container, db, err := s.mgr.db.openSessionContainer(ctx, s.id)
+		if err != nil {
+			return fmt.Errorf("abrir container da sessão: %w", err)
+		}
+		s.waContainer = container
+		s.waDB = db
+	}
+	if s.getClient() == nil {
+		device := s.waContainer.NewDevice()
+		client := whatsmeow.NewClient(device, s.mgr.waLogger)
+		client.ManualHistorySyncDownload = true
+		s.replaceClient(client)
+	}
+
 	osName := "Kallia"
 	if s.name != "" {
 		osName = "Kallia (" + s.name + ")"
@@ -649,8 +672,8 @@ func (s *Session) startPairing(ctx context.Context) error {
 				s.setAuth(AuthSnapshot{State: "qr", QR: evt.Code})
 				s.mgr.broker.emitSessionQR(s.id, evt.Code)
 			case "success":
-				if id := s.getClient().Store.ID; id != nil {
-					_ = s.mgr.store.setJID(s.mgr.appCtx, s.id, id.String())
+				if client := s.getClient(); client != nil && client.Store != nil && client.Store.ID != nil {
+					_ = s.mgr.store.setJID(s.mgr.appCtx, s.id, client.Store.ID.String())
 				}
 				s.setAuth(AuthSnapshot{State: "open", Paired: true})
 			case "timeout":
@@ -674,8 +697,8 @@ func (s *Session) info() SessionInfo {
 	a := s.auth
 	s.mu.Unlock()
 	jid := ""
-	if id := s.getClient().Store.ID; id != nil {
-		jid = id.String()
+	if client := s.getClient(); client != nil && client.Store != nil && client.Store.ID != nil {
+		jid = client.Store.ID.String()
 	}
 	return SessionInfo{
 		ID:        s.id,

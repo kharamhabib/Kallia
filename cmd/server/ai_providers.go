@@ -202,6 +202,7 @@ func (s *server) handleUpdateAIProvider(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao salvar no banco"})
 		return
 	}
+	syncAIProviderToPB(row)
 
 	decryptedKey, _ := decryptSecret(encryptedKey)
 	masked := maskSecret(decryptedKey)

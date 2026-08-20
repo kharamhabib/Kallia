@@ -17,6 +17,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Agentes Especialistas & Hot-Swap (`TransferTo`)**: Suporte a personas distintas para chamadas *inbound* e *outbound*, e transferência de chamadas em tempo real entre agentes sem derrubar o canal VoIP.
 - [x] **Mensagens Interativas com Botões (Multi-Device)**: Injeção automática de nós binários `biz` e `bot` via `whatsmeow` no Go para possibilitar exibição de botões interativos nativos enviados por contas pessoais MD.
 - [x] **PocketBase como Banco Primário de Negócio & Sync Híbrido (20/08/2026)**: Centralização de Agentes, Contatos CRM, Projetos e Metadados no PocketBase com sincronia total Dev ↔ Prod e SQLite local isolado para VoIP whatsmeow.
+- [x] **Sincronização em Tempo Real Go ↔ PocketBase (SSE /api/realtime) & Hidratação Dev/VPS (20/08/2026)**: Implementação de hidratação automática no boot e listener persistente de SSE em tempo real para sincronização bidirecional de Workspaces, Agentes, Configurações de IA, Provedores e Contatos entre VPS e ambiente de desenvolvimento local, com suporte a sessões em standby no Dev.
 
 ---
 

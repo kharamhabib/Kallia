@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sync"
 
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
@@ -122,32 +124,25 @@ func (m *SessionManager) Restore(ctx context.Context) error {
 		return err
 	}
 	for _, row := range rows {
-		if row.JID == "" {
-			_ = m.db.dropSessionDB(ctx, row.ID)
-			_ = m.store.delete(ctx, row.ID)
-			continue
+		var client *whatsmeow.Client
+		var container *sqlstore.Container
+		var db *sql.DB
+
+		if row.JID != "" {
+			if _, err := types.ParseJID(row.JID); err == nil {
+				c, d, err := m.db.openSessionContainer(ctx, row.ID)
+				if err == nil {
+					container = c
+					db = d
+					device, err := container.GetFirstDevice(ctx)
+					if err == nil && device != nil && device.ID != nil {
+						client = whatsmeow.NewClient(device, m.waLogger)
+						client.ManualHistorySyncDownload = true
+					}
+				}
+			}
 		}
-		if _, err := types.ParseJID(row.JID); err != nil {
-			m.log.Warn("dropping session with unparseable jid", "session", row.ID, "jid", row.JID)
-			_ = m.db.dropSessionDB(ctx, row.ID)
-			_ = m.store.delete(ctx, row.ID)
-			continue
-		}
-		container, db, err := m.db.openSessionContainer(ctx, row.ID)
-		if err != nil {
-			m.log.Error("opening session database failed", "session", row.ID, "err", err)
-			continue
-		}
-		device, err := container.GetFirstDevice(ctx)
-		if err != nil || device == nil || device.ID == nil {
-			m.log.Warn("dropping session with no stored device", "session", row.ID, "jid", row.JID, "err", err)
-			_ = db.Close()
-			_ = m.db.dropSessionDB(ctx, row.ID)
-			_ = m.store.delete(ctx, row.ID)
-			continue
-		}
-		client := whatsmeow.NewClient(device, m.waLogger)
-		client.ManualHistorySyncDownload = true
+
 		s := newSession(m, row.ID, row.Name, row.ProjectID, row.APIKey, client)
 		s.waContainer = container
 		s.waDB = db
@@ -165,8 +160,13 @@ func (m *SessionManager) Restore(ctx context.Context) error {
 			}
 		}
 		m.register(s)
-		if err := s.connect(ctx); err != nil {
-			m.log.Error("session connect failed", "session", row.ID, "err", err)
+
+		if client != nil {
+			if err := s.connect(ctx); err != nil {
+				m.log.Warn("session connect failed", "session", row.ID, "err", err)
+			}
+		} else {
+			s.setAuth(AuthSnapshot{State: "disconnected"})
 		}
 	}
 	m.broker.emitSessionList(m.infos())
@@ -184,6 +184,8 @@ func (m *SessionManager) Create(name, projectID string) (string, string, error) 
 	if err := m.store.insert(m.appCtx, id, name, projectID, apiKey); err != nil {
 		return "", "", err
 	}
+	syncSessionToPB(id, name, "", "", "", "", projectID, apiKey)
+
 	container, db, err := m.db.openSessionContainer(m.appCtx, id)
 	if err != nil {
 		_ = m.store.delete(m.appCtx, id)
@@ -216,7 +218,16 @@ func (m *SessionManager) Rename(ctx context.Context, id, name string) error {
 	}
 	s.mu.Lock()
 	s.name = name
+	projectID := s.projectID
+	apiKey := s.apiKey
+	webhook := s.webhook
+	jid := ""
+	if client := s.getClient(); client != nil && client.Store != nil && client.Store.ID != nil {
+		jid = client.Store.ID.String()
+	}
 	s.mu.Unlock()
+
+	syncSessionToPB(id, name, jid, webhook, "", "", projectID, apiKey)
 	m.broker.emitSessionList(m.infos())
 	return nil
 }
@@ -244,12 +255,14 @@ func (m *SessionManager) Delete(ctx context.Context, id string) error {
 	if !ok {
 		return fmt.Errorf("no session %s", id)
 	}
-	if s.getClient().Store.ID != nil {
-		if err := s.getClient().Logout(ctx); err != nil {
-			m.log.Warn("logout failed; deleting locally", "session", id, "err", err)
+	if client := s.getClient(); client != nil {
+		if client.Store != nil && client.Store.ID != nil {
+			if err := client.Logout(ctx); err != nil {
+				m.log.Warn("logout failed; deleting locally", "session", id, "err", err)
+			}
 		}
+		client.Disconnect()
 	}
-	s.getClient().Disconnect()
 	s.teardownAllCalls()
 	// o store da sessão é um banco inteiro só dela: fecha a conexão e derruba.
 	if s.waDB != nil {
@@ -260,6 +273,7 @@ func (m *SessionManager) Delete(ctx context.Context, id string) error {
 	}
 	m.unregister(id)
 	_ = m.store.delete(ctx, id)
+	syncDeleteSessionToPB(id)
 	m.broker.emitSessionList(m.infos())
 	m.log.Info("session deleted", "session", id)
 	return nil
@@ -270,14 +284,19 @@ func (m *SessionManager) Logout(ctx context.Context, id string) error {
 	if !ok {
 		return fmt.Errorf("no session %s", id)
 	}
-	if s.getClient().Store.ID != nil {
-		if err := s.getClient().Logout(ctx); err != nil {
-			m.log.Warn("logout failed", "session", id, "err", err)
+	if client := s.getClient(); client != nil {
+		if client.Store != nil && client.Store.ID != nil {
+			if err := client.Logout(ctx); err != nil {
+				m.log.Warn("logout failed", "session", id, "err", err)
+			}
 		}
 	}
-	cli := whatsmeow.NewClient(s.waContainer.NewDevice(), m.waLogger)
-	cli.ManualHistorySyncDownload = true
-	s.replaceClient(cli)
+	if s.waContainer != nil {
+		cli := whatsmeow.NewClient(s.waContainer.NewDevice(), m.waLogger)
+		cli.ManualHistorySyncDownload = true
+		s.replaceClient(cli)
+	}
+	s.setAuth(AuthSnapshot{State: "logged_out", Paired: false})
 	_ = m.store.setJID(ctx, id, "")
 	s.setAuth(AuthSnapshot{State: "logged_out", Paired: false})
 	m.log.Info("session disconnected", "session", id)

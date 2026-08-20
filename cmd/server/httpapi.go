@@ -128,6 +128,16 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/forgot-password", s.handleForgotPassword)
 	mux.HandleFunc("POST /api/auth/reset-password", s.handleResetPassword)
 
+	// Rotas de Sincronização Sob Demanda (PocketBase)
+	mux.HandleFunc("POST /api/sync/pull", func(w http.ResponseWriter, r *http.Request) {
+		hydrateFromPocketBase(r.Context(), s.sessions.store, s.sessions)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "hidratação do PocketBase concluída"})
+	})
+	mux.HandleFunc("POST /api/sync/push", func(w http.ResponseWriter, r *http.Request) {
+		pushAllLocalToPocketBase(r.Context(), s.sessions.store)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "sincronização para o PocketBase iniciada"})
+	})
+
 	// Rotas Públicas de Documentação de API (Swagger / OpenAPI)
 	mux.HandleFunc("GET /api/docs", s.handleAPIDocs)
 	mux.HandleFunc("GET /api/swagger", s.handleAPIDocs)

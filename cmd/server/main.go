@@ -99,6 +99,9 @@ func main() {
 	defer srv.sessions.disconnectAll()
 	defer srv.Close()
 
+	// Hidrata metadados a partir do PocketBase central (projetos, sessões, agentes, provedores e contatos)
+	hydrateFromPocketBase(ctx, srv.sessions.store, srv.sessions)
+
 	if err := srv.sessions.Restore(ctx); err != nil {
 		log.Error("session restore failed", "err", err)
 		os.Exit(1)
@@ -113,8 +116,11 @@ func main() {
 	// Inicia o scheduler de IA server-side em background
 	go srv.scheduler.Run(ctx)
 
-	// Sincroniza dados existentes com o PocketBase
-	syncAllToPocketBase(ctx, srv.sessions.store)
+	// Inicia a escuta contínua de eventos em tempo real do PocketBase (SSE)
+	startPocketBaseRealtimeListener(ctx, srv.sessions.store, srv.broker, srv.sessions)
+
+	// Sincroniza quaisquer dados locais pré-existentes para o PocketBase
+	pushAllLocalToPocketBase(ctx, srv.sessions.store)
 
 	httpSrv := &http.Server{
 		Addr:              *addr,

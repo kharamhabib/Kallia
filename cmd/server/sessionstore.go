@@ -465,7 +465,7 @@ func (s *sessionStore) insert(ctx context.Context, id, name, projectID, apiKey s
 		VALUES ($1, $2, NULL, $3, $4)
 	`, id, name, projectID, apiKey)
 	if err == nil {
-		syncSessionToPB(id, name, "", "", projectID, apiKey)
+		syncSessionToPB(id, name, "", "", "", "", projectID, apiKey)
 	}
 	return err
 }

@@ -175,9 +175,9 @@ Kallia/
 
 ## 4. Multi-Tenancy, Autenticação, CRM e Gestão de Planos
 
-### 4.1 Modelo de Dados (PocketBase & SQLite)
+### 4.1 Modelo de Dados (PocketBase SSOT & Cache SQLite com Realtime Sync)
 
-O PocketBase gerencia as coleções fundamentais de controle e negócio do SaaS:
+O **PocketBase** atua como a **Fonte Única de Verdade (SSOT)** central para todos os metadados do ecossistema Kallia:
 
 1. **`projects`**:
    - `id`, `name`, `plan` (`trial` | `basic` | `advantage` | `expert`), `plan_status` (`active` | `inactive` | `canceled`), `plan_starts_at`, `plan_ends_at`.
@@ -196,8 +196,11 @@ O PocketBase gerencia as coleções fundamentais de controle e negócio do SaaS:
 8. **`call_ratings`**:
    - `id`, `session_id`, `call_id`, `score`, `comment`, `agent_id`.
 
-No SQLite local (`./storage/whatsapp/{id}.db`):
-- Chaves criptográficas de handshake e identidade do WhatsApp (`whatsmeow`).
+#### Arquitetura de Sincronização em Tempo Real (Dev ↔ VPS)
+- **Hidratação Inicial no Boot (`hydrateFromPocketBase`)**: Ao iniciar, o servidor Go obtém automaticamente o token de Superuser/Admin do PocketBase e sincroniza todos os projetos, sessões, agentes, provedores e contatos no SQLite local (`kallia_main.db`).
+- **Escuta em Tempo Real (`/api/realtime` SSE)**: O Go mantém uma subscrição SSE persistente conectada ao PocketBase. Qualquer alteração feita em produção na VPS ou no ambiente DEV é propagada e atualizada atomicamente no banco local e emitida aos clientes conectados via SSE interno.
+- **Sessões em Standby no Dev**: Instâncias ativas na VPS são carregadas no ambiente Dev no estado configurável (permitindo edição de Agentes, Prompts, Tools e CRM) sem colidir ou disputar o socket físico do WhatsApp.
+- **Isolamento de Mídia VoIP**: No SQLite local (`./storage/whatsapp/{id}.db`), apenas as chaves criptográficas de handshake do WhatsApp (`whatsmeow`) e streams RTP de voz permanecem isolados na máquina servidora.
 
 ### 4.2 Integridade do CRM e Navegação Reativa
 
