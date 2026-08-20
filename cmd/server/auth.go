@@ -200,39 +200,65 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		projName = "Meu Projeto"
 	}
 
-	// Verificar se usuário já existe
-	existing, err := s.sessions.store.getUserByEmail(r.Context(), email)
+	// 1. Cadastrar diretamente no PocketBase (Autoridade exclusiva de Auth)
+	pbUserID, err := s.registerInPocketBase(r.Context(), email, password, projName)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao validar email"})
-		return
-	}
-	if existing != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "este email já está cadastrado"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("falha no cadastro no PocketBase: %v", err)})
 		return
 	}
 
-	// Criptografar senha
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao processar senha"})
-		return
-	}
-
+	// 2. Criar o projeto e sincronizar na base local
 	projectID := newSessionID()
-	userID := newSessionID()
 	planEnds := time.Now().Add(30 * 24 * time.Hour) // 30 dias de trial inicial
-
-	// Criar o projeto e o usuário com role 'creator'
-	err = s.sessions.store.createProjectAndUser(r.Context(), projectID, projName, userID, email, string(hashed), "creator", planEnds)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao cadastrar projeto e usuário"})
-		return
-	}
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	_ = s.sessions.store.createProjectAndUser(r.Context(), projectID, projName, pbUserID, email, string(hashed), "creator", planEnds)
 
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "sucesso", "projectId": projectID})
 }
 
-// handleLogin valida o email/senha e devolve o token JWT
+// registerInPocketBase cria o registro do usuário na collection 'users' do PocketBase
+func (s *server) registerInPocketBase(ctx context.Context, email, password, name string) (string, error) {
+	pbURL := envStr("POCKETBASE_URL", "http://pocketbase:8090")
+	if pbURL == "" {
+		return "", fmt.Errorf("pocketbase url não configurada")
+	}
+	pbURL = strings.TrimRight(pbURL, "/")
+
+	payload, _ := json.Marshal(map[string]any{
+		"email":           email,
+		"password":        password,
+		"passwordConfirm": password,
+		"name":            name,
+		"role":            "creator",
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST", pbURL+"/api/collections/users/records", bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("conectar ao pocketbase: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		var errRes map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&errRes)
+		return "", fmt.Errorf("pocketbase erro %d: %v", resp.StatusCode, errRes["message"])
+	}
+
+	var res struct {
+		ID string `json:"id"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&res)
+	return res.ID, nil
+}
+
+// handleLogin valida o email/senha EXCLUSIVAMENTE contra o PocketBase
 func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email    string `json:"email"`
@@ -246,72 +272,44 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(strings.ToLower(body.Email))
 	password := body.Password
 
-	user, err := s.sessions.store.getUserByEmail(r.Context(), email)
-	if err == nil && user != nil {
-		// Validar senha contra hash local do SQLite
-		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err == nil {
-			projectID := ""
-			if user.ProjectID != nil {
-				projectID = *user.ProjectID
-			}
-
-			token, err := generateToken(user.ID, user.Role, projectID)
-			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
-				return
-			}
-
-			writeJSON(w, http.StatusOK, map[string]any{
-				"token": token,
-				"user": map[string]any{
-					"id":        user.ID,
-					"email":     user.Email,
-					"role":      user.Role,
-					"projectId": projectID,
-				},
-			})
-			return
-		}
-	}
-
-	// 2. Se não encontrou no SQLite ou a senha falhou, tentar autenticar diretamente no PocketBase (Superuser ou User)
+	// Validar EXCLUSIVAMENTE contra o PocketBase (Superuser ou User da collection users)
 	pbRole, pbProjectID, pbUserID, ok := s.authenticateWithPocketBase(r.Context(), email, password)
-	if ok {
-		// Sincronizar credenciais válidas do PocketBase para a tabela local do SQLite
-		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err == nil {
-			if pbProjectID == "" {
-				pbProjectID = "default"
-			}
-			_, _ = s.sessions.store.db.ExecContext(r.Context(), `
-				INSERT INTO users (id, email, password_hash, role, project_id)
-				VALUES ($1, $2, $3, $4, $5)
-				ON CONFLICT (email) DO UPDATE SET
-					password_hash = EXCLUDED.password_hash,
-					role = EXCLUDED.role,
-					project_id = COALESCE(users.project_id, EXCLUDED.project_id)
-			`, pbUserID, email, string(hashed), pbRole, pbProjectID)
-		}
-
-		token, err := generateToken(pbUserID, pbRole, pbProjectID)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]any{
-			"token": token,
-			"user": map[string]any{
-				"id":        pbUserID,
-				"email":     email,
-				"role":      pbRole,
-				"projectId": pbProjectID,
-			},
-		})
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "e-mail ou senha incorretos"})
 		return
 	}
 
-	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "e-mail ou senha incorretos"})
+	if pbProjectID == "" {
+		pbProjectID = "default"
+	}
+
+	// Sincronizar dados do usuário no banco local
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	_, _ = s.sessions.store.db.ExecContext(r.Context(), `
+		INSERT INTO users (id, email, password_hash, role, project_id)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (email) DO UPDATE SET
+			id = EXCLUDED.id,
+			password_hash = EXCLUDED.password_hash,
+			role = EXCLUDED.role,
+			project_id = COALESCE(users.project_id, EXCLUDED.project_id)
+	`, pbUserID, email, string(hashed), pbRole, pbProjectID)
+
+	token, err := generateToken(pbUserID, pbRole, pbProjectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"token": token,
+		"user": map[string]any{
+			"id":        pbUserID,
+			"email":     email,
+			"role":      pbRole,
+			"projectId": pbProjectID,
+		},
+	})
 }
 
 // authenticateWithPocketBase valida as credenciais contra a API do PocketBase (seja superadmin ou user)
