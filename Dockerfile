@@ -9,12 +9,11 @@ COPY client/ ./
 RUN npm run build
 
 # ---------- Stage 2: build do servidor Go (cgo + tag mlow) ----------
-FROM golang:1.24-bookworm AS server
+FROM golang:bookworm AS server
+ENV GOTOOLCHAIN=auto
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
 ENV CGO_ENABLED=1 \
     CC=gcc \
