@@ -20,7 +20,7 @@ func (s *server) handleToolProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// SSRF guard: só http(s) e destinos públicos (bloqueia metadata de cloud,
-	// loopback e IPs privados — configurável via WACALLS_ALLOW_PRIVATE_URLS).
+	// loopback e IPs privados — configurável via KALLIA_ALLOW_PRIVATE_URLS).
 	if err := validateOutboundURL(body.URL, false); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url não permitida: " + err.Error()})
 		return

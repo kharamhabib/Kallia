@@ -51,7 +51,7 @@ func resolveRecipient(to string) (types.JID, error) {
 
 // fetchMedia obtém os bytes da mídia a partir de base64 (data) ou de uma URL.
 // Downloads por URL passam pelo guarda de SSRF (apenas http(s) públicos, salvo
-// WACALLS_ALLOW_PRIVATE_URLS=true para mídias hospedadas na própria LAN).
+// KALLIA_ALLOW_PRIVATE_URLS=true para mídias hospedadas na própria LAN).
 func fetchMedia(b64, url string) ([]byte, error) {
 	if b64 != "" {
 		if strings.HasPrefix(b64, "data:") {

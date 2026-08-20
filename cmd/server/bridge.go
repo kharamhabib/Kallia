@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,8 +14,8 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-// browserAPI é inicializado uma única vez. Quando WACALLS_PUBLIC_IP e
-// WACALLS_UDP_PORT estão definidos, o WebRTC com o navegador usa porta fixa
+// browserAPI é inicializado uma única vez. Quando KALLIA_PUBLIC_IP e
+// KALLIA_UDP_PORT estão definidos, o WebRTC com o navegador usa porta fixa
 // (UDP + ICE-TCP na mesma porta) e anuncia o IP público como candidato (NAT 1:1).
 // O ICE-TCP garante a mídia mesmo quando UDP de entrada é bloqueado.
 var (
@@ -71,8 +70,8 @@ func fetchPublicIP(url string) string {
 
 func getBrowserAPI(log *slog.Logger) *webrtc.API {
 	browserAPIOnce.Do(func() {
-		publicIP := os.Getenv("WACALLS_PUBLIC_IP")
-		udpPort, _ := strconv.Atoi(os.Getenv("WACALLS_UDP_PORT"))
+		publicIP := envStr("KALLIA_PUBLIC_IP", "")
+		udpPort, _ := strconv.Atoi(envStr("KALLIA_UDP_PORT", "50000"))
 		if publicIP == "auto" {
 			publicIP = detectPublicIP()
 			if publicIP != "" {

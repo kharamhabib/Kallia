@@ -390,6 +390,30 @@ paths:
         "200":
           description: Conexão renomeada
 
+  /api/sessions/{sid}/rotate-key:
+    post:
+      tags: [Sessões & Conexões]
+      summary: Rotaciona ou define uma nova chave de API (kc_*) para a conexão
+      parameters: [{ $ref: "#/components/parameters/Sid" }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                apiKey: { type: string, example: "kc_custom_integration_key_2026", description: "Opcional. Se vazio, gera automaticamente uma nova chave kc_..." }
+      responses:
+        "200":
+          description: Chave de API rotacionada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apiKey: { type: string, example: "kc_9a3fc0da79e330d9..." }
+                  sessionId: { type: string, example: "6458cca60a17c0cefa71de9da9dc92a2" }
+
   /api/sessions/{sid}/pair:
     post:
       tags: [Sessões & Conexões]

@@ -77,7 +77,7 @@ const setupHandshakeTimeout = 15 * time.Second
 func (g *GeminiLiveClient) connectAndSetup() error {
 	apiKey := g.config.GeminiAPIKey
 	if apiKey == "" {
-		apiKey = os.Getenv("WACALLS_GEMINI_API_KEY")
+		apiKey = os.Getenv("KALLIA_GEMINI_API_KEY")
 		if apiKey == "" {
 			apiKey = os.Getenv("GEMINI_API_KEY")
 		}

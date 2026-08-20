@@ -58,31 +58,31 @@
   // ---------- estilos ----------
   var style = document.createElement("style");
   style.textContent =
-    "#wacalls-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#687076}" +
-    "#wacalls-btn:hover{color:#11181c}" +
-    "#wacalls-panel{position:fixed;bottom:20px;right:20px;width:296px;background:#fff;color:#11181c;border:1px solid #dfe3e6;border-radius:12px;box-shadow:0 12px 32px rgba(17,24,28,.12);z-index:99999;font-family:'Inter','InterDisplay',-apple-system,system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}" +
-    "#wacalls-panel .cw-h{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #eceef0;font-size:14px;font-weight:600;color:#11181c;letter-spacing:-.01em}" +
-    "#wacalls-panel .cw-dot{width:7px;height:7px;border-radius:50%;background:#2781F6;flex:none}" +
-    "#wacalls-panel .cw-h-t{flex:1}" +
-    "#wacalls-panel .cw-x{cursor:pointer;background:none;border:0;color:#889096;font-size:20px;line-height:1;padding:0;width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s}" +
-    "#wacalls-panel .cw-x:hover{background:#f1f3f5;color:#11181c}" +
-    "#wacalls-panel .cw-b{padding:22px 16px 24px;text-align:center}" +
-    "#wacalls-panel .cw-name{font-weight:600;font-size:15px;color:#11181c;letter-spacing:-.01em}" +
-    "#wacalls-panel .cw-sub{font-size:13px;color:#687076;margin-top:3px;font-variant-numeric:tabular-nums}" +
-    "#wacalls-panel .cw-st{font-size:12px;font-weight:500;color:#687076;margin-top:14px;min-height:16px;font-variant-numeric:tabular-nums;letter-spacing:.01em}" +
-    "#wacalls-panel .cw-act{margin-top:18px;border:0;border-radius:50%;width:54px;height:54px;cursor:pointer;color:#fff;display:inline-flex;align-items:center;justify-content:center;transition:filter .15s,transform .08s}" +
-    "#wacalls-panel .cw-act:hover{filter:brightness(.95)}" +
-    "#wacalls-panel .cw-act:active{transform:scale(.95)}" +
-    "#wacalls-panel .cw-act svg{width:22px;height:22px}" +
-    "#wacalls-panel .cw-call{background:#30a46c;box-shadow:0 4px 12px rgba(48,164,108,.32)}" +
-    "#wacalls-panel .cw-hang{background:#e5484d;box-shadow:0 4px 12px rgba(229,72,77,.3)}" +
-    "#wacalls-panel .cw-row{display:flex;gap:16px;justify-content:center;align-items:center}" +
-    "#wacalls-panel .cw-mute{background:#f1f3f5;color:#687076;width:46px;height:46px;box-shadow:none}" +
-    "#wacalls-panel .cw-mute:hover{background:#e6e8eb;filter:none}" +
-    "#wacalls-panel .cw-mute.on{background:#e5484d;color:#fff}" +
-    "#wacalls-panel .cw-mute svg{width:19px;height:19px}" +
-    "#wacalls-panel .cw-warn{width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:#fff7c2;color:#9e6c00;display:flex;align-items:center;justify-content:center}" +
-    "#wacalls-panel .cw-warn svg{width:24px;height:24px}";
+    "#kallia-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#687076}" +
+    "#kallia-btn:hover{color:#11181c}" +
+    "#kallia-panel{position:fixed;bottom:20px;right:20px;width:296px;background:#fff;color:#11181c;border:1px solid #dfe3e6;border-radius:12px;box-shadow:0 12px 32px rgba(17,24,28,.12);z-index:99999;font-family:'Inter','InterDisplay',-apple-system,system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}" +
+    "#kallia-panel .cw-h{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #eceef0;font-size:14px;font-weight:600;color:#11181c;letter-spacing:-.01em}" +
+    "#kallia-panel .cw-dot{width:7px;height:7px;border-radius:50%;background:#2781F6;flex:none}" +
+    "#kallia-panel .cw-h-t{flex:1}" +
+    "#kallia-panel .cw-x{cursor:pointer;background:none;border:0;color:#889096;font-size:20px;line-height:1;padding:0;width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;transition:background .12s,color .12s}" +
+    "#kallia-panel .cw-x:hover{background:#f1f3f5;color:#11181c}" +
+    "#kallia-panel .cw-b{padding:22px 16px 24px;text-align:center}" +
+    "#kallia-panel .cw-name{font-weight:600;font-size:15px;color:#11181c;letter-spacing:-.01em}" +
+    "#kallia-panel .cw-sub{font-size:13px;color:#687076;margin-top:3px;font-variant-numeric:tabular-nums}" +
+    "#kallia-panel .cw-st{font-size:12px;font-weight:500;color:#687076;margin-top:14px;min-height:16px;font-variant-numeric:tabular-nums;letter-spacing:.01em}" +
+    "#kallia-panel .cw-act{margin-top:18px;border:0;border-radius:50%;width:54px;height:54px;cursor:pointer;color:#fff;display:inline-flex;align-items:center;justify-content:center;transition:filter .15s,transform .08s}" +
+    "#kallia-panel .cw-act:hover{filter:brightness(.95)}" +
+    "#kallia-panel .cw-act:active{transform:scale(.95)}" +
+    "#kallia-panel .cw-act svg{width:22px;height:22px}" +
+    "#kallia-panel .cw-call{background:#30a46c;box-shadow:0 4px 12px rgba(48,164,108,.32)}" +
+    "#kallia-panel .cw-hang{background:#e5484d;box-shadow:0 4px 12px rgba(229,72,77,.3)}" +
+    "#kallia-panel .cw-row{display:flex;gap:16px;justify-content:center;align-items:center}" +
+    "#kallia-panel .cw-mute{background:#f1f3f5;color:#687076;width:46px;height:46px;box-shadow:none}" +
+    "#kallia-panel .cw-mute:hover{background:#e6e8eb;filter:none}" +
+    "#kallia-panel .cw-mute.on{background:#e5484d;color:#fff}" +
+    "#kallia-panel .cw-mute svg{width:19px;height:19px}" +
+    "#kallia-panel .cw-warn{width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:#fff7c2;color:#9e6c00;display:flex;align-items:center;justify-content:center}" +
+    "#kallia-panel .cw-warn svg{width:24px;height:24px}";
   document.head.appendChild(style);
 
   // ---------- estado ----------
@@ -131,15 +131,15 @@
     if (call) hangup();
     else if (incoming) rejectIncoming();
     stopRing();
-    var p = document.getElementById("wacalls-panel");
+    var p = document.getElementById("kallia-panel");
     if (p) p.remove();
   }
 
   function panel() {
-    var p = document.getElementById("wacalls-panel");
+    var p = document.getElementById("kallia-panel");
     if (p) return p;
     p = el("div");
-    p.id = "wacalls-panel";
+    p.id = "kallia-panel";
     p.setAttribute("role", "dialog");
     p.setAttribute("aria-label", "Chamada WhatsApp");
     document.body.appendChild(p);
@@ -149,7 +149,7 @@
   // Esc fecha o painel somente fora de chamada ativa (nunca derruba uma ligação)
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    var p = document.getElementById("wacalls-panel");
+    var p = document.getElementById("kallia-panel");
     if (!p) return;
     if (call && call.answered) return;
     closePanel();
@@ -158,7 +158,7 @@
   function render(state) {
     var p = panel();
     var head =
-      '<div class="cw-h"><span class="cw-dot"></span><span class="cw-h-t">Chamada</span><span class="cw-x" id="wacalls-close">&times;</span></div>';
+      '<div class="cw-h"><span class="cw-dot"></span><span class="cw-h-t">Chamada</span><span class="cw-x" id="kallia-close">&times;</span></div>';
     var body = "";
     if (state.loading) {
       body = '<div class="cw-b"><div class="cw-sub">Identificando contato…</div></div>';
@@ -173,54 +173,54 @@
       body =
         '<div class="cw-b"><div class="cw-name">' + esc(state.name) + "</div>" +
         '<div class="cw-sub">' + esc(state.phone) + "</div>" +
-        '<div class="cw-st" id="wacalls-st">' + esc(state.status || "") + "</div>" +
-        '<div id="wacalls-transcript" aria-live="polite" style="margin-top:12px; max-height:100px; overflow-y:auto; font-size:12px; text-align:left; border:1px solid #eceef0; border-radius:8px; padding:8px; background:#f8f9fa; color:#4f565b; display:none; flex-direction:column; gap:6px; font-family:inherit;"></div>' +
+        '<div class="cw-st" id="kallia-st">' + esc(state.status || "") + "</div>" +
+        '<div id="kallia-transcript" aria-live="polite" style="margin-top:12px; max-height:100px; overflow-y:auto; font-size:12px; text-align:left; border:1px solid #eceef0; border-radius:8px; padding:8px; background:#f8f9fa; color:#4f565b; display:none; flex-direction:column; gap:6px; font-family:inherit;"></div>' +
         '<div class="cw-row" style="margin-top:14px;">' +
         (state.isServerAI
           ? '<div style="display:inline-flex; align-items:center; justify-content:center; gap:6px; font-size:12px; font-weight:600; color:#d97706; background:#fef3c7; padding:6px 12px; border-radius:20px; border:1px solid #fde68a;">' + ICON_SPARKLES_SMALL + " IA no Servidor</div>"
-          : '<button class="cw-act cw-mute" id="wacalls-mute" title="Mudo" aria-label="Mudo">' + ICON_MIC + "</button>") +
-        '<button class="cw-act cw-hang" id="wacalls-hang" title="Encerrar" aria-label="Encerrar chamada">' + ICON_PHONE_OFF + "</button></div>" +
-        (state.isServerAI ? "" : '<audio id="wacalls-audio" autoplay playsinline style="display: block; width: 0; height: 0; opacity: 0; pointer-events: none;"></audio>') +
+          : '<button class="cw-act cw-mute" id="kallia-mute" title="Mudo" aria-label="Mudo">' + ICON_MIC + "</button>") +
+        '<button class="cw-act cw-hang" id="kallia-hang" title="Encerrar" aria-label="Encerrar chamada">' + ICON_PHONE_OFF + "</button></div>" +
+        (state.isServerAI ? "" : '<audio id="kallia-audio" autoplay playsinline style="display: block; width: 0; height: 0; opacity: 0; pointer-events: none;"></audio>') +
         "</div>";
     } else if (state.incoming) {
       body =
         '<div class="cw-b"><div class="cw-name">Chamada recebida</div>' +
         '<div class="cw-sub">' + esc(state.phone) + "</div>" +
-        '<div class="cw-st" id="wacalls-st">Tocando…</div>' +
+        '<div class="cw-st" id="kallia-st">Tocando…</div>' +
         '<div class="cw-row" style="margin-top:18px;">' +
-        '<button class="cw-act cw-call" id="wacalls-answer" title="Atender" aria-label="Atender chamada">' + ICON_PHONE + "</button>" +
+        '<button class="cw-act cw-call" id="kallia-answer" title="Atender" aria-label="Atender chamada">' + ICON_PHONE + "</button>" +
         (state.hasAI
-          ? '<button class="cw-act cw-ai-answer" id="wacalls-ai-answer" title="Atender com IA" aria-label="Atender com IA" style="background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217,119,6,.32);">' + ICON_SPARKLES + "</button>"
+          ? '<button class="cw-act cw-ai-answer" id="kallia-ai-answer" title="Atender com IA" aria-label="Atender com IA" style="background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217,119,6,.32);">' + ICON_SPARKLES + "</button>"
           : "") +
-        '<button class="cw-act cw-hang" id="wacalls-reject" title="Recusar" aria-label="Recusar chamada">' + ICON_PHONE_OFF + "</button></div>" +
-        '<audio id="wacalls-audio" autoplay playsinline style="display: block; width: 0; height: 0; opacity: 0; pointer-events: none;"></audio></div>';
+        '<button class="cw-act cw-hang" id="kallia-reject" title="Recusar" aria-label="Recusar chamada">' + ICON_PHONE_OFF + "</button></div>" +
+        '<audio id="kallia-audio" autoplay playsinline style="display: block; width: 0; height: 0; opacity: 0; pointer-events: none;"></audio></div>';
     } else {
       body =
         '<div class="cw-b"><div class="cw-name">' + esc(state.name) + "</div>" +
         '<div class="cw-sub">' + esc(state.phone) + "</div>" +
         '<div class="cw-row" style="margin-top:18px;">' +
-        '<button class="cw-act cw-call" id="wacalls-start" title="Ligar" aria-label="Ligar">' + ICON_PHONE + "</button>" +
+        '<button class="cw-act cw-call" id="kallia-start" title="Ligar" aria-label="Ligar">' + ICON_PHONE + "</button>" +
         (state.hasAI
-          ? '<button class="cw-act cw-ai-start" id="wacalls-ai-start" title="Ligar com IA" aria-label="Ligar com IA" style="background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217,119,6,.32);">' + ICON_SPARKLES + "</button>"
+          ? '<button class="cw-act cw-ai-start" id="kallia-ai-start" title="Ligar com IA" aria-label="Ligar com IA" style="background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217,119,6,.32);">' + ICON_SPARKLES + "</button>"
           : "") +
         "</div></div>";
     }
     p.innerHTML = head + body;
-    p.querySelector("#wacalls-close").onclick = closePanel;
-    if (p.querySelector("#wacalls-start"))
-      p.querySelector("#wacalls-start").onclick = function () {
+    p.querySelector("#kallia-close").onclick = closePanel;
+    if (p.querySelector("#kallia-start"))
+      p.querySelector("#kallia-start").onclick = function () {
         startCall(state, false);
       };
-    if (p.querySelector("#wacalls-ai-start"))
-      p.querySelector("#wacalls-ai-start").onclick = function () {
+    if (p.querySelector("#kallia-ai-start"))
+      p.querySelector("#kallia-ai-start").onclick = function () {
         startCall(state, true);
       };
-    if (p.querySelector("#wacalls-answer")) p.querySelector("#wacalls-answer").onclick = function () { acceptIncoming(false); };
-    if (p.querySelector("#wacalls-ai-answer")) p.querySelector("#wacalls-ai-answer").onclick = function () { acceptIncoming(true); };
-    if (p.querySelector("#wacalls-reject")) p.querySelector("#wacalls-reject").onclick = rejectIncoming;
-    if (p.querySelector("#wacalls-hang")) p.querySelector("#wacalls-hang").onclick = hangup;
-    if (p.querySelector("#wacalls-mute"))
-      p.querySelector("#wacalls-mute").onclick = function () {
+    if (p.querySelector("#kallia-answer")) p.querySelector("#kallia-answer").onclick = function () { acceptIncoming(false); };
+    if (p.querySelector("#kallia-ai-answer")) p.querySelector("#kallia-ai-answer").onclick = function () { acceptIncoming(true); };
+    if (p.querySelector("#kallia-reject")) p.querySelector("#kallia-reject").onclick = rejectIncoming;
+    if (p.querySelector("#kallia-hang")) p.querySelector("#kallia-hang").onclick = hangup;
+    if (p.querySelector("#kallia-mute"))
+      p.querySelector("#kallia-mute").onclick = function () {
         toggleMute(this);
       };
   }
@@ -845,16 +845,16 @@
   function ensureButton() {
     // só injeta se a conversa atual for de uma caixa conectada (vínculo empresa+caixa)
     if (!callable || !/\/conversations\/\d+/.test(location.pathname)) {
-      var old = document.getElementById("wacalls-btn");
+      var old = document.getElementById("kallia-btn");
       if (old) old.remove();
       return;
     }
-    if (document.getElementById("wacalls-btn")) return;
+    if (document.getElementById("kallia-btn")) return;
     var found = findActionsContainer();
     if (!found || !found.container) return;
-    if (found.container.querySelector("#wacalls-btn")) return;
+    if (found.container.querySelector("#kallia-btn")) return;
     var btn = document.createElement("button");
-    btn.id = "wacalls-btn";
+    btn.id = "kallia-btn";
     btn.type = "button";
     btn.title = "Ligar pelo WhatsApp";
     btn.className = found.sibling && found.sibling.className
@@ -867,7 +867,7 @@
       onCall();
     };
     found.container.appendChild(btn);
-    console.log("[wacalls-widget] ícone injetado no container de ações da conversa");
+    console.log("[kallia-widget] ícone injetado no container de ações da conversa");
   }
 
   var obs = new MutationObserver(function () {
@@ -894,5 +894,5 @@
     if (++tries < 40) setTimeout(retry, 800);
   })();
   connectEvents(); // SSE sempre ligado p/ receber chamadas mesmo sem painel aberto
-  console.log("[wacalls-widget] carregado. base=", BASE);
+  console.log("[kallia-widget] carregado. base=", BASE);
 })();

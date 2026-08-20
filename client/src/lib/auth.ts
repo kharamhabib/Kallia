@@ -4,10 +4,6 @@ const URL_KEY = "kallia.apiUrl";
 const TOKEN_KEY = "kallia.token";
 const USER_KEY = "kallia.user";
 
-const LEGACY_TOKEN_KEY = "wacalls.token";
-const LEGACY_USER_KEY = "wacalls.user";
-const LEGACY_URL_KEY = "wacalls.apiUrl";
-
 export interface AuthUser {
   id: string;
   email: string;
@@ -19,10 +15,10 @@ export interface AuthUser {
 }
 
 export const getApiBase = (): string =>
-  (localStorage.getItem(URL_KEY) || localStorage.getItem(LEGACY_URL_KEY) || "").replace(/\/+$/, "") || window.location.origin;
+  (localStorage.getItem(URL_KEY) || "").replace(/\/+$/, "") || window.location.origin;
 
 export const getToken = (): string =>
-  pb.authStore.token || localStorage.getItem(TOKEN_KEY) || localStorage.getItem(LEGACY_TOKEN_KEY) || "";
+  pb.authStore.token || localStorage.getItem(TOKEN_KEY) || "";
 
 export const getUser = (): AuthUser | null => {
   if (pb.authStore.record) {
@@ -38,7 +34,7 @@ export const getUser = (): AuthUser | null => {
     };
   }
   try {
-    const raw = localStorage.getItem(USER_KEY) || localStorage.getItem(LEGACY_USER_KEY);
+    const raw = localStorage.getItem(USER_KEY);
     return JSON.parse(raw || "null");
   } catch {
     return null;
@@ -61,8 +57,6 @@ export const setAuth = (url: string, token: string, user: any): void => {
 export const clearAuth = (): void => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
-  localStorage.removeItem(LEGACY_TOKEN_KEY);
-  localStorage.removeItem(LEGACY_USER_KEY);
   pb.authStore.clear();
 };
 

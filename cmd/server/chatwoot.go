@@ -31,7 +31,7 @@ import (
 // Integração com Chatwoot (canal API), inspirada no app chatwoot do WAHA.
 // Mapeia o contato Chatwoot <-> chat do WhatsApp via custom attribute.
 
-const cwChatIDAttr = "wacalls_chat_id"
+const cwChatIDAttr = "kallia_chat_id"
 
 type ChatwootConfig struct {
 	URL             string `json:"url"`
@@ -951,7 +951,7 @@ func (s *Session) fetchChatwootContext(phone string) string {
 	if contactMap != nil {
 		if ca := asMap(contactMap["custom_attributes"]); ca != nil {
 			for k, v := range ca {
-				if k == "wacalls_chat_id" || v == nil || asStr(v) == "" {
+				if k == "kallia_chat_id" || k == "wacalls_chat_id" || v == nil || asStr(v) == "" {
 					continue
 				}
 				customAttrLines = append(customAttrLines, fmt.Sprintf("  * %s: %v", k, v))

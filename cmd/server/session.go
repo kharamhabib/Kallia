@@ -100,6 +100,18 @@ func (s *Session) getAIConfig() AIConfig {
 	return cfg
 }
 
+func (s *Session) setAPIKey(k string) {
+	s.mu.Lock()
+	s.apiKey = k
+	s.mu.Unlock()
+}
+
+func (s *Session) getAPIKey() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.apiKey
+}
+
 func newSession(mgr *SessionManager, id, name, projectID, apiKey string, client *whatsmeow.Client) *Session {
 	s := &Session{
 		id:        id,
@@ -406,7 +418,7 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 
 	if isServerCall {
 		s.log.Info("Incoming call detected from another server/companion device", "peerJid", evt.From.String())
-		if envStr("KALLIA_REJECT_COMPANION_CALLS", "WACALLS_REJECT_COMPANION_CALLS", "") == "true" {
+		if envStr("KALLIA_REJECT_COMPANION_CALLS", "") == "true" {
 			s.log.Info("Rejecting server call due to KALLIA_REJECT_COMPANION_CALLS=true", "callId", callID)
 			info := signaling.ExtractNodeInfo(node)
 			if info != nil {

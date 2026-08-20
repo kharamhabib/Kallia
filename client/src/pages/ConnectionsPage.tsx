@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Smartphone, Loader2, LogOut, CheckCircle2, Copy, Pencil, Bot, PhoneIncoming, PhoneOutgoing, Target, QrCode } from "lucide-react";
+import { Plus, Trash2, Smartphone, Loader2, LogOut, CheckCircle2, Copy, Pencil, Bot, PhoneIncoming, PhoneOutgoing, Target, QrCode, RefreshCw, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +9,7 @@ import { createSession, deleteSession, logoutSession, renameSession, pairSession
 import { listAgents, type Agent } from "@/services/agents";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { apiUrl, getToken } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -96,6 +97,11 @@ export const ConnectionsPage = () => {
   // Estado para exclusão
   const [toDelete, setToDelete] = useState<SessionInfo | null>(null);
 
+  // Estado para rotação / alteração de API Key
+  const [rotateSession, setRotateSession] = useState<SessionInfo | null>(null);
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [rotatingKey, setRotatingKey] = useState(false);
+
   // Estado para solicitação de QR code / reconexão
   const [pairingSessionId, setPairingSessionId] = useState<string | null>(null);
 
@@ -105,6 +111,37 @@ export const ConnectionsPage = () => {
       useSessions.setState({ sessions: updated });
     } catch {
       // Falhas silenciosas
+    }
+  };
+
+  const handleRotateKeySubmit = async () => {
+    if (!rotateSession) return;
+    setRotatingKey(true);
+    try {
+      const res = await fetch(apiUrl(`/api/sessions/${rotateSession.id}/rotate-key`), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ apiKey: customApiKey.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Erro ao alterar Chave de API");
+        return;
+      }
+      if (data.apiKey) {
+        navigator.clipboard.writeText(data.apiKey);
+        toast.success("Nova Chave de API salva e copiada com sucesso!");
+      }
+      await refreshSessionsList();
+      setRotateSession(null);
+      setCustomApiKey("");
+    } catch {
+      toast.error("Erro ao conectar ao servidor para alterar chave");
+    } finally {
+      setRotatingKey(false);
     }
   };
 
@@ -279,6 +316,18 @@ export const ConnectionsPage = () => {
                             className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors"
                           >
                             <Copy className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Rotacionar / Alterar API Key"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRotateSession(s);
+                              setCustomApiKey("");
+                            }}
+                            className="text-muted-foreground hover:text-primary p-0.5 rounded hover:bg-muted transition-colors"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       )}
@@ -472,6 +521,55 @@ export const ConnectionsPage = () => {
           if (toDelete) void onRemoveSession(toDelete.id);
         }}
       />
+
+      {/* Modal de Rotação de API Key */}
+      <Dialog open={!!rotateSession} onOpenChange={(open) => !open && setRotateSession(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-5 w-5 text-primary" /> Rotacionar Chave de API
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              Altere ou gere uma nova chave de integração para a conexão <strong>{rotateSession?.name}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-600 dark:text-amber-400 space-y-1">
+              <p className="font-semibold">⚠️ Atenção à segurança:</p>
+              <p>Ao rotacionar a chave, integrações externas ativas (N8N, Typebot, Chatwoot, Zapier) deixarão de autenticar até que você atualize o token nelas.</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Chave Personalizada (Opcional)</Label>
+              <Input
+                value={customApiKey}
+                onChange={(e) => setCustomApiKey(e.target.value)}
+                placeholder="Deixe em branco para gerar automaticamente (kc_...)"
+                className="font-mono text-xs"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Deixe vazio para gerar automaticamente uma chave criptográfica segura com prefixo <code className="text-primary font-mono">kc_</code>.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setRotateSession(null)}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              disabled={rotatingKey}
+              onClick={handleRotateKeySubmit}
+              className="gap-1.5"
+            >
+              {rotatingKey ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+              {customApiKey.trim() ? "Salvar Chave Personalizada" : "Gerar Nova Chave"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

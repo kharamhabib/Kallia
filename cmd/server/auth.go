@@ -35,7 +35,10 @@ func projectIDFromContext(ctx context.Context) string {
 var jwtSecret []byte
 
 func initJWTSecret() {
-	secretStr := envStr("KALLIA_JWT_SECRET", "POCKETBASE_ENCRYPTION_KEY", "")
+	secretStr := envStr("KALLIA_JWT_SECRET", "")
+	if secretStr == "" {
+		secretStr = envStr("POCKETBASE_ENCRYPTION_KEY", "")
+	}
 	if secretStr != "" {
 		jwtSecret = []byte(secretStr)
 	} else {

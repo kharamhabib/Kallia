@@ -65,19 +65,13 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		webhook    TEXT,
 		chatwoot   TEXT,
 		ai_config  TEXT,
+		project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+		api_key    TEXT UNIQUE,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
 		return nil, err
 	}
-
-	// Migração para adicionar colunas webhook, chatwoot, ai_config, project_id, api_key
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS webhook TEXT`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS chatwoot TEXT`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ai_config TEXT`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES projects(id) ON DELETE CASCADE`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS api_key TEXT UNIQUE`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`)
 
 	// 4. Executar migrações de dados de legado
 	_, _ = db.ExecContext(ctx, `UPDATE users SET email = LOWER(TRIM(email))`)
@@ -157,7 +151,6 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("criar tabela call_history: %w", err)
 	}
-	_, _ = db.ExecContext(ctx, `ALTER TABLE call_history ADD COLUMN IF NOT EXISTS recording_url TEXT`)
 
 	// Criar a tabela de pesquisas NPS
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS call_ratings (
@@ -200,6 +193,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		lid        TEXT NOT NULL DEFAULT '',
 		jid        TEXT NOT NULL DEFAULT '',
 		tags       TEXT NOT NULL DEFAULT '',
+		enriched_at DATETIME,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
@@ -208,7 +202,6 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	}
 	_, _ = db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_session_phone ON contacts(session_id, phone)`)
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_lid ON contacts(session_id, lid)`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN IF NOT EXISTS enriched_at DATETIME`)
 
 	// Criar a tabela de recuperação de senha
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS password_resets (
@@ -230,13 +223,13 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	return store, nil
 }
 
-// bootstrapInitialUserAndProject cria o projeto e usuário admin iniciais caso a tabela de usuários esteja vazia,
-// e vincula as conexões ativas/existentes (sessões de WhatsApp) a este projeto inicial para não perder dados.
+// bootstrapInitialUserAndProject cria o projeto e usuário creator iniciais caso definidos no ENV,
+// e vincula as conexões ativas/existentes (sessões de WhatsApp) a este projeto inicial.
 func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error {
-	adminEmail := strings.TrimSpace(strings.ToLower(envStr("KALLIA_ADMIN_EMAIL", "WACALLS_ADMIN_EMAIL", "")))
-	adminPassword := envStr("KALLIA_ADMIN_PASSWORD", "WACALLS_ADMIN_PASSWORD", "")
-	projectName := envStr("KALLIA_INITIAL_PROJECT_NAME", "WACALLS_INITIAL_PROJECT_NAME", "")
-	projectPlan := envStr("KALLIA_INITIAL_PROJECT_PLAN", "WACALLS_INITIAL_PROJECT_PLAN", "expert")
+	adminEmail := strings.TrimSpace(strings.ToLower(envStr("KALLIA_ADMIN_EMAIL", "")))
+	adminPassword := envStr("KALLIA_ADMIN_PASSWORD", "")
+	projectName := strings.TrimSpace(envStr("KALLIA_INITIAL_PROJECT_NAME", "Kallia Project"))
+	projectPlan := envStr("KALLIA_INITIAL_PROJECT_PLAN", "expert")
 
 	// 1. Verificar se já existem usuários cadastrados no banco
 	var userCount int
@@ -252,24 +245,20 @@ func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error
 		if firstProjectID != "" {
 			res, _ := s.db.ExecContext(ctx, `UPDATE sessions SET project_id = $1 WHERE project_id IS NULL OR project_id = '' OR project_id = 'default'`, firstProjectID)
 			if n, _ := res.RowsAffected(); n > 0 {
-				slog.Info("[Bootstrap] Conexões de WhatsApp órfãs vinculadas ao projeto existente", "projectId", firstProjectID, "count", n)
+				slog.Info("[Bootstrap] Conexões de WhatsApp vinculadas ao projeto existente", "projectId", firstProjectID, "count", n)
 			}
 		}
 
-		// Sincronizar senha do admin caso informada no ENV (permite reset emergencial de senha via ENV no Coolify/Docker)
-		targetEmail := adminEmail
-		if targetEmail == "" {
-			targetEmail = "kharamhabib@gmail.com"
-		}
-		if adminPassword != "" {
+		// Sincronizar senha do admin caso informada no ENV (permite reset emergencial de senha via ENV)
+		if adminEmail != "" && adminPassword != "" {
 			var existingHash string
-			err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE LOWER(email) = $1`, targetEmail).Scan(&existingHash)
+			err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE LOWER(email) = $1`, adminEmail).Scan(&existingHash)
 			if err == nil && existingHash != "" {
 				if bcrypt.CompareHashAndPassword([]byte(existingHash), []byte(adminPassword)) != nil {
 					newHashed, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
 					if err == nil {
-						_, _ = s.db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE LOWER(email) = $2`, string(newHashed), targetEmail)
-						slog.Info("[Bootstrap] Senha do usuário administrador atualizada via variável de ambiente", "email", targetEmail)
+						_, _ = s.db.ExecContext(ctx, `UPDATE users SET password_hash = $1 WHERE LOWER(email) = $2`, string(newHashed), adminEmail)
+						slog.Info("[Bootstrap] Senha do usuário administrador atualizada via KALLIA_ADMIN_PASSWORD", "email", adminEmail)
 					}
 				}
 			}
@@ -277,62 +266,53 @@ func (s *sessionStore) bootstrapInitialUserAndProject(ctx context.Context) error
 		return nil
 	}
 
-	// 2. Caso não exista NENHUM usuário cadastrado, aplicar valores informados no .env ou padrão
-	if adminEmail == "" {
-		adminEmail = "kharamhabib@gmail.com"
-	}
-	if adminPassword == "" {
-		adminPassword = "040851"
-	}
-	if projectName == "" {
-		projectName = "KharaMhabib - Kallia"
-	}
-
-	// Criar/obter o projeto inicial
-	var projectID string
-	err = s.db.QueryRowContext(ctx, `SELECT id FROM projects WHERE name = $1 LIMIT 1`, projectName).Scan(&projectID)
-	if err != nil || projectID == "" {
-		projectID = newSessionID()
-		_, err = s.db.ExecContext(ctx, `
-			INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
-			VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, datetime('now', '+10 years'))
-			ON CONFLICT (id) DO NOTHING
-		`, projectID, projectName, projectPlan)
-		if err != nil {
-			return fmt.Errorf("criar projeto inicial de bootstrap: %w", err)
+	// 2. Se não houver usuários e KALLIA_ADMIN_EMAIL / KALLIA_ADMIN_PASSWORD foram fornecidos no ENV, cria o usuário inicial
+	if adminEmail != "" && adminPassword != "" {
+		var projectID string
+		err = s.db.QueryRowContext(ctx, `SELECT id FROM projects WHERE name = $1 LIMIT 1`, projectName).Scan(&projectID)
+		if err != nil || projectID == "" {
+			projectID = newSessionID()
+			_, err = s.db.ExecContext(ctx, `
+				INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
+				VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, datetime('now', '+10 years'))
+				ON CONFLICT (id) DO NOTHING
+			`, projectID, projectName, projectPlan)
+			if err != nil {
+				return fmt.Errorf("criar projeto inicial de bootstrap: %w", err)
+			}
 		}
-	}
 
-	// Criar o usuário creator inicial
-	hashed, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("gerar hash de senha inicial: %w", err)
-	}
+		hashed, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("gerar hash de senha inicial: %w", err)
+		}
 
-	userID := newSessionID()
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO users (id, email, password_hash, role, project_id)
-		VALUES ($1, $2, $3, 'creator', $4)
-		ON CONFLICT (email) DO NOTHING
-	`, userID, adminEmail, string(hashed), projectID)
-	if err != nil {
-		return fmt.Errorf("criar usuário admin inicial: %w", err)
-	}
+		userID := newSessionID()
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO users (id, email, password_hash, role, project_id)
+			VALUES ($1, $2, $3, 'creator', $4)
+			ON CONFLICT (email) DO NOTHING
+		`, userID, adminEmail, string(hashed), projectID)
+		if err != nil {
+			return fmt.Errorf("criar usuário admin inicial: %w", err)
+		}
+		slog.Info("[Bootstrap] Usuário inicial criado com sucesso via ENV", "email", adminEmail, "role", "creator")
 
-	// 3. Vincular TODAS as conexões de WhatsApp existentes no banco a este projeto inicial
-	res, err := s.db.ExecContext(ctx, `UPDATE sessions SET project_id = $1 WHERE project_id IS NULL OR project_id = '' OR project_id = 'default'`, projectID)
-	linkedSessionsCount := int64(0)
-	if err == nil {
-		linkedSessionsCount, _ = res.RowsAffected()
-	}
+		// 3. Vincular conexões existentes ao projeto inicial criado
+		res, err := s.db.ExecContext(ctx, `UPDATE sessions SET project_id = $1 WHERE project_id IS NULL OR project_id = '' OR project_id = 'default'`, projectID)
+		linkedSessionsCount := int64(0)
+		if err == nil {
+			linkedSessionsCount, _ = res.RowsAffected()
+		}
 
-	slog.Info("[Bootstrap] Projeto inicial e usuário admin criados com sucesso!",
-		"email", adminEmail,
-		"projectId", projectID,
-		"projectName", projectName,
-		"plan", projectPlan,
-		"linkedSessions", linkedSessionsCount,
-	)
+		slog.Info("[Bootstrap] Projeto inicial e usuário admin criados com sucesso!",
+			"email", adminEmail,
+			"projectId", projectID,
+			"projectName", projectName,
+			"plan", projectPlan,
+			"linkedSessions", linkedSessionsCount,
+		)
+	}
 
 	return nil
 }
@@ -501,6 +481,11 @@ func (s *sessionStore) setAIConfig(ctx context.Context, id, cfgJSON string) erro
 
 func (s *sessionStore) setName(ctx context.Context, id, name string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET name = $1 WHERE id = $2`, name, id)
+	return err
+}
+
+func (s *sessionStore) setAPIKey(ctx context.Context, id, apiKey string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET api_key = $1 WHERE id = $2`, apiKey, id)
 	return err
 }
 

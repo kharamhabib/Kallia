@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"go.mau.fi/whatsmeow"
@@ -218,6 +219,24 @@ func (m *SessionManager) Rename(ctx context.Context, id, name string) error {
 	s.mu.Unlock()
 	m.broker.emitSessionList(m.infos())
 	return nil
+}
+
+func (m *SessionManager) RotateAPIKey(ctx context.Context, id, customKey string) (string, error) {
+	s, ok := m.Get(id)
+	if !ok {
+		return "", fmt.Errorf("no session %s", id)
+	}
+	newKey := strings.TrimSpace(customKey)
+	if newKey == "" {
+		newKey = "kc_" + newSessionID()
+	}
+	if err := m.store.setAPIKey(ctx, id, newKey); err != nil {
+		return "", fmt.Errorf("salvar nova chave de api: %w", err)
+	}
+	s.setAPIKey(newKey)
+	m.broker.emitSessionList(m.infos())
+	m.log.Info("session api key rotated", "session", id)
+	return newKey, nil
 }
 
 func (m *SessionManager) Delete(ctx context.Context, id string) error {

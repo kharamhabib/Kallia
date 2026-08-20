@@ -14,22 +14,17 @@ import (
 	"time"
 )
 
-// envStr lê uma string de uma variável de ambiente primária (KALLIA_*) ou fallback.
-func envStr(key, fallbackKey, def string) string {
+// envStr lê uma string de uma variável de ambiente (KALLIA_*).
+func envStr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
-	}
-	if fallbackKey != "" {
-		if v := os.Getenv(fallbackKey); v != "" {
-			return v
-		}
 	}
 	return def
 }
 
-// envInt lê um inteiro de uma variável de ambiente primária (KALLIA_*) ou fallback.
-func envInt(key, fallbackKey string, def int) int {
-	vStr := envStr(key, fallbackKey, "")
+// envInt lê um inteiro de uma variável de ambiente (KALLIA_*).
+func envInt(key string, def int) int {
+	vStr := os.Getenv(key)
 	if vStr != "" {
 		if n, err := strconv.Atoi(vStr); err == nil {
 			return n
@@ -69,18 +64,18 @@ func main() {
 	loadDotEnv()
 	initJWTSecret()
 	addr := flag.String("addr", ":8080", "HTTP listen address")
-	storageDir := flag.String("storage", envStr("KALLIA_STORAGE_DIR", "WACALLS_STORAGE_DIR", "./storage"), "directory for SQLite & recordings storage")
-	redisURL := flag.String("redis-url", envStr("REDIS_URL", "KALLIA_REDIS_URL", "redis://localhost:6379"), "Redis connection URL for queue management")
+	storageDir := flag.String("storage", envStr("KALLIA_STORAGE_DIR", "./storage"), "directory for SQLite & recordings storage")
+	redisURL := flag.String("redis-url", envStr("REDIS_URL", "redis://localhost:6379"), "Redis connection URL for queue management")
 	staticDir := flag.String("static", "client/dist", "static client directory (optional)")
 	debug := flag.Bool("debug", false, "verbose logging")
-	maxCalls := flag.Int("max-calls-per-session", envInt("KALLIA_MAX_CALLS", "WACALLS_MAX_CALLS", 8), "max concurrent calls per session (0 = unlimited)")
+	maxCalls := flag.Int("max-calls-per-session", envInt("KALLIA_MAX_CALLS", 8), "max concurrent calls per session (0 = unlimited)")
 	flag.Parse()
 
 	level := slog.LevelInfo
 	if *debug {
 		level = slog.LevelDebug
 	}
-	switch strings.ToLower(envStr("KALLIA_LOG_LEVEL", "WACALLS_LOG_LEVEL", "")) {
+	switch strings.ToLower(envStr("KALLIA_LOG_LEVEL", "")) {
 	case "debug":
 		level = slog.LevelDebug
 	case "info":
@@ -119,8 +114,8 @@ func main() {
 	go srv.scheduler.Run(ctx)
 
 	httpSrv := &http.Server{
-		Addr:    *addr,
-		Handler: srv.routes(),
+		Addr:              *addr,
+		Handler:           srv.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,

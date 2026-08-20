@@ -1,4 +1,4 @@
-const KEY = "wacalls.clientId";
+const KEY = "kallia.clientId";
 
 const generate = (): string => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();

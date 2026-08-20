@@ -40,6 +40,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/sessions", s.handleSessionList)
 	mux.HandleFunc("POST /api/sessions", s.handleSessionCreate)
 	mux.HandleFunc("POST /api/sessions/{sid}/rename", s.handleSessionRename)
+	mux.HandleFunc("POST /api/sessions/{sid}/rotate-key", s.handleRotateSessionAPIKey)
 	mux.HandleFunc("GET /api/sessions/{sid}/calls", s.handleSessionCalls)
 	mux.HandleFunc("DELETE /api/sessions/{sid}", s.handleSessionDelete)
 	mux.HandleFunc("POST /api/sessions/{sid}/logout", s.handleSessionLogout)
@@ -159,12 +160,12 @@ func (s *server) routes() http.Handler {
 	return withCORS(handler, s.log)
 }
 
-// withCORS aplica a política de origens. WACALLS_CORS_ORIGINS (lista separada
+// withCORS aplica a política de origens. KALLIA_CORS_ORIGINS (lista separada
 // por vírgula) restringe as origens permitidas; sem ela, mantém "*" (necessário
 // para o widget do Chatwoot em domínio diverso), com aviso se houver API key.
 func withCORS(h http.Handler, log *slog.Logger) http.Handler {
-	allowed := parseCSVEnv("KALLIA_CORS_ORIGINS", "WACALLS_CORS_ORIGINS")
-	if len(allowed) == 0 && envStr("KALLIA_API_KEY", "WACALLS_API_KEY", "") != "" {
+	allowed := parseCSVEnv("KALLIA_CORS_ORIGINS")
+	if len(allowed) == 0 && envStr("KALLIA_API_KEY", "") != "" {
 		log.Warn("KALLIA_CORS_ORIGINS não definida — CORS aberto (*). Restrinja para os domínios do painel/Chatwoot em produção.")
 	}
 	allowedSet := map[string]bool{}
@@ -189,8 +190,8 @@ func withCORS(h http.Handler, log *slog.Logger) http.Handler {
 	})
 }
 
-func parseCSVEnv(primaryKey, fallbackKey string) []string {
-	v := strings.TrimSpace(envStr(primaryKey, fallbackKey, ""))
+func parseCSVEnv(key string) []string {
+	v := strings.TrimSpace(envStr(key, ""))
 	if v == "" {
 		return nil
 	}
@@ -519,6 +520,24 @@ func (s *server) handleSessionRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *server) handleRotateSessionAPIKey(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	sid := r.PathValue("sid")
+	var body struct {
+		APIKey string `json:"apiKey"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	newKey, err := s.sessions.RotateAPIKey(r.Context(), sid, body.APIKey)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"apiKey": newKey, "sessionId": sid})
 }
 
 func (s *server) handleSessionLogout(w http.ResponseWriter, r *http.Request) {
@@ -1351,7 +1370,7 @@ func (rl *RateLimiter) getLimiter(ip string) *rate.Limiter {
 	return cl.limiter
 }
 
-// trustedProxies é calculado uma vez a partir de WACALLS_TRUSTED_PROXIES
+// trustedProxies é calculado uma vez a partir de KALLIA_TRUSTED_PROXIES
 // (IPs ou CIDRs separados por vírgula). X-Forwarded-For só é honrado quando o
 // peer direto é um proxy confiável — caso contrário qualquer cliente poderia
 // spoofar o header e bypassar o rate limit.
@@ -1364,7 +1383,7 @@ var (
 func loadTrustedProxies() {
 	trustedProxiesOnce.Do(func() {
 		trustedIPs = map[string]bool{}
-		for _, entry := range parseCSVEnv("KALLIA_TRUSTED_PROXIES", "WACALLS_TRUSTED_PROXIES") {
+		for _, entry := range parseCSVEnv("KALLIA_TRUSTED_PROXIES") {
 			if _, cidr, err := net.ParseCIDR(entry); err == nil {
 				trustedCIDRs = append(trustedCIDRs, cidr)
 				continue

@@ -20,14 +20,14 @@ import (
 //     CGNAT, multicast e unspecified);
 //   - redirects são revalidados um a um (máx. 5).
 //
-// WACALLS_ALLOW_PRIVATE_URLS=true desativa o bloqueio de IPs privados (útil
+// KALLIA_ALLOW_PRIVATE_URLS=true desativa o bloqueio de IPs privados (útil
 // quando as integrações rodam na mesma LAN/VPS privada).
 
 var errPrivateURL = errors.New("url resolve para endereço privado/interno (SSRF bloqueado)")
 
 // allowPrivateURLs indica se o bloqueio de IPs privados está desativado.
 func allowPrivateURLs() bool {
-	return strings.EqualFold(envStr("KALLIA_ALLOW_PRIVATE_URLS", "WACALLS_ALLOW_PRIVATE_URLS", ""), "true")
+	return strings.EqualFold(envStr("KALLIA_ALLOW_PRIVATE_URLS", ""), "true")
 }
 
 type ipLookupFunc func(host string) ([]net.IP, error)
