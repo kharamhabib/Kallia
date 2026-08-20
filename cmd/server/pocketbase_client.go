@@ -416,11 +416,50 @@ func (c *PocketBaseClient) UpsertSessionPB(ctx context.Context, id, name, jid, w
 }
 
 func (c *PocketBaseClient) DeleteSessionPB(ctx context.Context, id string) error {
+	// 1. Tentar deletar diretamente caso seja o ID de 15 caracteres do PocketBase
 	resp, err := c.doAdminRequest(ctx, "DELETE", "/api/collections/sessions/records/"+id, nil)
-	if err != nil {
-		return err
+	if err == nil {
+		resp.Body.Close()
 	}
-	defer resp.Body.Close()
+
+	// 2. Buscar por sid ou id e deletar todas as ocorrências encontradas no PocketBase
+	filter := fmt.Sprintf(`sid="%s" || id="%s"`, id, id)
+	searchURL := fmt.Sprintf("/api/collections/sessions/records?filter=(%s)&perPage=50", url.QueryEscape(filter))
+	searchResp, searchErr := c.doAdminRequest(ctx, "GET", searchURL, nil)
+	if searchErr == nil {
+		defer searchResp.Body.Close()
+		var res PBListResponse[struct {
+			ID string `json:"id"`
+		}]
+		if json.NewDecoder(searchResp.Body).Decode(&res) == nil {
+			for _, item := range res.Items {
+				delResp, _ := c.doAdminRequest(ctx, "DELETE", "/api/collections/sessions/records/"+item.ID, nil)
+				if delResp != nil {
+					delResp.Body.Close()
+				}
+			}
+		}
+	}
+
+	// 3. Deletar também todos os agentes vinculados a essa sessão no PocketBase
+	agentFilter := fmt.Sprintf(`session_id="%s"`, id)
+	agentSearchURL := fmt.Sprintf("/api/collections/agents/records?filter=(%s)&perPage=100", url.QueryEscape(agentFilter))
+	agentSearchResp, agentSearchErr := c.doAdminRequest(ctx, "GET", agentSearchURL, nil)
+	if agentSearchErr == nil {
+		defer agentSearchResp.Body.Close()
+		var res PBListResponse[struct {
+			ID string `json:"id"`
+		}]
+		if json.NewDecoder(agentSearchResp.Body).Decode(&res) == nil {
+			for _, item := range res.Items {
+				delResp, _ := c.doAdminRequest(ctx, "DELETE", "/api/collections/agents/records/"+item.ID, nil)
+				if delResp != nil {
+					delResp.Body.Close()
+				}
+			}
+		}
+	}
+
 	return nil
 }
 

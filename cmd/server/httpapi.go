@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -398,16 +399,69 @@ func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := r.Context().Value(ctxKeyProjectID).(string)
 	role, _ := r.Context().Value(ctxKeyUserRole).(string)
 
-	all := s.sessions.infos()
-	filtered := []SessionInfo{}
+	// 1. Obter todas as sessões registradas em memória (com live state do whatsmeow)
+	memInfos := s.sessions.infos()
+	sessionMap := make(map[string]SessionInfo)
+	for _, info := range memInfos {
+		sessionMap[info.ID] = info
+	}
 
-	for _, info := range all {
+	// 2. Obter todas as sessões do SQLite local
+	if localRows, err := s.sessions.store.listAll(r.Context()); err == nil {
+		for _, row := range localRows {
+			if _, exists := sessionMap[row.ID]; !exists {
+				sessionMap[row.ID] = SessionInfo{
+					ID:        row.ID,
+					Name:      row.Name,
+					State:     "disconnected",
+					JID:       row.JID,
+					ProjectID: row.ProjectID,
+					APIKey:    row.APIKey,
+				}
+			}
+		}
+	}
+
+	// 3. Obter todas as sessões do PocketBase
+	if pbSessions, err := pbClient.ListSessionsPB(r.Context()); err == nil {
+		for _, pb := range pbSessions {
+			existing, exists := sessionMap[pb.ID]
+			if !exists {
+				sessionMap[pb.ID] = SessionInfo{
+					ID:        pb.ID,
+					Name:      pb.Name,
+					State:     "disconnected",
+					JID:       pb.JID,
+					ProjectID: pb.ProjectID,
+					APIKey:    pb.APIKey,
+				}
+			} else {
+				if existing.Name == "" {
+					existing.Name = pb.Name
+				}
+				if existing.ProjectID == "" || existing.ProjectID == "default" {
+					existing.ProjectID = pb.ProjectID
+				}
+				sessionMap[pb.ID] = existing
+			}
+		}
+	}
+
+	// 4. Filtrar por perfil (SuperAdmin / appadmin vê absolutamente TODAS as conexões de todos os bancos)
+	filtered := []SessionInfo{}
+	for _, info := range sessionMap {
 		if role == "appadmin" || info.ProjectID == projectID {
 			if role == "appadmin" {
 				var ownerEmail, ownerName string
 				_ = s.sessions.store.db.QueryRowContext(r.Context(),
 					`SELECT email, COALESCE(name, email) FROM users WHERE project_id = $1 LIMIT 1`,
 					info.ProjectID).Scan(&ownerEmail, &ownerName)
+				if ownerEmail == "" && strings.HasPrefix(info.ProjectID, "prj_") {
+					uID := strings.TrimPrefix(info.ProjectID, "prj_")
+					_ = s.sessions.store.db.QueryRowContext(r.Context(),
+						`SELECT email, COALESCE(name, email) FROM users WHERE id = $1 LIMIT 1`,
+						uID).Scan(&ownerEmail, &ownerName)
+				}
 				if ownerEmail != "" {
 					info.OwnerEmail = ownerEmail
 					info.OwnerName = ownerName
@@ -416,6 +470,10 @@ func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 			filtered = append(filtered, info)
 		}
 	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		return strings.ToLower(filtered[i].Name) < strings.ToLower(filtered[j].Name)
+	})
 
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": filtered})
 }

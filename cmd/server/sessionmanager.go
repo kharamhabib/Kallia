@@ -252,30 +252,31 @@ func (m *SessionManager) RotateAPIKey(ctx context.Context, id, customKey string)
 
 func (m *SessionManager) Delete(ctx context.Context, id string) error {
 	s, ok := m.Get(id)
-	if !ok {
-		return fmt.Errorf("no session %s", id)
-	}
-	if client := s.getClient(); client != nil {
-		if client.Store != nil && client.Store.ID != nil {
-			if err := client.Logout(ctx); err != nil {
-				m.log.Warn("logout failed; deleting locally", "session", id, "err", err)
+	if ok {
+		if client := s.getClient(); client != nil {
+			if client.Store != nil && client.Store.ID != nil {
+				if err := client.Logout(ctx); err != nil {
+					m.log.Warn("logout failed; deleting locally", "session", id, "err", err)
+				}
 			}
+			client.Disconnect()
 		}
-		client.Disconnect()
+		s.teardownAllCalls()
+		// o store da sessão é um banco inteiro só dela: fecha a conexão e derruba.
+		if s.waDB != nil {
+			_ = s.waDB.Close()
+		}
+		if err := m.db.dropSessionDB(ctx, id); err != nil {
+			m.log.Warn("drop session database failed", "session", id, "err", err)
+		}
+		m.unregister(id)
 	}
-	s.teardownAllCalls()
-	// o store da sessão é um banco inteiro só dela: fecha a conexão e derruba.
-	if s.waDB != nil {
-		_ = s.waDB.Close()
-	}
-	if err := m.db.dropSessionDB(ctx, id); err != nil {
-		m.log.Warn("drop session database failed", "session", id, "err", err)
-	}
-	m.unregister(id)
+
+	// Deleta incondicionalmente dos dois bancos de dados (SQLite e PocketBase)
 	_ = m.store.delete(ctx, id)
 	syncDeleteSessionToPB(id)
 	m.broker.emitSessionList(m.infos())
-	m.log.Info("session deleted", "session", id)
+	m.log.Info("session deleted across sqlite and pocketbase", "session", id)
 	return nil
 }
 
