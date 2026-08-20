@@ -13,6 +13,14 @@ func (s *server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Tentar carregar diretamente do PocketBase (fonte primária central)
+	pbAgents, err := pbClient.ListAgentsPB(r.Context(), sid)
+	if err == nil && len(pbAgents) > 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"agents": pbAgents})
+		return
+	}
+
+	// 2. Fallback para cache local no SQLite
 	agents, err := s.sessions.store.listAgents(r.Context(), sid)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -53,11 +61,14 @@ func (s *server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	agentID := newSessionID()
-	err := s.sessions.store.createAgent(r.Context(), agentID, sid, name, body.Description, body.AIConfig, body.Inbound, body.Outbound)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
+	// Criar diretamente no PocketBase
+	pbID, _ := pbClient.CreateAgentPB(r.Context(), agentID, sid, name, body.Description, body.AIConfig, body.Inbound, body.Outbound)
+	if pbID != "" {
+		agentID = pbID
 	}
+
+	// Sincronizar cache local SQLite
+	_ = s.sessions.store.createAgent(r.Context(), agentID, sid, name, body.Description, body.AIConfig, body.Inbound, body.Outbound)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"id": agentID})
 }
@@ -95,11 +106,9 @@ func (s *server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.sessions.store.updateAgent(r.Context(), agentID, name, body.Description, body.AIConfig, body.Inbound, body.Outbound)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
+	// Atualizar no PocketBase e no SQLite
+	_ = pbClient.UpdateAgentPB(r.Context(), agentID, name, body.Description, body.AIConfig, body.Inbound, body.Outbound)
+	_ = s.sessions.store.updateAgent(r.Context(), agentID, name, body.Description, body.AIConfig, body.Inbound, body.Outbound)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -119,11 +128,9 @@ func (s *server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.sessions.store.deleteAgent(r.Context(), agentID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
+	// Deletar no PocketBase e no SQLite
+	_ = pbClient.DeleteAgentPB(r.Context(), agentID)
+	_ = s.sessions.store.deleteAgent(r.Context(), agentID)
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

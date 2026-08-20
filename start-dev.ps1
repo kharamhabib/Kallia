@@ -31,7 +31,10 @@ $env:CGO_ENABLED = "1"
 $env:CGO_LDFLAGS = "-L.\native -lopus_mlow"
 $env:PATH = "$pwd\native;" + $env:PATH
 
-# 3. Compila o binário se não existir ou se atualizado
+# 3. Encerra instâncias anteriores do backend se estiverem rodando
+Stop-Process -Name kallia -Force -ErrorAction SilentlyContinue
+
+# 4. Compila o binário se não existir ou se atualizado
 Write-Host "Compilando backend Kallia..." -ForegroundColor Cyan
 go build -tags mlow -o kallia.exe ./cmd/server
 

@@ -1167,13 +1167,21 @@ func (s *server) handleListCRMContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query().Get("q")
+
+	// 1. Tentar buscar diretamente do PocketBase
+	pbContacts, err := pbClient.ListContactsPB(r.Context(), sess.id, q)
+	if err == nil && len(pbContacts) > 0 {
+		writeJSON(w, http.StatusOK, pbContacts)
+		return
+	}
+
+	// 2. Fallback para cache local no SQLite
 	contacts, err := s.sessions.store.listContacts(r.Context(), sess.id, q)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Responde imediatamente ao cliente (< 5ms) do banco de dados local
 	writeJSON(w, http.StatusOK, contacts)
 }
 
@@ -1246,6 +1254,7 @@ func (s *server) handleCreateCRMContact(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	req.SessionID = sess.id
+	_ = pbClient.UpsertContactPB(r.Context(), req)
 	res, err := s.sessions.store.upsertContact(r.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -1276,6 +1285,7 @@ func (s *server) handleUpdateCRMContact(w http.ResponseWriter, r *http.Request) 
 	}
 	req.ID = id
 	req.SessionID = sess.id
+	_ = pbClient.UpsertContactPB(r.Context(), req)
 	res, err := s.sessions.store.updateContactManual(r.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
