@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -246,42 +247,160 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	password := body.Password
 
 	user, err := s.sessions.store.getUserByEmail(r.Context(), email)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao buscar usuário"})
-		return
+	if err == nil && user != nil {
+		// Validar senha contra hash local do SQLite
+		if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err == nil {
+			projectID := ""
+			if user.ProjectID != nil {
+				projectID = *user.ProjectID
+			}
+
+			token, err := generateToken(user.ID, user.Role, projectID)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
+				return
+			}
+
+			writeJSON(w, http.StatusOK, map[string]any{
+				"token": token,
+				"user": map[string]any{
+					"id":        user.ID,
+					"email":     user.Email,
+					"role":      user.Role,
+					"projectId": projectID,
+				},
+			})
+			return
+		}
 	}
-	if user == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "e-mail ou senha incorretos"})
+
+	// 2. Se não encontrou no SQLite ou a senha falhou, tentar autenticar diretamente no PocketBase (Superuser ou User)
+	pbRole, pbProjectID, pbUserID, ok := s.authenticateWithPocketBase(r.Context(), email, password)
+	if ok {
+		// Sincronizar credenciais válidas do PocketBase para a tabela local do SQLite
+		hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err == nil {
+			if pbProjectID == "" {
+				pbProjectID = "default"
+			}
+			_, _ = s.sessions.store.db.ExecContext(r.Context(), `
+				INSERT INTO users (id, email, password_hash, role, project_id)
+				VALUES ($1, $2, $3, $4, $5)
+				ON CONFLICT (email) DO UPDATE SET
+					password_hash = EXCLUDED.password_hash,
+					role = EXCLUDED.role,
+					project_id = COALESCE(users.project_id, EXCLUDED.project_id)
+			`, pbUserID, email, string(hashed), pbRole, pbProjectID)
+		}
+
+		token, err := generateToken(pbUserID, pbRole, pbProjectID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"token": token,
+			"user": map[string]any{
+				"id":        pbUserID,
+				"email":     email,
+				"role":      pbRole,
+				"projectId": pbProjectID,
+			},
+		})
 		return
 	}
 
-	// Validar senha
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "e-mail ou senha incorretos"})
-		return
-	}
+	writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "e-mail ou senha incorretos"})
+}
 
-	// Obter ID de projeto
-	projectID := ""
-	if user.ProjectID != nil {
-		projectID = *user.ProjectID
+// authenticateWithPocketBase valida as credenciais contra a API do PocketBase (seja superadmin ou user)
+func (s *server) authenticateWithPocketBase(ctx context.Context, email, password string) (role, projectID, userID string, ok bool) {
+	pbURL := envStr("POCKETBASE_URL", "http://pocketbase:8090")
+	if pbURL == "" {
+		return "", "", "", false
 	}
+	pbURL = strings.TrimRight(pbURL, "/")
 
-	token, err := generateToken(user.ID, user.Role, projectID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"token": token,
-		"user": map[string]any{
-			"id":        user.ID,
-			"email":     user.Email,
-			"role":      user.Role,
-			"projectId": projectID,
-		},
+	payload, _ := json.Marshal(map[string]string{
+		"identity": email,
+		"password": password,
 	})
+
+	client := &http.Client{Timeout: 3 * time.Second}
+
+	// A. Tentar como Superuser / Admin no PocketBase
+	adminEndpoints := []string{
+		pbURL + "/api/collections/_superusers/auth-with-password",
+		pbURL + "/api/admins/auth-with-password",
+	}
+
+	for _, ep := range adminEndpoints {
+		req, err := http.NewRequestWithContext(ctx, "POST", ep, bytes.NewReader(payload))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var res struct {
+					Token string `json:"token"`
+					Admin struct {
+						ID    string `json:"id"`
+						Email string `json:"email"`
+					} `json:"admin"`
+					Record struct {
+						ID    string `json:"id"`
+						Email string `json:"email"`
+					} `json:"record"`
+				}
+				_ = json.NewDecoder(resp.Body).Decode(&res)
+				uid := res.Admin.ID
+				if uid == "" {
+					uid = res.Record.ID
+				}
+				if uid == "" {
+					uid = newSessionID()
+				}
+				return "appadmin", "default", uid, true
+			}
+		}
+	}
+
+	// B. Tentar como Usuário da collection 'users' no PocketBase
+	userReq, err := http.NewRequestWithContext(ctx, "POST", pbURL+"/api/collections/users/auth-with-password", bytes.NewReader(payload))
+	if err == nil {
+		userReq.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(userReq)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var res struct {
+					Token  string `json:"token"`
+					Record struct {
+						ID        string `json:"id"`
+						Email     string `json:"email"`
+						Role      string `json:"role"`
+						ProjectID string `json:"project_id"`
+					} `json:"record"`
+				}
+				_ = json.NewDecoder(resp.Body).Decode(&res)
+				userRole := res.Record.Role
+				if userRole == "" {
+					userRole = "creator"
+				}
+				pid := res.Record.ProjectID
+				if pid == "" {
+					pid = "default"
+				}
+				return userRole, pid, res.Record.ID, true
+			}
+		}
+	}
+
+	return "", "", "", false
 }
 
 func generateResetCode() string {
