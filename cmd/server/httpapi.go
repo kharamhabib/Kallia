@@ -386,13 +386,12 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := r.Context().Value(ctxKeyProjectID).(string)
-	role, _ := r.Context().Value(ctxKeyUserRole).(string)
 
 	all := s.sessions.infos()
 	filtered := []SessionInfo{}
 
 	for _, info := range all {
-		if role == "appadmin" || info.ProjectID == projectID {
+		if info.ProjectID == projectID {
 			filtered = append(filtered, info)
 		}
 	}

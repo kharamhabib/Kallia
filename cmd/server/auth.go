@@ -279,9 +279,8 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if pbProjectID == "" {
-		pbProjectID = "default"
-	}
+	// Garantir que cada usuário possua seu próprio projeto isolado (nunca compartilhar 'default')
+	projectID := s.ensureUserProject(r.Context(), pbUserID, email, pbRole, pbProjectID)
 
 	// Sincronizar dados do usuário no banco local
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -292,10 +291,10 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			id = EXCLUDED.id,
 			password_hash = EXCLUDED.password_hash,
 			role = EXCLUDED.role,
-			project_id = COALESCE(users.project_id, EXCLUDED.project_id)
-	`, pbUserID, email, string(hashed), pbRole, pbProjectID)
+			project_id = EXCLUDED.project_id
+	`, pbUserID, email, string(hashed), pbRole, projectID)
 
-	token, err := generateToken(pbUserID, pbRole, pbProjectID)
+	token, err := generateToken(pbUserID, pbRole, projectID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao gerar token"})
 		return
@@ -307,9 +306,60 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"id":        pbUserID,
 			"email":     email,
 			"role":      pbRole,
-			"projectId": pbProjectID,
+			"projectId": projectID,
 		},
 	})
+}
+
+// ensureUserProject garante que cada usuário tenha um ID de projeto exclusivo e provisionado
+func (s *server) ensureUserProject(ctx context.Context, userID, email, role, existingProjectID string) string {
+	// Se já possui um project_id válido e diferente de "" e "default"
+	if existingProjectID != "" && existingProjectID != "default" {
+		proj, err := s.sessions.store.getProject(ctx, existingProjectID)
+		if err == nil && proj != nil {
+			return existingProjectID
+		}
+	}
+
+	// Verificar se já existe um projeto dedicado a este usuário no banco local
+	var existingPID string
+	err := s.sessions.store.db.QueryRowContext(ctx, `SELECT project_id FROM users WHERE id = $1 AND project_id IS NOT NULL AND project_id != '' AND project_id != 'default'`, userID).Scan(&existingPID)
+	if err == nil && existingPID != "" {
+		return existingPID
+	}
+
+	// Criar um projeto dedicado para este usuário/tenant
+	projectID := "prj_" + userID
+	if len(projectID) > 32 {
+		projectID = projectID[:32]
+	}
+	projectName := "Projeto de " + strings.Split(email, "@")[0]
+	plan := "expert"
+	if role != "appadmin" {
+		plan = "trial"
+	}
+	planEnds := time.Now().Add(30 * 24 * time.Hour)
+
+	_ = s.sessions.store.createProject(ctx, projectID, projectName, plan, "active", time.Now(), &planEnds)
+
+	// Atualizar no PocketBase de forma assíncrona
+	go func() {
+		pbURL := envStr("POCKETBASE_URL", "http://pocketbase:8090")
+		if pbURL != "" {
+			patchPayload, _ := json.Marshal(map[string]string{"project_id": projectID})
+			req, _ := http.NewRequest("PATCH", strings.TrimRight(pbURL, "/")+"/api/collections/users/records/"+userID, bytes.NewReader(patchPayload))
+			if req != nil {
+				req.Header.Set("Content-Type", "application/json")
+				client := &http.Client{Timeout: 3 * time.Second}
+				resp, _ := client.Do(req)
+				if resp != nil {
+					resp.Body.Close()
+				}
+			}
+		}
+	}()
+
+	return projectID
 }
 
 // authenticateWithPocketBase valida as credenciais contra a API do PocketBase (seja superadmin ou user)
@@ -362,7 +412,7 @@ func (s *server) authenticateWithPocketBase(ctx context.Context, email, password
 				if uid == "" {
 					uid = newSessionID()
 				}
-				return "appadmin", "default", uid, true
+				return "appadmin", "", uid, true
 			}
 		}
 	}
@@ -389,11 +439,7 @@ func (s *server) authenticateWithPocketBase(ctx context.Context, email, password
 				if userRole == "" {
 					userRole = "creator"
 				}
-				pid := res.Record.ProjectID
-				if pid == "" {
-					pid = "default"
-				}
-				return userRole, pid, res.Record.ID, true
+				return userRole, res.Record.ProjectID, res.Record.ID, true
 			}
 		}
 	}

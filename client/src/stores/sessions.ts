@@ -31,11 +31,13 @@ export const ensureSessionsWired = (): void => {
 
   eventStream.on((ev: BrokerEvent) => {
     if (ev.type === "session-list") {
-      useSessions.setState((s) => {
-        const ids = new Set(ev.sessions.map((x) => x.id));
-        const qrs: Record<string, string> = {};
-        for (const [id, qr] of Object.entries(s.qrs)) if (ids.has(id)) qrs[id] = qr;
-        return { sessions: ev.sessions, qrs, activeId: pickActive(ev.sessions, s.activeId) };
+      void listSessions().then((sessions) => {
+        useSessions.setState((s) => {
+          const ids = new Set(sessions.map((x) => x.id));
+          const qrs: Record<string, string> = {};
+          for (const [id, qr] of Object.entries(s.qrs)) if (ids.has(id)) qrs[id] = qr;
+          return { sessions, qrs, activeId: pickActive(sessions, s.activeId) };
+        });
       });
     } else if (ev.type === "session-qr") {
       useSessions.setState((s) => ({ qrs: { ...s.qrs, [ev.sessionId]: ev.qr } }));
