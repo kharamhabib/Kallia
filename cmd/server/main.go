@@ -113,6 +113,9 @@ func main() {
 	// Inicia o scheduler de IA server-side em background
 	go srv.scheduler.Run(ctx)
 
+	// Sincroniza dados existentes com o PocketBase
+	syncAllToPocketBase(ctx, srv.sessions.store)
+
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.routes(),

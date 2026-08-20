@@ -20,19 +20,18 @@ Modos de operação:
 O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 
 1. **Projetos e Planos (Billing)**:
-   - Planos vinculados ao projeto (`basic`, `advantage`, `expert`), controlando o status (`active` / `inactive`), vigência (`plan_starts_at`, `plan_ends_at`) e o limite de conexões de WhatsApp permitidas (ex: Básico 1 conexão, Advantage 3 conexões, Expert 8 conexões).
-2. **Controle de Acesso por Roles (RBAC)**:
-   - `appadmin`: Superadministrador com acesso total a todos os projetos, usuários e conexões do sistema.
-   - `admin`: Administrador do projeto. Gerencia conexões, API keys, agentes especialistas e usuários do seu próprio projeto.
-   - `normal`: Operador convidado. Acesso operacional (efetuar e receber chamadas), sem permissão para criar/deletar conexões, alterar chaves de API ou modificar agentes.
+   - Planos vinculados ao projeto (`basic`, `advantage`, `expert`), controlando o status (`active` / `inactive`), vigência (`plan_starts_at`, `plan_ends_at`) e o limite de conexões de WhatsApp permitidas (ex: Básico 1 conexão, Adv2. **Controle de Acesso por Roles (RBAC)**:
+   - `appadmin`: Superadministrador com acesso ao PocketBase e controle de sistema.
+   - `creator`: Proprietário do tenant/projeto. Gerencia suas próprias conexões, API keys, agentes especialistas e integrações.
+   - `normal`: Operador convidado. Acesso operacional (efetuar e receber chamadas), sem permissão para criar/deletar conexões ou chaves.
 3. **Módulo de CRM de Contatos Integrado**:
-   - Cada sessão de WhatsApp possui um repositório de contatos no PostgreSQL (`session_contacts`). Permite cadastrar e gerenciar Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
+   - Cada sessão de WhatsApp possui repositório de contatos no PocketBase (`contacts`) e SQLite local. Permite cadastrar e gerenciar Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
    - Integração direta entre o CRM e o Webphone: ao clicar no ícone de telefone de qualquer contato, o sistema navega reativamente para a tela de discagem e preenche automaticamente o número do destinatário.
    - Resolução de contato centralizada (`useContactDisplay` e `useContactInfo`), exibindo o nome real e avatar do cliente no Dashboard, Histórico, Notificações de Chamadas e Webphone.
 4. **Backend (Go)**:
-   - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow`, controla chamadas VoIP, encapsula sinalização WebRTC, realiza a persistência no PostgreSQL (banco por sessão), executa os clientes nativos Gemini Live (`gemini_live.go`) e Grok Realtime (`grok_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`), gerencia provedores de IA com chaves criptografadas (`ai_providers.go`, `crypto.go`) e expõe a API HTTP/SSE autenticada por JWT.
+   - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow` com SQLite isolado por sessão, controla chamadas VoIP, encapsula sinalização WebRTC, sincroniza dados com o **PocketBase**, orquestra filas e semáforos de concorrência com o **Redis 7**, executa os clientes nativos Gemini Live (`gemini_live.go`) e Grok Realtime (`grok_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`), gerencia provedores de IA com chaves criptografadas (`ai_providers.go`, `crypto.go`) e expõe a API HTTP/SSE autenticada por JWT.
 5. **Frontend (React 19, TypeScript, Vite)**:
-   - Painel do operador com Login JWT (sem necessidade de digitar URL do servidor), escopo automático do projeto ativo, discador VoIP, gerenciamento de agentes, módulo de CRM, histórico interativo, modais reutilizáveis (`ConfirmModal`) e widget embutível para o Chatwoot.
+   - Painel do operador com Login JWT integrado ao PocketBase, escopo automático do projeto ativo, discador VoIP, gerenciamento de agentes, módulo de CRM, histórico interativo, modais reutilizáveis (`ConfirmModal`) e widget embutível para o Chatwoot.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -51,13 +50,15 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 │ ┌────────────────┐      ┌─────────────────────────┐ (Se Server-Side) ┌────────────────┐│
 │ │ JWT / REST /   │◄────►│ ServerAIAgent / Transfer│◄───────────────►│ Gemini / Grok  ││
 │ │ SSE Broker     │      │ (Agentes Especialistas) │                 │ (Bidi WebSocket││
-│ └────────────────┘      └────────────┬────────────┘                 └────────────────┘│
-│                                      ▼                                                 │
-│                              SessionManager (VoIP)◄─────────► PostgreSQL (Database)    │
-└──────────────────────────────────────┬─────────────────────────────────────────────────┘
+│ └───────┬────────┘      └────────────┬────────────┘                 └────────────────┘│
+│         │                            ▼                                                 │
+│         │                    SessionManager (VoIP)◄─────────► PocketBase & SQLite      │
+│         │                            ▲                                                 │
+│         └────────────────────────────┼──────────────────────► Redis 7 (Queues/Lock)    │
+└──────────────────────────────────────┼─────────────────────────────────────────────────┘
                                        │ VoIP (WhatsApp Prot)
                                        ▼
-                              WhatsApp VoIP Server
+                               WhatsApp VoIP Server
 ```
 
 ---
@@ -67,8 +68,9 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 ### Backend
 
 - **Linguagem**: Go (Golang) 1.26+
-- **Autenticação**: JWT nativo (HMAC-SHA256) com controle de perfis (`appadmin`, `admin`, `normal`).
-- **Banco de Dados**: PostgreSQL (banco principal `kallia_main` + 1 banco por sessão `kallia_<session_id>`, com detecção automática de fallback para bancos legados `wacalls_main`). Inclui tabela `ai_providers` para armazenamento de provedores de IA com chaves criptografadas (AES-256-GCM).
+- **Autenticação & Dados**: PocketBase (Google OAuth2, e-mail/senha, RBAC, REST API).
+- **Persistência de Sessão WhatsApp**: SQLite nativo isolado por conexão (`./storage/whatsapp/{id}.db`).
+- **Fila & Concorrência**: Redis 7 para rate-limiting anti-bloqueio e entrega de webhooks.
 - **Processamento de Mídia**: CGO com wrapping de codecs Opus nativos (`opus_mlow` do WhatsApp).
 - **Gravação de Áudio Dual-Channel**: Gravação e mixagem estocástica em tempo real dos dois canais de áudio (Cliente + IA) salvas em `storage/recordings/YYYYMMDD_HHMMSS_Contato_CallID.wav` com player autenticado.
 - **Protocolo**: Sinalização de VoIP via nós binários do WhatsApp e transporte de mídia UDP (SRTP) intermediado por WebRTC.

@@ -464,6 +464,9 @@ func (s *sessionStore) insert(ctx context.Context, id, name, projectID, apiKey s
 		INSERT INTO sessions (id, name, jid, project_id, api_key)
 		VALUES ($1, $2, NULL, $3, $4)
 	`, id, name, projectID, apiKey)
+	if err == nil {
+		syncSessionToPB(id, name, "", "", projectID, apiKey)
+	}
 	return err
 }
 
@@ -817,6 +820,9 @@ func (s *sessionStore) createProject(ctx context.Context, id, name, plan, planSt
 		INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, id, name, plan, planStatus, start, end)
+	if err == nil {
+		syncProjectToPB(id, name, plan, planStatus, start, end)
+	}
 	return err
 }
 
@@ -886,7 +892,12 @@ func (s *sessionStore) createProjectAndUser(ctx context.Context, projectID, proj
 		return fmt.Errorf("criar usuário: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	syncProjectToPB(projectID, projName, "basic", "active", time.Now(), &planEnds)
+	return nil
 }
 
 func (s *sessionStore) getUserByEmail(ctx context.Context, email string) (*userRow, error) {
@@ -995,7 +1006,12 @@ func (s *sessionStore) createAgent(ctx context.Context, id, sessionID, name, des
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	syncAgentToPB(id, sessionID, name, description, aiConfig, inbound, outbound)
+	return nil
 }
 
 func (s *sessionStore) updateAgent(ctx context.Context, id, name, description, aiConfig string, inbound, outbound bool) error {
@@ -1032,7 +1048,12 @@ func (s *sessionStore) updateAgent(ctx context.Context, id, name, description, a
 		return err
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	syncAgentToPB(id, sessionID, name, description, aiConfig, inbound, outbound)
+	return nil
 }
 
 func (s *sessionStore) deleteAgent(ctx context.Context, id string) error {
