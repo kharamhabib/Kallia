@@ -9,7 +9,7 @@ COPY client/ ./
 RUN npm run build
 
 # ---------- Stage 2: build do servidor Go (cgo + tag mlow) ----------
-FROM golang:1.26-bookworm AS server
+FROM golang:1.24-bookworm AS server
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
@@ -33,7 +33,7 @@ WORKDIR /app
 RUN mkdir -p /app/storage/recordings
 EXPOSE 8080 50000
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget --spider -q http://localhost:8080/healthz || exit 1
 
 ENTRYPOINT ["kallia"]

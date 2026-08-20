@@ -73,7 +73,15 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		return nil, err
 	}
 
-	// 4. Executar migrações de dados de legado
+	// 4. Executar migrações de colunas para bancos SQLite existentes
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN webhook TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN chatwoot TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN ai_config TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN project_id TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE sessions ADD COLUMN api_key TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'creator'`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE users ADD COLUMN project_id TEXT`)
+
 	_, _ = db.ExecContext(ctx, `UPDATE users SET email = LOWER(TRIM(email))`)
 	_, _ = db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_lower_email ON users (LOWER(email))`)
 
@@ -82,8 +90,8 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		VALUES ('default', 'Projeto Padrão', 'basic', 'active', CURRENT_TIMESTAMP, datetime('now', '+10 years'))
 		ON CONFLICT (id) DO NOTHING
 	`)
-	_, _ = db.ExecContext(ctx, `UPDATE sessions SET project_id = 'default' WHERE project_id IS NULL`)
-	_, _ = db.ExecContext(ctx, `UPDATE sessions SET api_key = 'kc_' || hex(randomblob(16)) WHERE api_key IS NULL`)
+	_, _ = db.ExecContext(ctx, `UPDATE sessions SET project_id = 'default' WHERE project_id IS NULL OR project_id = ''`)
+	_, _ = db.ExecContext(ctx, `UPDATE sessions SET api_key = 'kc_' || hex(randomblob(16)) WHERE api_key IS NULL OR api_key = ''`)
 
 	// 5. Criar a tabela de agentes (personas)
 	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS agents (
