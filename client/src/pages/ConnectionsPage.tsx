@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Smartphone, Loader2, LogOut, CheckCircle2, Copy, Pencil, Bot, PhoneIncoming, PhoneOutgoing, Target, QrCode, RefreshCw, KeyRound } from "lucide-react";
+import { Plus, Trash2, Smartphone, Loader2, LogOut, CheckCircle2, Copy, Pencil, Bot, PhoneIncoming, PhoneOutgoing, Target, QrCode, RefreshCw, KeyRound, ShieldCheck, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { createSession, deleteSession, logoutSession, renameSession, pairSession
 import { listAgents, type Agent } from "@/services/agents";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
-import { apiUrl, getToken } from "@/lib/auth";
+import { apiUrl, getToken, getUser } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -83,6 +83,8 @@ const SessionAgentsSummary = ({ sid }: { sid: string }) => {
 export const ConnectionsPage = () => {
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
+  const currentUser = getUser();
+  const isSuperAdmin = currentUser?.role === "appadmin";
 
   // Estados para criação de nova conexão
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -231,9 +233,19 @@ export const ConnectionsPage = () => {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border bg-card p-5 shadow-xs">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Gerenciador de Conexões WhatsApp</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Conecte e gerencie seus números de WhatsApp para chamadas de voz e IA.
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-xl font-bold tracking-tight">Gerenciador de Conexões WhatsApp</h1>
+            {isSuperAdmin && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                SuperAdmin (Visão Global)
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {isSuperAdmin
+              ? "Exibindo todas as conexões e agentes de todos os usuários cadastrados na plataforma."
+              : "Conecte e gerencie seus números de WhatsApp para chamadas de voz e IA."}
           </p>
         </div>
 
@@ -257,6 +269,22 @@ export const ConnectionsPage = () => {
               )}
             >
               <div className="space-y-4">
+                {/* SuperAdmin Tenant Badge */}
+                {isSuperAdmin && (
+                  <div className="flex items-center justify-between pb-2 border-b border-border/40 text-[11px]">
+                    <div className="flex items-center gap-1.5 text-muted-foreground">
+                      <User className="h-3.5 w-3.5 text-primary" />
+                      <span>Usuário / Tenant:</span>
+                      <span className="font-semibold text-foreground">
+                        {s.ownerEmail || (s.projectId ? `Projeto: ${s.projectId}` : "Não atribuído")}
+                      </span>
+                    </div>
+                    {s.ownerName && s.ownerName !== s.ownerEmail && (
+                      <span className="text-muted-foreground font-mono">({s.ownerName})</span>
+                    )}
+                  </div>
+                )}
+
                 {/* Session Header */}
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
@@ -274,9 +302,19 @@ export const ConnectionsPage = () => {
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
+                        <span
+                          className={cn(
+                            "rounded-md px-2 py-0.5 text-[10px] font-bold",
+                            s.paired
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                              : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+                          )}
+                        >
+                          {s.paired ? "● Conectada" : "○ Desconectada"}
+                        </span>
                         {isActive && (
                           <span className="rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                            Ativa
+                            Selecionada
                           </span>
                         )}
                       </div>

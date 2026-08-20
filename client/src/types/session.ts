@@ -6,5 +6,8 @@ export type SessionInfo = {
   jid: string;
   state: SessionState;
   paired: boolean;
+  projectId?: string;
   apiKey?: string;
+  ownerEmail?: string;
+  ownerName?: string;
 };

@@ -175,23 +175,29 @@ Kallia/
 
 ## 4. Multi-Tenancy, Autenticação, CRM e Gestão de Planos
 
-### 4.1 Modelo de Dados (PostgreSQL)
+### 4.1 Modelo de Dados (PocketBase & SQLite)
 
-O banco principal (`kallia_main`) contém as tabelas fundamentais de controle de contas:
+O PocketBase gerencia as coleções fundamentais de controle e negócio do SaaS:
 
 1. **`projects`**:
-   - `id`, `name`, `plan` (`basic` | `advantage` | `expert`), `status` (`active` | `inactive`), `plan_starts_at`, `plan_ends_at`.
+   - `id`, `name`, `plan` (`trial` | `basic` | `advantage` | `expert`), `plan_status` (`active` | `inactive` | `canceled`), `plan_starts_at`, `plan_ends_at`.
 2. **`users`**:
-   - `id`, `email`, `password_hash`, `role` (`appadmin` | `admin` | `normal`), `project_id`.
+   - `id`, `email`, `password`, `role` (`appadmin` | `creator` | `normal`), `project_id`, `name`, `avatar`.
 3. **`sessions`**:
-   - `id`, `project_id`, `name`, `jid`, `status`, `api_key` (`kc_...`), `paired`.
+   - `id`, `sid`, `name`, `jid`, `webhook`, `chatwoot`, `ai_config`, `project_id`, `api_key`.
 4. **`agents`**:
-   - `id`, `session_id`, `name`, `prompt`, `greeting`, `voice`, `inbound_enabled`, `outbound_enabled`, `is_default`.
+   - `id`, `session_id`, `name`, `description`, `ai_config`, `inbound`, `outbound`.
+5. **`contacts`**:
+   - `id`, `session_id`, `phone`, `name`, `email`, `company`, `notes`, `tags`, `avatar_url`, `lid`, `jid`.
+6. **`call_history`**:
+   - `id`, `session_id`, `call_id`, `peer`, `direction` (`inbound` | `outbound`), `started_at`, `ended_at`, `summary`, `recording_url`, `transcript`, `agent_id`.
+7. **`ai_providers`**:
+   - `id`, `project_id`, `provider` (`gemini` | `grok` | `openai` | `elevenlabs`), `encrypted_api_key`, `enabled`, `default_model`, `options_json`.
+8. **`call_ratings`**:
+   - `id`, `session_id`, `call_id`, `score`, `comment`, `agent_id`.
 
-Nos bancos por sessão (`kallia_<session_id>`):
-
-5. **`session_contacts`**:
-   - `id`, `phone`, `name`, `email`, `company`, `notes`, `tags`, `lid`, `jid`, `picture_url`, `created_at`, `updated_at`.
+No SQLite local (`./storage/whatsapp/{id}.db`):
+- Chaves criptográficas de handshake e identidade do WhatsApp (`whatsmeow`).
 
 ### 4.2 Integridade do CRM e Navegação Reativa
 

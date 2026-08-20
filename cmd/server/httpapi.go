@@ -386,12 +386,23 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	projectID, _ := r.Context().Value(ctxKeyProjectID).(string)
+	role, _ := r.Context().Value(ctxKeyUserRole).(string)
 
 	all := s.sessions.infos()
 	filtered := []SessionInfo{}
 
 	for _, info := range all {
-		if info.ProjectID == projectID {
+		if role == "appadmin" || info.ProjectID == projectID {
+			if role == "appadmin" {
+				var ownerEmail, ownerName string
+				_ = s.sessions.store.db.QueryRowContext(r.Context(),
+					`SELECT email, COALESCE(name, email) FROM users WHERE project_id = $1 LIMIT 1`,
+					info.ProjectID).Scan(&ownerEmail, &ownerName)
+				if ownerEmail != "" {
+					info.OwnerEmail = ownerEmail
+					info.OwnerName = ownerName
+				}
+			}
 			filtered = append(filtered, info)
 		}
 	}
