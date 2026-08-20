@@ -4,10 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    expose:
+      - 8080
     ports:
-      # Porta HTTP da aplicação (Kallia Webphone + Servidor VoIP)
-      - "${PORT:-8080}:8080"
-      # Porta de mídia WebRTC (VoIP) necessária para o fluxo de áudio (UDP + TCP Mux)
+      # Portas de mídia WebRTC (VoIP) necessárias para o fluxo de áudio RTP
       - "${KALLIA_UDP_PORT:-50000}:${KALLIA_UDP_PORT:-50000}/udp"
       - "${KALLIA_UDP_PORT:-50000}:${KALLIA_UDP_PORT:-50000}/tcp"
     environment:
@@ -30,8 +30,8 @@ services:
   pocketbase:
     image: ghcr.io/muchobien/pocketbase:latest
     restart: unless-stopped
-    ports:
-      - "8090:8090"
+    expose:
+      - 8090
     environment:
       - PB_ENCRYPTION_KEY=${POCKETBASE_ENCRYPTION_KEY:-}
     volumes:
@@ -47,8 +47,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    expose:
+      - 6379
     volumes:
       - ./storage/redis_data:/data
     command: ["redis-server", "--appendonly", "yes"]
