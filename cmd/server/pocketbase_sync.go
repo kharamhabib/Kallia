@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -40,15 +41,20 @@ func pbPostOrPatch(ctx context.Context, collection, recordID string, data map[st
 
 	resp, err := pbHttpClient.Do(req)
 	if err != nil {
+		fmt.Printf("[PocketBase Sync] Falha ao conectar em %s: %v\n", createURL, err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		fmt.Printf("[PocketBase Sync] Registro criado com sucesso na collection %s\n", collection)
 		return nil
 	}
 
-	// 2. Se falhar (ex: conflito de ID existente), tentar atualizar via PATCH
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	fmt.Printf("[PocketBase Sync] POST em %s retornou %d: %s\n", createURL, resp.StatusCode, string(bodyBytes))
+
+	// 2. Se falhar (ex: registro já existente), tentar atualizar via PATCH
 	if recordID != "" {
 		patchURL := fmt.Sprintf("%s/api/collections/%s/records/%s", base, collection, recordID)
 		patchReq, err := http.NewRequestWithContext(ctx, "PATCH", patchURL, bytes.NewReader(payload))
@@ -91,6 +97,7 @@ func syncSessionToPB(id, name, jid, webhook, projectID, apiKey string) {
 		defer cancel()
 
 		data := map[string]any{
+			"sid":        id,
 			"name":       name,
 			"jid":        jid,
 			"webhook":    webhook,

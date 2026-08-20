@@ -63,11 +63,11 @@
       }
     ],
     "indexes": [],
-    "listRule": "@request.auth.id != ''",
-    "viewRule": "@request.auth.id != ''",
-    "createRule": "@request.auth.id != ''",
-    "updateRule": "@request.auth.id != ''",
-    "deleteRule": "@request.auth.role = 'appadmin'",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
     "options": {}
   },
   {
@@ -129,18 +129,12 @@
       {
         "id": "ses_prji000001",
         "name": "project_id",
-        "type": "relation",
+        "type": "text",
         "system": false,
-        "required": true,
+        "required": false,
         "presentable": false,
         "unique": false,
-        "options": {
-          "collectionId": "projects00000001",
-          "cascadeDelete": true,
-          "minSelect": null,
-          "maxSelect": 1,
-          "displayFields": null
-        }
+        "options": { "min": null, "max": null, "pattern": "" }
       },
       {
         "id": "ses_apik000001",
@@ -154,11 +148,11 @@
       }
     ],
     "indexes": [],
-    "listRule": "@request.auth.id != ''",
-    "viewRule": "@request.auth.id != ''",
-    "createRule": "@request.auth.id != ''",
-    "updateRule": "@request.auth.id != ''",
-    "deleteRule": "@request.auth.id != ''",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
     "options": {}
   },
   {
@@ -170,18 +164,12 @@
       {
         "id": "age_sesi000001",
         "name": "session_id",
-        "type": "relation",
+        "type": "text",
         "system": false,
         "required": true,
         "presentable": false,
         "unique": false,
-        "options": {
-          "collectionId": "sessions00000001",
-          "cascadeDelete": true,
-          "minSelect": null,
-          "maxSelect": 1,
-          "displayFields": null
-        }
+        "options": { "min": null, "max": null, "pattern": "" }
       },
       {
         "id": "age_name000001",
@@ -235,11 +223,11 @@
       }
     ],
     "indexes": [],
-    "listRule": "@request.auth.id != ''",
-    "viewRule": "@request.auth.id != ''",
-    "createRule": "@request.auth.id != ''",
-    "updateRule": "@request.auth.id != ''",
-    "deleteRule": "@request.auth.id != ''",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
     "options": {}
   },
   {
@@ -251,18 +239,12 @@
       {
         "id": "cnt_sesi000001",
         "name": "session_id",
-        "type": "relation",
+        "type": "text",
         "system": false,
         "required": true,
         "presentable": false,
         "unique": false,
-        "options": {
-          "collectionId": "sessions00000001",
-          "cascadeDelete": true,
-          "minSelect": null,
-          "maxSelect": 1,
-          "displayFields": null
-        }
+        "options": { "min": null, "max": null, "pattern": "" }
       },
       {
         "id": "cnt_phon000001",
@@ -326,11 +308,11 @@
       }
     ],
     "indexes": [],
-    "listRule": "@request.auth.id != ''",
-    "viewRule": "@request.auth.id != ''",
-    "createRule": "@request.auth.id != ''",
-    "updateRule": "@request.auth.id != ''",
-    "deleteRule": "@request.auth.id != ''",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
     "options": {}
   },
   {
@@ -421,11 +403,11 @@
       }
     ],
     "indexes": [],
-    "listRule": "@request.auth.id != ''",
-    "viewRule": "@request.auth.id != ''",
-    "createRule": "@request.auth.id != ''",
-    "updateRule": "@request.auth.id != ''",
-    "deleteRule": "@request.auth.id != ''",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
     "options": {}
   },
   {
@@ -437,18 +419,12 @@
       {
         "id": "aip_prji000001",
         "name": "project_id",
-        "type": "relation",
+        "type": "text",
         "system": false,
         "required": true,
         "presentable": false,
         "unique": false,
-        "options": {
-          "collectionId": "projects00000001",
-          "cascadeDelete": true,
-          "minSelect": null,
-          "maxSelect": 1,
-          "displayFields": null
-        }
+        "options": { "min": null, "max": null, "pattern": "" }
       },
       {
         "id": "aip_prov000001",
@@ -502,11 +478,11 @@
       }
     ],
     "indexes": [],
-    "listRule": "@request.auth.id != ''",
-    "viewRule": "@request.auth.id != ''",
-    "createRule": "@request.auth.id != ''",
-    "updateRule": "@request.auth.id != ''",
-    "deleteRule": "@request.auth.id != ''",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
     "options": {}
   }
 ]
