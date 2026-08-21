@@ -18,9 +18,20 @@ func (s *server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 		wsID = "default"
 	}
 
+	includeAll := r.URL.Query().Get("all") == "true"
+
 	// 1. Carregar diretamente do PocketBase (fonte primária central)
 	pbAgents, err := pbClient.ListAgentsPB(r.Context(), wsID)
 	if err == nil && len(pbAgents) > 0 {
+		if !includeAll {
+			var filtered []agentRow
+			for _, ag := range pbAgents {
+				if !ag.Inbound && strings.ToLower(strings.TrimSpace(ag.Name)) != "agente principal" {
+					filtered = append(filtered, ag)
+				}
+			}
+			pbAgents = filtered
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"agents": pbAgents})
 		return
 	}
@@ -28,21 +39,15 @@ func (s *server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	// 2. Fallback para cache local no SQLite
 	agents, err := s.sessions.store.listAgents(r.Context(), wsID)
 	if err == nil && len(agents) > 0 {
+		var filtered []agentRow
 		for _, ag := range agents {
+			if includeAll || (!ag.Inbound && strings.ToLower(strings.TrimSpace(ag.Name)) != "agente principal") {
+				filtered = append(filtered, ag)
+			}
 			_, _ = pbClient.CreateAgentPB(r.Context(), ag.ID, wsID, ag.Name, ag.Description, ag.AIConfig, ag.Inbound, ag.Outbound)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"agents": agents})
+		writeJSON(w, http.StatusOK, map[string]any{"agents": filtered})
 		return
-	}
-
-	// 3. Se houver configuração na sessão, bootstrap do Agente Principal no PocketBase
-	if cfg := sess.getAIConfig(); cfg.SystemInstruction != "" {
-		b, _ := json.Marshal(cfg)
-		_ = pbClient.UpsertMasterAgentPB(r.Context(), wsID, "Agente Principal", "Agente de Atendimento Principal", string(b), true, true)
-		if refreshed, err := pbClient.ListAgentsPB(r.Context(), wsID); err == nil && len(refreshed) > 0 {
-			writeJSON(w, http.StatusOK, map[string]any{"agents": refreshed})
-			return
-		}
 	}
 
 	if pbAgents == nil {

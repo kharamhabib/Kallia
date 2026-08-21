@@ -196,8 +196,8 @@ func handleRealtimeRecord(ctx context.Context, store *sessionStore, broker *Brok
 			name, _ := msg.Record["name"].(string)
 			jid, _ := msg.Record["jid"].(string)
 			webhook, _ := msg.Record["webhook"].(string)
-			chatwoot, _ := msg.Record["chatwoot"].(string)
-			aiConfig, _ := msg.Record["ai_config"].(string)
+			chatwoot := jsonFieldToString(msg.Record["chatwoot"])
+			aiConfig := jsonFieldToString(msg.Record["ai_config"])
 			workspaceID, _ := msg.Record["workspace_id"].(string)
 			if workspaceID == "" {
 				workspaceID, _ = msg.Record["project_id"].(string)
@@ -209,13 +209,13 @@ func handleRealtimeRecord(ctx context.Context, store *sessionStore, broker *Brok
 					INSERT INTO sessions (id, name, jid, webhook, chatwoot, ai_config, workspace_id, api_key)
 					VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 					ON CONFLICT (id) DO UPDATE SET
-						name = excluded.name,
-						jid = excluded.jid,
-						webhook = excluded.webhook,
-						chatwoot = excluded.chatwoot,
-						ai_config = excluded.ai_config,
-						workspace_id = excluded.workspace_id,
-						api_key = excluded.api_key
+						name = CASE WHEN excluded.name != '' THEN excluded.name ELSE sessions.name END,
+						jid = CASE WHEN excluded.jid != '' THEN excluded.jid ELSE sessions.jid END,
+						webhook = CASE WHEN excluded.webhook != '' THEN excluded.webhook ELSE sessions.webhook END,
+						chatwoot = CASE WHEN excluded.chatwoot != '' AND excluded.chatwoot != '{}' THEN excluded.chatwoot ELSE sessions.chatwoot END,
+						ai_config = CASE WHEN excluded.ai_config != '' AND excluded.ai_config != '{}' THEN excluded.ai_config ELSE sessions.ai_config END,
+						workspace_id = CASE WHEN excluded.workspace_id != '' THEN excluded.workspace_id ELSE sessions.workspace_id END,
+						api_key = CASE WHEN excluded.api_key != '' THEN excluded.api_key ELSE sessions.api_key END
 				`, sid, name, jid, webhook, chatwoot, aiConfig, workspaceID, apiKey)
 			}
 
@@ -225,15 +225,19 @@ func handleRealtimeRecord(ctx context.Context, store *sessionStore, broker *Brok
 					sess = newSession(sessionMgr, sid, name, workspaceID, apiKey, nil)
 					sessionMgr.register(sess)
 				}
-				sess.setName(name)
-				sess.setWebhook(webhook)
-				if chatwoot != "" {
+				if name != "" {
+					sess.setName(name)
+				}
+				if webhook != "" {
+					sess.setWebhook(webhook)
+				}
+				if chatwoot != "" && chatwoot != "{}" {
 					var cw ChatwootConfig
 					if json.Unmarshal([]byte(chatwoot), &cw) == nil {
 						sess.setChatwoot(cw)
 					}
 				}
-				if aiConfig != "" {
+				if aiConfig != "" && aiConfig != "{}" {
 					var aiCfg AIConfig
 					if json.Unmarshal([]byte(aiConfig), &aiCfg) == nil {
 						sess.setAIConfig(aiCfg)

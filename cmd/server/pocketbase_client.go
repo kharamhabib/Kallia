@@ -1289,8 +1289,8 @@ func (c *PocketBaseClient) UpdateSessionAIConfigPB(ctx context.Context, sessionI
 		resp.Body.Close()
 	}
 
-	// 2. Se falhar pelo ID, buscar por filter (session_id or id)
-	filter := fmt.Sprintf(`id="%s" || session_id="%s"`, sessionID, sessionID)
+	// 2. Se falhar pelo ID, buscar por filter (sid ou id)
+	filter := fmt.Sprintf(`sid="%s" || id="%s"`, sessionID, sessionID)
 	searchURL := fmt.Sprintf("/api/collections/sessions/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
 	sResp, sErr := c.doAdminRequest(ctx, "GET", searchURL, nil)
 	if sErr == nil && sResp != nil {

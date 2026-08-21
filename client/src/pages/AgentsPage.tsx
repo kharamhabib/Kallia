@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Sparkles,
   Bot,
@@ -165,6 +165,10 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
     systemInstruction: "",
     outbound: false,
   });
+
+  const specialists = useMemo(() => {
+    return agents.filter((a) => !a.inbound && a.id !== "master" && a.name.trim().toLowerCase() !== "agente principal");
+  }, [agents]);
 
   const loadData = useCallback(async () => {
     if (!sid) return;
@@ -358,7 +362,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-extrabold tracking-tight text-foreground">Central de Agentes IA</h1>
             <span className="rounded-full bg-primary/10 text-primary text-xs font-extrabold px-2.5 py-0.5 border border-primary/20">
-              {agents.length + 1} {agents.length === 0 ? "agente cadastrado" : "agentes cadastrados"}
+              {specialists.length + 1} {specialists.length === 0 ? "agente cadastrado" : "agentes cadastrados"}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -434,12 +438,12 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
             {/* DIVIDER */}
             <div className="flex items-center gap-2 py-1">
               <span className="h-px bg-border flex-1" />
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">Especialistas ({agents.length})</span>
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">Especialistas ({specialists.length})</span>
               <span className="h-px bg-border flex-1" />
             </div>
 
             {/* LISTA DE AGENTES ESPECIALISTAS */}
-            {agents.length === 0 ? (
+            {specialists.length === 0 ? (
               <div className="rounded-xl border border-dashed p-5 text-center text-xs text-muted-foreground space-y-2">
                 <Bot className="h-6 w-6 mx-auto text-muted-foreground/50" />
                 <p className="font-medium">Nenhum especialista cadastrado.</p>
@@ -447,7 +451,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {agents.map((ag) => {
+                {specialists.map((ag) => {
                   const isSelected = selectedId === ag.id;
                   return (
                     <div

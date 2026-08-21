@@ -54,6 +54,10 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - Substituição de loops manuais por funções nativas da standard library Go: `bytes.Equal` e `slices.Contains`.
   - Eliminação de goroutines ociosas em `ScheduleNPS` migrando para `time.AfterFunc`.
   - Unificação de helpers de normalização de telefone (`normalizePhone`) e remoção de wrappers redundantes.
+- [x] **Correção de Persistência de Configurações de IA e Desduplicação de Especialistas (21/08/2026)**:
+  - Correção na desserialização de eventos SSE Realtime do PocketBase (`jsonFieldToString`), impedindo que campos JSON (`ai_config` e `chatwoot`) fossem sobrescritos como string vazia.
+  - Correção do filtro de busca por `sid` em `UpdateSessionAIConfigPB`.
+  - Separação clara entre **Agente Principal** (Inbound Master mantido em `sessions.ai_config`) e **Agentes Especialistas** (Secundários/Outbound em `agents`), eliminando a duplicidade do Agente Principal na listagem de especialistas.
 
 ---
 
