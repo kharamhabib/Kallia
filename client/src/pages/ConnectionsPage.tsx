@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   Trash2,
@@ -9,10 +9,7 @@ import {
   Copy,
   Pencil,
   Bot,
-  PhoneIncoming,
-  PhoneOutgoing,
-  Target,
-  QrCode,
+  PhoneCall,
   RefreshCw,
   KeyRound,
   ShieldCheck,
@@ -22,13 +19,15 @@ import {
   Star,
   Building2,
   Zap,
+  PhoneIncoming,
+  PhoneOutgoing,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useSessions, setActiveSession, refreshSessions } from "@/stores/sessions";
-import { createSession, deleteSession, logoutSession, renameSession, pairSession } from "@/services/sessions";
+import { createSession, deleteSession, logoutSession, renameSession, listSessions } from "@/services/sessions";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useNavigation } from "@/stores/navigation";
 import { listAgents, type Agent } from "@/services/agents";
@@ -47,6 +46,18 @@ import {
 import type { SessionInfo } from "@/types/session";
 import { cn } from "@/lib/utils";
 
+const formatPhoneNumber = (jid?: string) => {
+  if (!jid) return null;
+  const num = jid.split("@")[0].replace(/\D/g, "");
+  if (num.length === 13 && num.startsWith("55")) {
+    return `+55 (${num.slice(2, 4)}) ${num.slice(4, 9)}-${num.slice(9)}`;
+  }
+  if (num.length === 12 && num.startsWith("55")) {
+    return `+55 (${num.slice(2, 4)}) ${num.slice(4, 8)}-${num.slice(8)}`;
+  }
+  return `+${num}`;
+};
+
 const SessionAgentsSummary = ({ sid }: { sid: string }) => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,46 +71,51 @@ const SessionAgentsSummary = ({ sid }: { sid: string }) => {
 
   if (loading) return null;
 
+  const inboundAgent = agents.find((a) => a.inbound);
   const outboundAgent = agents.find((a) => a.outbound);
-  const specialistCount = agents.filter((a) => !a.outbound).length;
+  const specialistCount = agents.filter((a) => !a.outbound && !a.inbound).length;
 
   return (
     <div className="rounded-xl border bg-muted/20 p-3 space-y-2 text-xs">
-      <div className="flex items-center justify-between font-semibold text-muted-foreground border-b pb-1.5 border-border/50">
+      <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground pb-1 border-b border-border/40">
         <span className="flex items-center gap-1.5 text-foreground">
-          <Bot className="h-3.5 w-3.5 text-primary" /> Agentes da Conexão
+          <Bot className="h-3.5 w-3.5 text-primary" /> Configuração de Atendimento IA
         </span>
         {agents.length > 0 && (
-          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono">
+          <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-mono font-medium">
             {agents.length} {agents.length === 1 ? "agente" : "agentes"}
           </span>
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 pt-0.5">
-        <div className="space-y-0.5">
-          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <PhoneIncoming className="h-3 w-3 text-indigo-500" /> Atendimento Recebidas:
-          </span>
-          <p className="font-medium truncate text-foreground">
-            IA Principal da Conexão
-          </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+        <div className="flex items-start gap-1.5 bg-background/60 p-2 rounded-lg border border-border/30">
+          <PhoneIncoming className="h-3.5 w-3.5 text-indigo-500 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <span className="text-[10px] text-muted-foreground block leading-none">Recebidas (Inbound):</span>
+            <p className="font-semibold text-foreground truncate mt-0.5 text-xs">
+              {inboundAgent ? inboundAgent.name : "IA Padrão da Linha"}
+            </p>
+          </div>
         </div>
 
-        <div className="space-y-0.5">
-          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <PhoneOutgoing className="h-3 w-3 text-emerald-500" /> Atendimento Efetuadas:
-          </span>
-          <p className="font-medium truncate text-foreground">
-            {outboundAgent ? outboundAgent.name : "IA Principal da Conexão"}
-          </p>
+        <div className="flex items-start gap-1.5 bg-background/60 p-2 rounded-lg border border-border/30">
+          <PhoneOutgoing className="h-3.5 w-3.5 text-emerald-500 mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <span className="text-[10px] text-muted-foreground block leading-none">Efetuadas (Outbound):</span>
+            <p className="font-semibold text-foreground truncate mt-0.5 text-xs">
+              {outboundAgent ? outboundAgent.name : "IA Padrão da Linha"}
+            </p>
+          </div>
         </div>
       </div>
 
       {specialistCount > 0 && (
-        <div className="pt-1 flex items-center gap-1 text-[11px] text-muted-foreground border-t border-border/40">
-          <Target className="h-3 w-3 text-primary shrink-0" />
-          <span>{specialistCount} {specialistCount === 1 ? "agente especialista disponível" : "agentes especialistas disponíveis"} para transferência</span>
+        <div className="pt-0.5 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span className="truncate">Especialistas p/ transferência:</span>
+          <span className="font-semibold text-foreground font-mono bg-muted/60 px-1.5 py-0.2 rounded">
+            +{specialistCount}
+          </span>
         </div>
       )}
     </div>
@@ -114,7 +130,7 @@ export const ConnectionsPage = () => {
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === "appadmin";
 
-  // Modal de Configurações do Workspace
+  const [workspaceSessions, setWorkspaceSessions] = useState<SessionInfo[]>([]);
   const [showWorkspaceSettings, setShowWorkspaceSettings] = useState(false);
 
   // Estados para criação de nova conexão
@@ -136,15 +152,23 @@ export const ConnectionsPage = () => {
   const [customApiKey, setCustomApiKey] = useState("");
   const [rotatingKey, setRotatingKey] = useState(false);
 
-  // Estado para solicitação de QR code / reconexão
-  const [pairingSessionId, setPairingSessionId] = useState<string | null>(null);
-
-  // Filtra conexões do workspace ativo (ou todas se super admin)
   const currentWsId = currentWorkspace?.id || "default";
-  const workspaceSessions = sessions.filter((s) => {
-    if (isSuperAdmin && !currentWorkspace) return true;
-    return s.projectId === currentWsId || (currentWsId === "default" && (!s.projectId || s.projectId === "default"));
-  });
+
+  // Carrega conexões do workspace ativo
+  const loadWorkspaceConnections = useCallback(async () => {
+    try {
+      const data = await listSessions(currentWsId);
+      setWorkspaceSessions(data);
+    } catch {
+      setWorkspaceSessions(
+        sessions.filter((s) => s.projectId === currentWsId || (currentWsId === "default" && (!s.projectId || s.projectId === "default"))),
+      );
+    }
+  }, [currentWsId, sessions]);
+
+  useEffect(() => {
+    loadWorkspaceConnections();
+  }, [loadWorkspaceConnections]);
 
   const maxConnections = currentWorkspace?.max_connections || 1;
   const currentConnCount = workspaceSessions.length;
@@ -155,6 +179,7 @@ export const ConnectionsPage = () => {
     try {
       await refreshSessions();
       await fetchWorkspaces();
+      await loadWorkspaceConnections();
     } catch {
       // Falhas silenciosas
     }
@@ -195,20 +220,6 @@ export const ConnectionsPage = () => {
     }
   };
 
-  const handlePairSession = async (id: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setPairingSessionId(id);
-    try {
-      await pairSession(id);
-      await refreshSessionsList();
-      toast.success("Solicitação enviada. Gerando novo QR Code...");
-    } catch (err) {
-      toast.error(`Erro ao solicitar QR Code: ${(err as Error).message}`);
-    } finally {
-      setPairingSessionId(null);
-    }
-  };
-
   const handleOpenCreateModal = () => {
     if (isLimitReached) {
       setShowLimitModal(true);
@@ -242,6 +253,7 @@ export const ConnectionsPage = () => {
     if (!currentWorkspace) return;
     try {
       await setDefaultSession(currentWorkspace.id, sessionId);
+      await refreshSessionsList();
       toast.success("Linha padrão atualizada com sucesso!");
     } catch (err: any) {
       toast.error(err.message || "Erro ao definir linha padrão");
@@ -297,15 +309,15 @@ export const ConnectionsPage = () => {
   const getPlanBadge = (plan?: string) => {
     switch (plan) {
       case "enterprise":
-        return { label: "Enterprise", color: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20" };
+        return { label: "Enterprise", color: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/25" };
       case "expert":
-        return { label: "Expert", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20" };
+        return { label: "Expert", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/25" };
       case "pro":
-        return { label: "Pro", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20" };
+        return { label: "Pro", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/25" };
       case "basic":
-        return { label: "Basic", color: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/20" };
+        return { label: "Basic", color: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/25" };
       default:
-        return { label: "Trial", color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" };
+        return { label: "Trial", color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/25" };
     }
   };
 
@@ -314,16 +326,16 @@ export const ConnectionsPage = () => {
   return (
     <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-12">
       {/* Workspace Hub Banner & Header */}
-      <div className="rounded-2xl border bg-card p-5 shadow-xs space-y-4">
+      <div className="rounded-2xl border bg-card/90 backdrop-blur-sm p-4 sm:p-5 shadow-xs space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/90 to-primary text-primary-foreground font-bold text-lg shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/90 to-primary text-primary-foreground font-bold text-base sm:text-lg shadow-sm shrink-0">
               {currentWorkspace ? currentWorkspace.name.slice(0, 1).toUpperCase() : <Building2 className="h-6 w-6" />}
             </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-bold tracking-tight text-foreground">
-                  {currentWorkspace ? currentWorkspace.name : "Gerenciador de Conexões WhatsApp"}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-bold tracking-tight text-foreground truncate">
+                  {currentWorkspace ? currentWorkspace.name : "Conexões do Workspace"}
                 </h1>
                 <span
                   className={cn(
@@ -340,18 +352,18 @@ export const ConnectionsPage = () => {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Conecte e gerencie seus números de WhatsApp para chamadas de voz e IA neste workspace.
+                Gerencie suas linhas de WhatsApp e automações de IA para este workspace.
               </p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 self-start sm:self-center">
             <Button
               variant="outline"
               size="sm"
               onClick={() => setShowWorkspaceSettings(true)}
-              className="gap-1.5 text-xs font-semibold rounded-xl cursor-pointer"
+              className="gap-1.5 text-xs font-semibold rounded-xl cursor-pointer hover:bg-muted/70"
             >
               <Settings className="h-3.5 w-3.5" />
               <span>Configurações</span>
@@ -369,17 +381,17 @@ export const ConnectionsPage = () => {
         </div>
 
         {/* Cota do Plano & Barra de Limite */}
-        <div className="pt-3 border-t border-border/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-muted/20 p-3 rounded-xl">
+        <div className="pt-3 border-t border-border/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-muted/20 p-3 rounded-xl">
           <div className="flex items-center gap-3 w-full sm:w-auto">
-            <Smartphone className="h-4 w-4 text-emerald-500 shrink-0" />
+            <Smartphone className="h-4 w-4 text-primary shrink-0" />
             <div className="space-y-1 w-full sm:w-64">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-foreground">Capacidade de Conexões:</span>
+                <span className="font-semibold text-foreground">Capacidade do Plano:</span>
                 <span className="font-mono font-bold text-foreground">
                   {currentConnCount} / {maxConnections} Whats ({usagePercentage}%)
                 </span>
               </div>
-              <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+              <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
                 <div
                   className={cn(
                     "h-full rounded-full transition-all duration-300",
@@ -394,10 +406,10 @@ export const ConnectionsPage = () => {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {isLimitReached ? (
               <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold text-[11px]">
-                <Zap className="h-3.5 w-3.5" /> Limite de conexões atingido no plano {planBadge.label}
+                <Zap className="h-3.5 w-3.5" /> Limite atingido ({maxConnections}/{maxConnections} conexões)
               </span>
             ) : (
-              <span>
+              <span className="text-[11px]">
                 Você ainda pode conectar mais <strong>{maxConnections - currentConnCount}</strong> número(s).
               </span>
             )}
@@ -406,29 +418,32 @@ export const ConnectionsPage = () => {
       </div>
 
       {/* Grid of Sessions */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5">
         {workspaceSessions.map((s) => {
           const isActive = s.id === activeId;
           const isDefault = currentWorkspace?.default_session_id
             ? currentWorkspace.default_session_id === s.id
             : workspaceSessions[0]?.id === s.id;
+          const formattedPhone = formatPhoneNumber(s.jid);
 
           return (
             <div
               key={s.id}
               onClick={() => setActiveSession(s.id)}
               className={cn(
-                "group relative flex flex-col justify-between rounded-2xl border bg-card p-5 shadow-xs transition-all duration-200 cursor-pointer",
-                isActive ? "ring-2 ring-primary border-transparent shadow-md" : "hover:border-muted-foreground/30",
+                "group relative flex flex-col justify-between rounded-2xl border bg-card p-4 sm:p-5 shadow-xs transition-all duration-200 cursor-pointer space-y-4",
+                isActive
+                  ? "ring-2 ring-primary border-transparent shadow-sm bg-card"
+                  : "hover:border-primary/40 hover:shadow-xs",
               )}
             >
-              <div className="space-y-4">
+              <div className="space-y-3.5">
                 {/* SuperAdmin Tenant Badge */}
                 {isSuperAdmin && (
                   <div className="flex items-center justify-between pb-2 border-b border-border/40 text-[11px]">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <User className="h-3.5 w-3.5 text-primary" />
-                      <span>Usuário / Tenant:</span>
+                      <span>Tenant:</span>
                       <span className="font-semibold text-foreground">
                         {s.ownerEmail || (s.projectId ? `Projeto: ${s.projectId}` : "Não atribuído")}
                       </span>
@@ -440,206 +455,186 @@ export const ConnectionsPage = () => {
                 )}
 
                 {/* Session Header */}
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary font-bold text-sm shrink-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-xs shrink-0">
                       {s.name.slice(0, 2).toUpperCase()}
+                      <span
+                        className={cn(
+                          "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-card",
+                          s.paired ? "bg-emerald-500" : "bg-amber-500",
+                        )}
+                        title={s.paired ? "Conectado" : "Desconectado"}
+                      />
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-base">{s.name}</h3>
-                        <button
-                          type="button"
-                          title="Alterar nome da conexão"
-                          onClick={(e) => handleOpenRenameModal(s, e)}
-                          className="text-muted-foreground/70 hover:text-primary p-1 rounded-md hover:bg-primary/10 transition-colors"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <span
-                          className={cn(
-                            "rounded-md px-2 py-0.5 text-[10px] font-bold",
-                            s.paired
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                              : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-                          )}
-                        >
-                          {s.paired ? "● Conectada" : "○ Desconectada"}
-                        </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="font-bold text-sm text-foreground truncate">{s.name}</h3>
                         {isDefault && (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" /> Linha Padrão
-                          </span>
-                        )}
-                        {isActive && (
-                          <span className="rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
-                            Selecionada
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-1.5 py-0.2 text-[9px] font-bold text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
+                            <Star className="h-2.5 w-2.5 fill-amber-400 text-amber-400" /> Padrão
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground">{s.jid ? s.jid.split("@")[0] : "Número pendente"}</p>
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <span className="text-[10px] font-mono text-muted-foreground/75 bg-muted/60 px-1.5 py-0.5 rounded-md select-all">
-                          SID: {s.id}
-                        </span>
-                        <button
-                          type="button"
-                          title="Copiar SID"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(s.id);
-                            toast.success("SID copiado para a área de transferência!");
-                          }}
-                          className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                      {s.apiKey && (
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-[10px] font-mono text-muted-foreground/75 bg-muted/60 px-1.5 py-0.5 rounded-md">
-                            API Key: {s.apiKey ? s.apiKey.slice(0, 6) : ""}••••••••
-                          </span>
-                          <button
-                            type="button"
-                            title="Copiar API Key"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (s.apiKey) {
-                                navigator.clipboard.writeText(s.apiKey);
-                                toast.success("Chave de API da conexão copiada com sucesso!");
-                              }
-                            }}
-                            className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            title="Rotacionar / Alterar API Key"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRotateSession(s);
-                              setCustomApiKey("");
-                            }}
-                            className="text-muted-foreground hover:text-primary p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5 truncate">
+                        {formattedPhone || (s.jid ? s.jid.split("@")[0] : "Número pendente")}
+                      </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  {/* Top Action Toolbar */}
+                  <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {!isDefault && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-amber-500"
-                        title="Definir como Linha Padrão do Workspace"
+                        className="h-7 w-7 text-muted-foreground hover:text-amber-500 cursor-pointer"
+                        title="Definir como Linha Padrão"
                         onClick={(e) => handleSetDefaultSession(s.id, e)}
                       >
-                        <Star className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {!s.paired && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/10 shadow-2xs"
-                        title="Gerar QR Code e Reconectar"
-                        onClick={(e) => handlePairSession(s.id, e)}
-                        disabled={pairingSessionId === s.id}
-                      >
-                        {pairingSessionId === s.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <QrCode className="h-3.5 w-3.5" />
-                        )}
-                        <span>Reconectar</span>
+                        <Star className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-primary"
-                      title="Alterar Nome"
+                      className="h-7 w-7 text-muted-foreground hover:text-primary cursor-pointer"
+                      title="Alterar Nome da Linha"
                       onClick={(e) => handleOpenRenameModal(s, e)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3.5 w-3.5" />
                     </Button>
                     {s.paired && (
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-amber-500"
+                        className="h-7 w-7 text-muted-foreground hover:text-amber-500 cursor-pointer"
                         title="Desconectar WhatsApp"
                         onClick={(e) => {
                           e.stopPropagation();
                           void onLogout(s.id);
                         }}
                       >
-                        <LogOut className="h-4 w-4" />
+                        <LogOut className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      className="h-7 w-7 text-muted-foreground hover:text-destructive cursor-pointer"
                       title="Excluir Conexão"
                       onClick={(e) => {
                         e.stopPropagation();
                         setToDelete(s);
                       }}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
 
-                {/* Connection Details or QR Pairing */}
+                {/* Connection Body: Connected vs Pairing */}
                 {s.paired ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2.5 rounded-xl border bg-emerald-500/10 p-3 text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 className="h-5 w-5 shrink-0" />
-                      <div>
-                        <p className="text-xs font-semibold">WhatsApp Conectado & Operacional</p>
-                        <p className="text-[11px] opacity-80">Pronto para realizar e receber ligações.</p>
+                  <div className="space-y-3 pt-1">
+                    {/* Credentials Strip */}
+                    <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 p-2 text-[11px] border border-border/40 font-mono">
+                      <div className="flex items-center gap-1.5 truncate">
+                        <KeyRound className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span className="text-muted-foreground">API Key:</span>
+                        <span className="text-foreground truncate">
+                          {s.apiKey ? s.apiKey.slice(0, 7) : ""}••••••••
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          title="Copiar API Key da Linha"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (s.apiKey) {
+                              navigator.clipboard.writeText(s.apiKey);
+                              toast.success("Chave de API copiada com sucesso!");
+                            }
+                          }}
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          title="Rotacionar / Alterar API Key"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRotateSession(s);
+                            setCustomApiKey("");
+                          }}
+                          className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                        </button>
                       </div>
                     </div>
+
+                    {/* AI & Agents Summary */}
                     <SessionAgentsSummary sid={s.id} />
                   </div>
                 ) : (
-                  <div className="rounded-xl border bg-muted/20 p-4">
-                    <SessionPairing session={s} />
+                  <div className="rounded-xl border bg-muted/20 p-3.5">
+                    <SessionPairing session={s} onPairRequested={refreshSessionsList} />
                   </div>
                 )}
               </div>
+
+              {/* Bottom Quick Action */}
+              {s.paired && (
+                <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Linha Ativa & Pronta</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveSession(s.id);
+                      setActiveSection("webphone");
+                    }}
+                    className="gap-1.5 text-xs font-semibold rounded-xl h-8 cursor-pointer hover:border-primary hover:text-primary"
+                  >
+                    <PhoneCall className="h-3.5 w-3.5 text-primary" />
+                    <span>Webphone</span>
+                  </Button>
+                </div>
+              )}
             </div>
           );
         })}
 
+        {/* Add Connection Card in Grid */}
         {workspaceSessions.length > 0 && !isLimitReached && (
           <button
             type="button"
             onClick={handleOpenCreateModal}
-            className="flex flex-col items-center justify-center min-h-[220px] rounded-2xl border-2 border-dashed border-border/80 bg-card/30 hover:bg-muted/40 hover:border-primary/50 p-6 text-center transition-all cursor-pointer group"
+            className="flex flex-col items-center justify-center min-h-[200px] rounded-2xl border-2 border-dashed border-border/80 bg-card/30 hover:bg-muted/40 hover:border-primary/50 p-6 text-center transition-all cursor-pointer group space-y-2"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary group-hover:scale-110 transition-transform">
-              <Plus className="h-6 w-6" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+              <Plus className="h-5 w-5" />
             </div>
-            <p className="font-bold text-sm text-foreground mt-3">Adicionar Linha WhatsApp</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              Vaga disponível no plano ({currentConnCount + 1}/{maxConnections})
-            </p>
+            <div>
+              <p className="font-bold text-sm text-foreground">Conectar Outro WhatsApp</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Vaga disponível no plano ({currentConnCount + 1}/{maxConnections})
+              </p>
+            </div>
           </button>
         )}
 
+        {/* Empty State */}
         {workspaceSessions.length === 0 && (
-          <div className="col-span-full rounded-2xl border border-dashed bg-card/40 p-12 text-center space-y-4">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <Smartphone className="h-7 w-7" />
+          <div className="col-span-full rounded-2xl border border-dashed bg-card/40 p-10 sm:p-12 text-center space-y-4">
+            <div className="mx-auto flex h-13 w-13 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Smartphone className="h-6 w-6" />
             </div>
             <div className="space-y-1">
               <h3 className="font-bold text-base text-foreground">Nenhuma conexão cadastrada neste Workspace</h3>
@@ -648,7 +643,7 @@ export const ConnectionsPage = () => {
               </p>
             </div>
             <div className="flex items-center justify-center gap-3 pt-2">
-              <Button onClick={handleOpenCreateModal} className="gap-2 rounded-xl font-semibold cursor-pointer">
+              <Button onClick={handleOpenCreateModal} className="gap-2 rounded-xl font-semibold cursor-pointer shadow-xs">
                 <Plus className="h-4 w-4" />
                 <span>Criar Conexão</span>
               </Button>
@@ -793,7 +788,7 @@ export const ConnectionsPage = () => {
         open={!!toDelete}
         onOpenChange={(o) => !o && setToDelete(null)}
         title="Excluir conexão?"
-        description={toDelete ? `A conexão ${toDelete.name} será deslogada e removida.` : undefined}
+        description={toDelete ? `A conexão ${toDelete.name} será deslogada e removida permanentemente do workspace.` : undefined}
         confirmLabel="Excluir"
         destructive
         onConfirm={() => {
@@ -816,7 +811,7 @@ export const ConnectionsPage = () => {
           <div className="space-y-4 py-2">
             <div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 text-xs text-amber-600 dark:text-amber-400 space-y-1">
               <p className="font-semibold">⚠️ Atenção à segurança:</p>
-              <p>Ao rotacionar a chave, integrações externas ativas (N8N, Typebot, Chatwoot, Zapier) deixarão de autenticar até que você atualize o token nelas.</p>
+              <p>Ao rotacionar a chave, integrações externas ativas (N8N, Typebot, Chatwoot, Make) deixarão de autenticar até que você atualize a chave nelas.</p>
             </div>
 
             <div className="space-y-1.5">
@@ -828,7 +823,7 @@ export const ConnectionsPage = () => {
                 className="font-mono text-xs"
               />
               <p className="text-[11px] text-muted-foreground">
-                Deixe vazio para gerar automaticamente uma chave criptográfica segura com prefixo <code className="text-primary font-mono">kc_</code>.
+                Deixe vazio para gerar automaticamente uma chave segura com prefixo <code className="text-primary font-mono">kc_</code>.
               </p>
             </div>
           </div>
