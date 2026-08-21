@@ -122,6 +122,15 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/events/ticket", s.handleEventTicket)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 
+	// Rotas de Workspaces (Kallia 2.0)
+	mux.HandleFunc("GET /api/workspaces", s.handleListWorkspaces)
+	mux.HandleFunc("POST /api/workspaces", s.handleCreateWorkspace)
+	mux.HandleFunc("GET /api/workspaces/{wid}", s.handleGetWorkspace)
+	mux.HandleFunc("PATCH /api/workspaces/{wid}", s.handleUpdateWorkspace)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}", s.handleDeleteWorkspace)
+	mux.HandleFunc("GET /api/workspaces/{wid}/connections", s.handleListWorkspaceConnections)
+	mux.HandleFunc("POST /api/workspaces/{wid}/connections", s.handleCreateWorkspaceConnection)
+
 	// Rotas de Autenticação do Usuário
 	mux.HandleFunc("GET /api/auth/me", s.handleMe)
 	mux.HandleFunc("POST /api/auth/register", s.handleRegister)
@@ -1732,3 +1741,195 @@ func (s *server) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusNotFound, map[string]string{"error": "especificação OpenAPI não encontrada"})
 }
+
+// --- HANDLERS DE WORKSPACES (KALLIA 2.0) ---
+
+func (s *server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value(ctxKeyUserID).(string)
+	userRole, _ := r.Context().Value(ctxKeyUserRole).(string)
+
+	var list []WorkspaceRow
+	var err error
+
+	if userRole == "appadmin" || userID == "" {
+		list, err = pbClient.ListWorkspacesPB(r.Context())
+	} else {
+		list, err = pbClient.ListWorkspacesForUserPB(r.Context(), userID)
+	}
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Se a lista estiver vazia, cria o Workspace padrão default
+	if len(list) == 0 {
+		list = []WorkspaceRow{
+			{
+				ID:                 "default",
+				Name:               "Workspace Principal",
+				Plan:               "trial",
+				PlanStatus:         "active",
+				MaxConnections:     1,
+				MaxConcurrentCalls: 1,
+				MaxAgents:          2,
+				PlanStartsAt:       time.Now(),
+				CreatedAt:          time.Now(),
+			},
+		}
+	}
+
+	// Anexar contagem de conexões por workspace
+	sessions := s.sessions.infos()
+	type wsDTO struct {
+		WorkspaceRow
+		ConnectionsCount int `json:"connections_count"`
+		AgentsCount      int `json:"agents_count"`
+	}
+
+	var dtos []wsDTO
+	for _, item := range list {
+		wsID := item.ID
+		count := 0
+		for _, sess := range sessions {
+			if sess.ProjectID == wsID || (wsID == "default" && sess.ProjectID == "") {
+				count++
+			}
+		}
+		dto := wsDTO{
+			WorkspaceRow:     item,
+			ConnectionsCount: count,
+			AgentsCount:      0,
+		}
+		dtos = append(dtos, dto)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"workspaces": dtos})
+}
+
+func (s *server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
+	userID, _ := r.Context().Value(ctxKeyUserID).(string)
+	var body struct {
+		Name string `json:"name"`
+		Plan string `json:"plan"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Name) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "nome do workspace é obrigatório"})
+		return
+	}
+
+	plan := body.Plan
+	if plan == "" {
+		plan = "trial"
+	}
+
+	ws, err := pbClient.CreateWorkspacePB(r.Context(), strings.TrimSpace(body.Name), plan, "active", 1, 1, 2)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	if userID != "" {
+		_ = pbClient.AddWorkspaceMemberPB(r.Context(), ws.ID, userID, "owner")
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{"workspace": ws})
+}
+
+func (s *server) handleGetWorkspace(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	ws, err := pbClient.GetWorkspacePB(r.Context(), wid)
+	if err != nil || ws == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "workspace não encontrado"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workspace": ws})
+}
+
+func (s *server) handleUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	var data map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payload inválido"})
+		return
+	}
+	if err := pbClient.UpdateWorkspacePB(r.Context(), wid, data); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	ws, _ := pbClient.GetWorkspacePB(r.Context(), wid)
+	writeJSON(w, http.StatusOK, map[string]any{"workspace": ws})
+}
+
+func (s *server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	if wid == "default" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "não é permitido deletar o workspace default"})
+		return
+	}
+	if err := pbClient.DeleteWorkspacePB(r.Context(), wid); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "workspace deletado"})
+}
+
+func (s *server) handleListWorkspaceConnections(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	all := s.sessions.infos()
+	var filtered []SessionInfo
+	for _, item := range all {
+		if item.ProjectID == wid || (wid == "default" && item.ProjectID == "") {
+			filtered = append(filtered, item)
+		}
+	}
+	writeJSON(w, http.StatusOK, filtered)
+}
+
+func (s *server) handleCreateWorkspaceConnection(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	ws, _ := pbClient.GetWorkspacePB(r.Context(), wid)
+	maxConn := 1
+	if ws != nil && ws.MaxConnections > 0 {
+		maxConn = ws.MaxConnections
+	}
+
+	all := s.sessions.infos()
+	currentConnCount := 0
+	for _, item := range all {
+		if item.ProjectID == wid || (wid == "default" && item.ProjectID == "") {
+			currentConnCount++
+		}
+	}
+
+	if currentConnCount >= maxConn {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": fmt.Sprintf("limite de conexões do plano atingido (%d/%d). Faça upgrade do seu plano para conectar mais WhatsApps.", currentConnCount, maxConn),
+		})
+		return
+	}
+
+	var body struct {
+		Name string `json:"name"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = fmt.Sprintf("WhatsApp %d", currentConnCount+1)
+	}
+
+	id, _, err := s.sessions.Create(name, wid)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	sess, ok := s.sessions.Get(id)
+	if !ok {
+		writeJSON(w, http.StatusCreated, map[string]string{"id": id, "name": name})
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, sess.info())
+}
+

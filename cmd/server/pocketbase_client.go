@@ -187,35 +187,91 @@ type PBListResponse[T any] struct {
 	Items      []T `json:"items"`
 }
 
-// --- PROJETOS (WORKSPACES) ---
+type WorkspaceRow struct {
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Plan               string     `json:"plan"`
+	PlanStatus         string     `json:"plan_status"`
+	MaxConnections     int        `json:"max_connections"`
+	MaxConcurrentCalls int        `json:"max_concurrent_calls"`
+	MaxAgents          int        `json:"max_agents"`
+	PlanStartsAt       time.Time  `json:"plan_starts_at"`
+	PlanEndsAt         *time.Time `json:"plan_ends_at"`
+	CreatedAt          time.Time  `json:"created"`
+}
+
+type WorkspaceMemberRow struct {
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	UserID      string    `json:"user_id"`
+	Role        string    `json:"role"`
+	CreatedAt   time.Time `json:"created"`
+}
 
 func (c *PocketBaseClient) ListProjectsPB(ctx context.Context) ([]projectRow, error) {
-	resp, err := c.doAdminRequest(ctx, "GET", "/api/collections/projects/records?perPage=500&sort=created", nil)
+	wsList, err := c.ListWorkspacesPB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var list []projectRow
+	for _, item := range wsList {
+		list = append(list, projectRow{
+			ID:           item.ID,
+			Name:         item.Name,
+			Plan:         item.Plan,
+			PlanStatus:   item.PlanStatus,
+			PlanStartsAt: item.PlanStartsAt,
+			PlanEndsAt:   item.PlanEndsAt,
+			CreatedAt:    item.CreatedAt,
+		})
+	}
+	return list, nil
+}
+
+func (c *PocketBaseClient) UpsertProjectPB(ctx context.Context, id, name, plan, planStatus string, start time.Time, end *time.Time) error {
+	data := map[string]any{
+		"name":        name,
+		"plan":        plan,
+		"plan_status": planStatus,
+	}
+	if !start.IsZero() {
+		data["plan_starts_at"] = start.Format(time.RFC3339)
+	}
+	if end != nil {
+		data["plan_ends_at"] = end.Format(time.RFC3339)
+	}
+	return c.UpdateWorkspacePB(ctx, id, data)
+}
+
+func (c *PocketBaseClient) ListWorkspacesPB(ctx context.Context) ([]WorkspaceRow, error) {
+	resp, err := c.doAdminRequest(ctx, "GET", "/api/collections/workspaces/records?perPage=500&sort=created", nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("pocketbase projetos erro %d: %s", resp.StatusCode, string(body))
+		return nil, nil
 	}
 
 	var pbRes PBListResponse[struct {
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		Plan         string `json:"plan"`
-		PlanStatus   string `json:"plan_status"`
-		PlanStartsAt string `json:"plan_starts_at"`
-		PlanEndsAt   string `json:"plan_ends_at"`
-		Created      string `json:"created"`
+		ID                 string `json:"id"`
+		Name               string `json:"name"`
+		Plan               string `json:"plan"`
+		PlanStatus         string `json:"plan_status"`
+		MaxConnections     int    `json:"max_connections"`
+		MaxConcurrentCalls int    `json:"max_concurrent_calls"`
+		MaxAgents          int    `json:"max_agents"`
+		PlanStartsAt       string `json:"plan_starts_at"`
+		PlanEndsAt         string `json:"plan_ends_at"`
+		Created            string `json:"created"`
 	}]
 
 	if err := json.NewDecoder(resp.Body).Decode(&pbRes); err != nil {
 		return nil, err
 	}
 
-	var list []projectRow
+	var list []WorkspaceRow
 	for _, item := range pbRes.Items {
 		startsAt, _ := time.Parse(time.RFC3339, item.PlanStartsAt)
 		if startsAt.IsZero() {
@@ -234,64 +290,295 @@ func (c *PocketBaseClient) ListProjectsPB(ctx context.Context) ([]projectRow, er
 			createdTime, _ = time.Parse("2006-01-02 15:04:05.000Z", item.Created)
 		}
 
-		list = append(list, projectRow{
-			ID:           item.ID,
-			Name:         item.Name,
-			Plan:         item.Plan,
-			PlanStatus:   item.PlanStatus,
-			PlanStartsAt: startsAt,
-			PlanEndsAt:   endsAt,
-			CreatedAt:    createdTime,
+		maxConn := item.MaxConnections
+		if maxConn <= 0 {
+			switch item.Plan {
+			case "expert":
+				maxConn = 10
+			case "pro":
+				maxConn = 3
+			case "enterprise":
+				maxConn = 100
+			default:
+				maxConn = 1
+			}
+		}
+
+		maxCalls := item.MaxConcurrentCalls
+		if maxCalls <= 0 {
+			switch item.Plan {
+			case "expert":
+				maxCalls = 15
+			case "pro":
+				maxCalls = 5
+			case "enterprise":
+				maxCalls = 100
+			default:
+				maxCalls = 1
+			}
+		}
+
+		maxAgents := item.MaxAgents
+		if maxAgents <= 0 {
+			switch item.Plan {
+			case "expert":
+				maxAgents = 50
+			case "pro":
+				maxAgents = 15
+			case "enterprise":
+				maxAgents = 500
+			default:
+				maxAgents = 2
+			}
+		}
+
+		list = append(list, WorkspaceRow{
+			ID:                 item.ID,
+			Name:               item.Name,
+			Plan:               item.Plan,
+			PlanStatus:         item.PlanStatus,
+			MaxConnections:     maxConn,
+			MaxConcurrentCalls: maxCalls,
+			MaxAgents:          maxAgents,
+			PlanStartsAt:       startsAt,
+			PlanEndsAt:         endsAt,
+			CreatedAt:          createdTime,
 		})
 	}
 
 	return list, nil
 }
 
-func (c *PocketBaseClient) UpsertProjectPB(ctx context.Context, id, name, plan, planStatus string, start time.Time, end *time.Time) error {
-	data := map[string]any{
-		"name":           name,
-		"plan":           plan,
-		"plan_status":    planStatus,
-		"plan_starts_at": start.Format(time.RFC3339),
+func (c *PocketBaseClient) GetWorkspacePB(ctx context.Context, id string) (*WorkspaceRow, error) {
+	resp, err := c.doAdminRequest(ctx, "GET", "/api/collections/workspaces/records/"+id, nil)
+	if err != nil {
+		return nil, err
 	}
-	if end != nil {
-		data["plan_ends_at"] = end.Format(time.RFC3339)
-	}
-	if len(id) == 15 {
-		data["id"] = id
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("pocketbase workspace erro %d: %s", resp.StatusCode, string(body))
 	}
 
-	// 1. Tenta POST
-	resp, err := c.doAdminRequest(ctx, "POST", "/api/collections/projects/records", data)
-	if err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-			return nil
+	var item struct {
+		ID                 string `json:"id"`
+		Name               string `json:"name"`
+		Plan               string `json:"plan"`
+		PlanStatus         string `json:"plan_status"`
+		MaxConnections     int    `json:"max_connections"`
+		MaxConcurrentCalls int    `json:"max_concurrent_calls"`
+		MaxAgents          int    `json:"max_agents"`
+		PlanStartsAt       string `json:"plan_starts_at"`
+		PlanEndsAt         string `json:"plan_ends_at"`
+		Created            string `json:"created"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&item); err != nil {
+		return nil, err
+	}
+
+	startsAt, _ := time.Parse(time.RFC3339, item.PlanStartsAt)
+	var endsAt *time.Time
+	if item.PlanEndsAt != "" {
+		if t, err := time.Parse(time.RFC3339, item.PlanEndsAt); err == nil {
+			endsAt = &t
 		}
 	}
+	createdTime, _ := time.Parse(time.RFC3339, item.Created)
 
-	// 2. Se já existe, tenta PATCH
-	if id != "" {
-		patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/projects/records/"+id, data)
-		if patchErr == nil {
-			defer patchResp.Body.Close()
-			if patchResp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
+	maxConn := item.MaxConnections
+	if maxConn <= 0 {
+		maxConn = 1
 	}
 
-	return err
+	return &WorkspaceRow{
+		ID:                 item.ID,
+		Name:               item.Name,
+		Plan:               item.Plan,
+		PlanStatus:         item.PlanStatus,
+		MaxConnections:     maxConn,
+		MaxConcurrentCalls: item.MaxConcurrentCalls,
+		MaxAgents:          item.MaxAgents,
+		PlanStartsAt:       startsAt,
+		PlanEndsAt:         endsAt,
+		CreatedAt:          createdTime,
+	}, nil
 }
 
-func (c *PocketBaseClient) DeleteProjectPB(ctx context.Context, id string) error {
-	resp, err := c.doAdminRequest(ctx, "DELETE", "/api/collections/projects/records/"+id, nil)
+func (c *PocketBaseClient) CreateWorkspacePB(ctx context.Context, name, plan, planStatus string, maxConn, maxCalls, maxAgents int) (*WorkspaceRow, error) {
+	if plan == "" {
+		plan = "trial"
+	}
+	if planStatus == "" {
+		planStatus = "active"
+	}
+	if maxConn <= 0 {
+		maxConn = 1
+	}
+	if maxCalls <= 0 {
+		maxCalls = 1
+	}
+	if maxAgents <= 0 {
+		maxAgents = 2
+	}
+
+	startsAt := time.Now()
+	endsAt := startsAt.Add(30 * 24 * time.Hour)
+
+	data := map[string]any{
+		"name":                 name,
+		"plan":                 plan,
+		"plan_status":          planStatus,
+		"max_connections":      maxConn,
+		"max_concurrent_calls": maxCalls,
+		"max_agents":           maxAgents,
+		"plan_starts_at":       startsAt.Format(time.RFC3339),
+		"plan_ends_at":         endsAt.Format(time.RFC3339),
+	}
+
+	resp, err := c.doAdminRequest(ctx, "POST", "/api/collections/workspaces/records", data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("pocketbase criar workspace erro %d: %s", resp.StatusCode, string(body))
+	}
+
+	var res struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Created string `json:"created"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&res)
+
+	return &WorkspaceRow{
+		ID:                 res.ID,
+		Name:               name,
+		Plan:               plan,
+		PlanStatus:         planStatus,
+		MaxConnections:     maxConn,
+		MaxConcurrentCalls: maxCalls,
+		MaxAgents:          maxAgents,
+		PlanStartsAt:       startsAt,
+		PlanEndsAt:         &endsAt,
+		CreatedAt:          time.Now(),
+	}, nil
+}
+
+func (c *PocketBaseClient) UpdateWorkspacePB(ctx context.Context, id string, data map[string]any) error {
+	resp, err := c.doAdminRequest(ctx, "PATCH", "/api/collections/workspaces/records/"+id, data)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pocketbase atualizar workspace erro %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (c *PocketBaseClient) DeleteWorkspacePB(ctx context.Context, id string) error {
+	resp, err := c.doAdminRequest(ctx, "DELETE", "/api/collections/workspaces/records/"+id, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pocketbase deletar workspace erro %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
+func (c *PocketBaseClient) ListWorkspaceMembersPB(ctx context.Context, workspaceID string) ([]WorkspaceMemberRow, error) {
+	filter := fmt.Sprintf(`workspace_id="%s"`, workspaceID)
+	reqURL := fmt.Sprintf("/api/collections/workspace_members/records?filter=(%s)&perPage=200", url.QueryEscape(filter))
+
+	resp, err := c.doAdminRequest(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil
+	}
+
+	var pbRes PBListResponse[struct {
+		ID          string `json:"id"`
+		WorkspaceID string `json:"workspace_id"`
+		UserID      string `json:"user_id"`
+		Role        string `json:"role"`
+		Created     string `json:"created"`
+	}]
+
+	if err := json.NewDecoder(resp.Body).Decode(&pbRes); err != nil {
+		return nil, err
+	}
+
+	var list []WorkspaceMemberRow
+	for _, item := range pbRes.Items {
+		createdTime, _ := time.Parse(time.RFC3339, item.Created)
+		list = append(list, WorkspaceMemberRow{
+			ID:          item.ID,
+			WorkspaceID: item.WorkspaceID,
+			UserID:      item.UserID,
+			Role:        item.Role,
+			CreatedAt:   createdTime,
+		})
+	}
+	return list, nil
+}
+
+func (c *PocketBaseClient) AddWorkspaceMemberPB(ctx context.Context, workspaceID, userID, role string) error {
+	data := map[string]any{
+		"workspace_id": workspaceID,
+		"user_id":      userID,
+		"role":         role,
+	}
+	resp, err := c.doAdminRequest(ctx, "POST", "/api/collections/workspace_members/records", data)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	return nil
+}
+
+func (c *PocketBaseClient) ListWorkspacesForUserPB(ctx context.Context, userID string) ([]WorkspaceRow, error) {
+	// 1. Buscar membros do usuário
+	filter := fmt.Sprintf(`user_id="%s"`, userID)
+	reqURL := fmt.Sprintf("/api/collections/workspace_members/records?filter=(%s)&perPage=100", url.QueryEscape(filter))
+
+	resp, err := c.doAdminRequest(ctx, "GET", reqURL, nil)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			var pbRes PBListResponse[struct {
+				WorkspaceID string `json:"workspace_id"`
+				Role        string `json:"role"`
+			}]
+			if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
+				var list []WorkspaceRow
+				for _, m := range pbRes.Items {
+					if ws, err := c.GetWorkspacePB(ctx, m.WorkspaceID); err == nil && ws != nil {
+						list = append(list, *ws)
+					}
+				}
+				if len(list) > 0 {
+					return list, nil
+				}
+			}
+		}
+	}
+
+	// 2. Se não encontrar membros ou coleção nova, retorna listagem geral de workspaces
+	return c.ListWorkspacesPB(ctx)
 }
 
 // --- SESSÕES (CONEXÕES WHATSAPP) ---
@@ -422,7 +709,7 @@ func (c *PocketBaseClient) DeleteSessionPB(ctx context.Context, id string) error
 		resp.Body.Close()
 	}
 
-	// 2. Buscar por sid ou id e deletar todas as ocorrências encontradas no PocketBase
+	// 2. Buscar por sid ou id e deletar a sessão encontrada no PocketBase
 	filter := fmt.Sprintf(`sid="%s" || id="%s"`, id, id)
 	searchURL := fmt.Sprintf("/api/collections/sessions/records?filter=(%s)&perPage=50", url.QueryEscape(filter))
 	searchResp, searchErr := c.doAdminRequest(ctx, "GET", searchURL, nil)
@@ -441,25 +728,7 @@ func (c *PocketBaseClient) DeleteSessionPB(ctx context.Context, id string) error
 		}
 	}
 
-	// 3. Deletar também todos os agentes vinculados a essa sessão no PocketBase
-	agentFilter := fmt.Sprintf(`session_id="%s"`, id)
-	agentSearchURL := fmt.Sprintf("/api/collections/agents/records?filter=(%s)&perPage=100", url.QueryEscape(agentFilter))
-	agentSearchResp, agentSearchErr := c.doAdminRequest(ctx, "GET", agentSearchURL, nil)
-	if agentSearchErr == nil {
-		defer agentSearchResp.Body.Close()
-		var res PBListResponse[struct {
-			ID string `json:"id"`
-		}]
-		if json.NewDecoder(agentSearchResp.Body).Decode(&res) == nil {
-			for _, item := range res.Items {
-				delResp, _ := c.doAdminRequest(ctx, "DELETE", "/api/collections/agents/records/"+item.ID, nil)
-				if delResp != nil {
-					delResp.Body.Close()
-				}
-			}
-		}
-	}
-
+	// Nota: Agentes, Contatos e Workspace são preservados intactos no novo modelo.
 	return nil
 }
 

@@ -64,3 +64,13 @@ export const apiPut = async <T>(path: string, body: unknown): Promise<T> => {
   }
   return parseResponse<T>(r);
 };
+
+export const apiPatch = async <T>(path: string, body: unknown): Promise<T> => {
+  const r = await fetch(apiUrl(path), { method: "PATCH", headers: baseHeaders(), body: JSON.stringify(body) });
+  if (!r.ok) {
+    guard(r.status);
+    const text = await r.text().catch(() => "");
+    throw new Error(`${path} ${r.status} ${text}`);
+  }
+  return parseResponse<T>(r);
+};

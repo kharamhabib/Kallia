@@ -18,11 +18,11 @@ func TestSessionStoreRoundtrip(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	db, err := newDBProvider(ctx, pgURL, "wacalls_test_store", waLog.Noop, slog.Default())
+	storageDir := t.TempDir()
+	db, err := newDBProvider(ctx, storageDir, waLog.Noop, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.close()
 
 	mainDB, err := db.openMainDB(ctx)
 	if err != nil {
@@ -78,11 +78,11 @@ func TestPollOptionsRoundtrip(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	db, err := newDBProvider(ctx, pgURL, "wacalls_test_polls", waLog.Noop, slog.Default())
+	storageDir := t.TempDir()
+	db, err := newDBProvider(ctx, storageDir, waLog.Noop, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.close()
 
 	mainDB, err := db.openMainDB(ctx)
 	if err != nil {

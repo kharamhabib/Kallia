@@ -1,9 +1,7 @@
-import { useState } from "react";
 import {
   Home,
   Bot,
   BookOpen,
-  Radio,
   Calendar,
   History,
   PhoneCall,
@@ -15,16 +13,15 @@ import {
   Workflow,
   CreditCard,
   Settings,
-  ChevronDown,
+  Smartphone,
+  Sparkles,
   Code2,
   LogOut,
-  Sparkles,
-  Check,
 } from "lucide-react";
 import { useNavigation, type NavSection } from "@/stores/navigation";
-import { useSessions, setActiveSession } from "@/stores/sessions";
 import { getUser, clearAuth } from "@/lib/auth";
 import { ThemeToggle } from "./ThemeToggle";
+import { WorkspaceSelector } from "./WorkspaceSelector";
 import { cn } from "@/lib/utils";
 
 interface NavGroup {
@@ -39,11 +36,7 @@ interface NavGroup {
 
 export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
   const { activeSection, setActiveSection } = useNavigation();
-  const sessions = useSessions((s) => s.sessions);
-  const activeId = useSessions((s) => s.activeId);
-  const activeSession = sessions.find((s) => s.id === activeId);
   const user = getUser();
-  const [workspaceDropdown, setWorkspaceDropdown] = useState(false);
 
   const navGroups: NavGroup[] = [
     {
@@ -59,6 +52,7 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
     {
       category: "OPERAÇÃO",
       items: [
+        { id: "connections", label: "Conexões WhatsApp", icon: Smartphone },
         { id: "webphone", label: "Webphone & Ligações", icon: PhoneCall },
         { id: "schedules", label: "Disparos & Agenda", icon: Calendar },
       ],
@@ -93,88 +87,12 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
     <div className="flex h-full flex-col justify-between bg-sidebar border-r border-border/70 text-sidebar-foreground p-3 select-none">
       <div className="space-y-4 overflow-y-auto custom-scrollbar pr-0.5">
         {/* Workspace Selector Header */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setWorkspaceDropdown(!workspaceDropdown)}
-            className="flex w-full items-center justify-between gap-2.5 rounded-xl border bg-card/80 p-2 text-xs font-semibold shadow-xs hover:border-primary/40 transition-all cursor-pointer"
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-xs shrink-0 shadow-2xs">
-                {activeSession ? activeSession.name.slice(0, 1).toUpperCase() : "K"}
-              </div>
-              <div className="min-w-0 text-left">
-                <p className="truncate text-xs font-bold text-foreground leading-tight">
-                  {activeSession ? activeSession.name : "Kallia AI"}
-                </p>
-                <p className="text-[10px] text-muted-foreground font-mono flex items-center gap-1 mt-0.5">
-                  <span
-                    className={cn(
-                      "h-1.5 w-1.5 rounded-full shrink-0",
-                      activeSession?.state === "open" ? "bg-emerald-500" : activeSession?.state === "qr" ? "bg-amber-500" : "bg-red-500",
-                    )}
-                  />
-                  <span>{activeSession?.state === "open" ? "Conectado" : activeSession?.state === "qr" ? "Aguardando QR" : "Desconectado"}</span>
-                </p>
-              </div>
-            </div>
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          </button>
-
-          {/* Workspace Dropdown */}
-          {workspaceDropdown && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setWorkspaceDropdown(false)} />
-              <div className="absolute top-12 left-0 right-0 z-50 rounded-xl border bg-popover p-1.5 shadow-xl animate-in fade-in-80 space-y-1">
-                <p className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                  Selecione o Workspace
-                </p>
-                <div className="space-y-0.5 max-h-48 overflow-y-auto custom-scrollbar">
-                  {sessions.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => {
-                        setActiveSession(s.id);
-                        setWorkspaceDropdown(false);
-                      }}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors cursor-pointer",
-                        s.id === activeId ? "bg-primary/10 text-primary font-semibold" : "hover:bg-muted/60 text-foreground",
-                      )}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={cn(
-                            "h-2 w-2 rounded-full shrink-0",
-                            s.state === "open" ? "bg-emerald-500" : s.state === "qr" ? "bg-amber-500" : "bg-red-500",
-                          )}
-                        />
-                        <span className="truncate">{s.name}</span>
-                      </div>
-                      {s.id === activeId && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="pt-1.5 border-t border-border/50">
-                  <button
-                    onClick={() => {
-                      setActiveSection("connections");
-                      setWorkspaceDropdown(false);
-                      onNavigate?.();
-                    }}
-                    className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs text-primary font-semibold hover:bg-primary/10 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Radio className="h-3.5 w-3.5" />
-                      <span>Gerenciar Workspace</span>
-                    </div>
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <WorkspaceSelector
+          onNavigateToConnections={() => {
+            setActiveSection("connections");
+            onNavigate?.();
+          }}
+        />
 
         {/* Retell Categorized Navigation */}
         <nav className="space-y-3.5">

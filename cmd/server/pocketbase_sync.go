@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -364,7 +366,11 @@ func startPocketBaseRealtimeListener(appCtx context.Context, store *sessionStore
 			for {
 				line, err := reader.ReadString('\n')
 				if err != nil {
-					log.Warn("leitura SSE interrompida, reconectando...", "err", err)
+					if errors.Is(err, io.EOF) || strings.Contains(err.Error(), "EOF") {
+						log.Debug("leitura SSE encerrada por inatividade (EOF), reconectando...")
+					} else {
+						log.Warn("leitura SSE interrompida, reconectando...", "err", err)
+					}
 					resp.Body.Close()
 					break
 				}

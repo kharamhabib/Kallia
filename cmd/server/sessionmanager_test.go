@@ -18,13 +18,11 @@ func newTestManager(t *testing.T) *SessionManager {
 		return nil
 	}
 	ctx := context.Background()
-	db, err := newDBProvider(ctx, pgURL, "wacalls_test", waLog.Noop, slog.Default())
+	storageDir := t.TempDir()
+	db, err := newDBProvider(ctx, storageDir, waLog.Noop, slog.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		db.close()
-	})
 
 	mainDB, err := db.openMainDB(ctx)
 	if err != nil {

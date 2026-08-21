@@ -1,17 +1,17 @@
 # Arquitetura do Sistema: Kallia
 
-O **Kallia** (plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e **WaCalls**) é uma solução profissional SaaS de atendimento, CRM de contatos e inteligência de voz baseada em WhatsApp que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos projetos e conexões, e automatizar atendimentos com agentes de IA multi-provedor.
+O **Kallia** (plataforma PABX VoIP profissional SaaS baseada em WhatsApp) é uma solução completa de atendimento por voz, CRM de contatos e inteligência artificial conversacional em tempo real que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos projetos e conexões, e automatizar atendimentos com agentes de IA multi-provedor autônomos.
 
 O sistema suporta **múltiplos provedores de IA de voz em tempo real**:
 
-- **Google Gemini Live** (`gemini_live.go`) — API nativa de voz bidirecional do Google.
-- **xAI Grok Realtime** (`grok_live.go`) — API de voz em tempo real da xAI com suporte a Web Search, X Search, reasoning effort e 26 vozes nativas.
+- **Google Gemini Live** (`gemini_live.go`) — API nativa de voz bidirecional do Google via WebSockets com 5 vozes e troca dinâmica de persona.
+- **xAI Grok Realtime** (`grok_live.go`) — API de voz em tempo real da xAI com suporte a Web Search, X Search, reasoning effort (`high`/`none`), transcrição nativa e 26 vozes.
 - **OpenAI Realtime** (planejado) — Estrutura preparada para integração futura.
 
-Modos de operação:
+Modos de operação da IA:
 
-1. **Server-Side (Autônoma/Principal)**: O servidor Go gerencia tudo diretamente em background (WebSocket + CGO Opus/MLow + Pipeline de Áudio), sem necessidade de manter abas de navegador abertas. Suporta múltiplos agentes especialistas, transferência de chamadas em tempo real e troca dinâmica de provedor (Gemini ↔ Grok) durante a chamada.
-2. **Client-Side (Híbrida/Navegador)**: O áudio é roteado através do navegador do operador via WebRTC, gerenciando a conexão com a IA.
+1. **Server-Side (Autônoma/Principal)**: O servidor Go gerencia tudo diretamente em background (WebSocket + CGO Opus/MLow + Pipeline de Áudio), sem necessidade de manter abas de navegador abertas. Suporta múltiplos agentes especialistas, transferência de chamadas em tempo real (`TransferTo`) e troca dinâmica de provedor (Gemini ↔ Grok) durante a chamada.
+2. **Client-Side (Híbrida/Navegador)**: O áudio é roteado através do navegador do operador via WebRTC, gerenciando a conexão com a IA diretamente na ponta cliente.
 
 ---
 
@@ -20,16 +20,17 @@ Modos de operação:
 O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 
 1. **Projetos e Planos (Billing)**:
-   - Planos vinculados ao projeto (`basic`, `advantage`, `expert`), controlando o status (`active` / `inactive`), vigência (`plan_starts_at`, `plan_ends_at`) e o limite de conexões de WhatsApp permitidas (ex: Básico 1 conexão, Adv2. **Controle de Acesso por Roles (RBAC)**:
-   - `appadmin`: Superadministrador com acesso ao PocketBase e controle de sistema.
+   - Planos vinculados ao projeto (`trial`, `basic`, `advantage`, `expert`), controlando o status (`active` / `inactive`), vigência (`plan_starts_at`, `plan_ends_at`) e o limite de conexões de WhatsApp permitidas (ex: Básico 1 conexão, Advantage 3 conexões, Expert 5 conexões).
+2. **Controle de Acesso por Roles (RBAC)**:
+   - `appadmin`: Superadministrador com visão global de todas as conexões, projetos e usuários cadastrados em todos os bancos de dados (PocketBase e SQLite). Possui permissão para gerenciar, pausar e excluir qualquer conexão (com exclusão em cascata em ambos os bancos).
    - `creator`: Proprietário do tenant/projeto. Gerencia suas próprias conexões, API keys, agentes especialistas e integrações.
    - `normal`: Operador convidado. Acesso operacional (efetuar e receber chamadas), sem permissão para criar/deletar conexões ou chaves.
 3. **Módulo de CRM de Contatos Integrado**:
    - Cada sessão de WhatsApp possui repositório de contatos no PocketBase (`contacts`) e SQLite local. Permite cadastrar e gerenciar Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
    - Integração direta entre o CRM e o Webphone: ao clicar no ícone de telefone de qualquer contato, o sistema navega reativamente para a tela de discagem e preenche automaticamente o número do destinatário.
    - Resolução de contato centralizada (`useContactDisplay` e `useContactInfo`), exibindo o nome real e avatar do cliente no Dashboard, Histórico, Notificações de Chamadas e Webphone.
-4. **Backend (Go)**:
-   - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow` com SQLite isolado por sessão, controla chamadas VoIP, encapsula sinalização WebRTC, sincroniza dados com o **PocketBase**, orquestra filas e semáforos de concorrência com o **Redis 7**, executa os clientes nativos Gemini Live (`gemini_live.go`) e Grok Realtime (`grok_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`), gerencia provedores de IA com chaves criptografadas (`ai_providers.go`, `crypto.go`) e expõe a API HTTP/SSE autenticada por JWT.
+4. **Backend (Go Puro + CGO MLow)**:
+   - Gerencia o ciclo de vida das sessões do WhatsApp via `whatsmeow` com SQLite isolado por sessão, controla chamadas VoIP, encapsula sinalização WebRTC, sincroniza dados em tempo real com o **PocketBase** via SSE (`/api/realtime`), orquestra filas e semáforos de concorrência com o **Redis 7** (com fallback automático em memória), executa os clientes nativos Gemini Live (`gemini_live.go`) e Grok Realtime (`grok_live.go`), orquestra o loop de áudio server-side (`ai_agent.go`) com transferência de especialistas (`TransferTo`), gerencia provedores de IA com chaves criptografadas (`ai_providers.go`, `crypto.go`) e expõe a API HTTP/SSE autenticada por JWT.
 5. **Frontend (React 19, TypeScript, Vite)**:
    - Painel do operador com Login JWT integrado ao PocketBase, escopo automático do projeto ativo, discador VoIP, gerenciamento de agentes, módulo de CRM, histórico interativo, modais reutilizáveis (`ConfirmModal`) e widget embutível para o Chatwoot.
 
@@ -52,13 +53,17 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 │ │ SSE Broker     │      │ (Agentes Especialistas) │                 │ (Bidi WebSocket││
 │ └───────┬────────┘      └────────────┬────────────┘                 └────────────────┘│
 │         │                            ▼                                                 │
-│         │                    SessionManager (VoIP)◄─────────► PocketBase & SQLite      │
-│         │                            ▲                                                 │
-│         └────────────────────────────┼──────────────────────► Redis 7 (Queues/Lock)    │
-└──────────────────────────────────────┼─────────────────────────────────────────────────┘
-                                       │ VoIP (WhatsApp Prot)
+│         │                    SessionManager (VoIP)◄─────────► PocketBase (SSOT Central)│
+│         │                            ▲                     (Realtime SSE & Hydrate)    │
+│         │                            │                                                 │
+│         │                            ├──────────────────────► SQLite (WhatsApp Chaves) │
+│         │                            │                                                 │
+│         └────────────────────────────┴──────────────────────► Redis 7 (Filas & Locks)  │
+│                                                               (Fallback In-Memory)     │
+└──────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                       │ VoIP (WhatsApp Protocol)
                                        ▼
-                               WhatsApp VoIP Server
+                                WhatsApp VoIP Server
 ```
 
 ---
@@ -68,9 +73,9 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 ### Backend
 
 - **Linguagem**: Go (Golang) 1.26+
-- **Autenticação & Dados**: PocketBase (Google OAuth2, e-mail/senha, RBAC, REST API).
-- **Persistência de Sessão WhatsApp**: SQLite nativo isolado por conexão (`./storage/whatsapp/{id}.db`).
-- **Fila & Concorrência**: Redis 7 para rate-limiting anti-bloqueio e entrega de webhooks.
+- **Autenticação & Dados Primários (SSOT)**: PocketBase (Google OAuth2, e-mail/senha, RBAC, REST API, SSE Realtime `/api/realtime`).
+- **Persistência de Sessão WhatsApp**: SQLite nativo isolado por conexão (`./storage/whatsapp/{id}.db`) para armazenamento de chaves criptográficas do protocolo Signal/WhatsApp.
+- **Fila & Concorrência**: Redis 7 com fallback automático em memória RAM (`queue.go`) para rate-limiting anti-bloqueio e entrega de webhooks.
 - **Processamento de Mídia**: CGO com wrapping de codecs Opus nativos (`opus_mlow` do WhatsApp).
 - **Gravação de Áudio Dual-Channel**: Gravação e mixagem estocástica em tempo real dos dois canais de áudio (Cliente + IA) salvas em `storage/recordings/YYYYMMDD_HHMMSS_Contato_CallID.wav` com player autenticado.
 - **Protocolo**: Sinalização de VoIP via nós binários do WhatsApp e transporte de mídia UDP (SRTP) intermediado por WebRTC.
@@ -80,7 +85,7 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 ### Frontend
 
 - **Core**: React 19, TypeScript, Vite.
-- **Estilização**: Tailwind CSS v4, Lucide Icons, Design System sóbrio executivo escuro/claro.
+- **Estilização**: Tailwind CSS v4, Lucide Icons, Design System executivo escuro/claro.
 - **Componentes Globais Reutilizáveis**:
   - `ConfirmModal`: Modal de confirmação seguro utilizado em exclusões do CRM e do Histórico.
   - `AudioRecordingPlayer`: Player de áudio com marcador de linha do tempo customizado (`.audio-slider`) e controle de volume/download.
@@ -95,29 +100,32 @@ O Kallia foi desenhado para operação em formato **SaaS Multi-tenant**:
 ```
 Kallia/
 ├── cmd/
-│   ├── migrate/                     # Migrações e setup de tabelas do PostgreSQL (projects, users, sessions, agents, contacts, etc.)
 │   └── server/                      # Servidor Go Principal
-│       ├── main.go                  # Bootstrap, carregador de .env (KALLIA_*), flags e sinal do SO
-│       ├── auth.go                  # Autenticação JWT, login, registro, geração de tickets e middleware RBAC
-│       ├── db.go                    # dbProvider com suporte inteligente a namespaces (kallia_main / fallback wacalls)
+│       ├── main.go                  # Bootstrap, inicialização do PocketBase, scheduler e listener SSE
+│       ├── auth.go                  # Autenticação JWT, login PocketBase, middleware RBAC e SuperAdmin
+│       ├── db.go                    # dbProvider com suporte a SQLite local e namespaces
 │       ├── project.go               # Handlers de gerenciamento de projetos, planos e limites de conexões
-│       ├── agents.go                # Handlers REST para CRUD e vinculação de Agentes Especialistas por conexão
-│       ├── ai_agent.go              # Agente de voz server-side (WA<->Gemini/Grok + tools + transfer + post-call)
-│       ├── ai_providers.go          # CRUD e gerenciamento de provedores de IA (tabela ai_providers, criptografia)
+│       ├── agents_api.go            # Handlers REST para CRUD e vinculação de Agentes Especialistas
+│       ├── ai_agent.go              # Agente de voz server-side (WA <-> Gemini/Grok + tools + transfer + post-call)
+│       ├── ai_providers.go          # CRUD e gerenciamento de provedores de IA (PocketBase + criptografia)
 │       ├── ai_scheduler.go          # Scheduler background de ligações programadas do servidor
 │       ├── aiconfig.go              # Handlers REST de configuração da IA (AIConfig struct multi-provedor)
 │       ├── authticket.go            # Tickets de uso único (30s) p/ SSE/WebSocket sem exposição de chave na URL
+│       ├── broker.go                # Broker SSE interno para broadcast de eventos aos clientes conectados
 │       ├── crypto.go                # Criptografia AES-256-GCM para chaves de API dos provedores
 │       ├── gemini_live.go           # Cliente WebSocket nativo para a API Gemini Live (Google)
-│       ├── gemini_proxy.go          # Proxy WS/REST do Gemini (a key nunca sai do servidor)
+│       ├── gemini_proxy.go          # Proxy WS/REST do Gemini (a chave nunca sai do servidor)
 │       ├── grok_live.go             # Cliente WebSocket nativo para a API Grok Realtime (xAI)
-│       ├── httpapi.go               # Rotas da API HTTP/WebRTC, SSE, CORS, rate limit, health/metrics
+│       ├── httpapi.go               # Rotas da API HTTP/WebRTC, unificação de sessões, SSE, CORS, rate limit
+│       ├── pocketbase_client.go     # Cliente PocketBase autenticado de superuser com CRUD para todas as coleções
+│       ├── pocketbase_sync.go       # Motor de hidratação inicial e listener SSE persistente (/api/realtime)
+│       ├── queue.go                 # Gerenciador de filas Redis com fallback automático In-Memory
 │       ├── safehttp.go              # Guarda anti-SSRF (validação de URL/DNS/IP + redirects)
-│       ├── util.go                  # Helpers de fuso, retry HTTP e goroutines seguras (goSafe)
 │       ├── server.go                # Inicialização do servidor + hidratação do histórico do banco
 │       ├── session.go               # Estado WhatsApp/VoIP, auto-atendimento, attachServerAI
-│       ├── sessionmanager.go        # Ciclo de vida e restauração de sessões do banco
-│       └── sessionstore.go          # Operações no Postgres (users, projects, contacts, call_history, agents, ai_providers)
+│       ├── sessionmanager.go        # Ciclo de vida de conexões, restauração segura no Dev e exclusão nos dois bancos
+│       ├── sessionstore.go          # Operações no SQLite local (cache, contacts, call_history, ratings)
+│       └── util.go                  # Helpers de fuso, retry HTTP e goroutines seguras (goSafe)
 ├── internal/
 │   └── voip/
 │       ├── call/                    # Máquina de estados das chamadas e CallManager (CGO + Mutexes)
@@ -130,9 +138,9 @@ Kallia/
 │   └── src/
 │       ├── App.tsx                  # Ponto de entrada React com rotas autenticadas e modal de login
 │       ├── components/
-│       │   ├── auth/LoginScreen.tsx # Tela de login simplificada (sem campo de URL do servidor)
+│       │   ├── auth/LoginScreen.tsx # Tela de login integrada com PocketBase e Google OAuth2
 │       │   ├── layout/
-│       │   │   ├── AppShell.tsx     # Layout principal com barra superior e gerenciador de workspaces
+│       │   │   ├── AppShell.tsx     # Layout principal com barra superior e seletor de workspaces
 │       │   │   └── Sidebar.tsx      # Navegação lateral limpa e responsiva
 │       │   ├── shared/
 │       │   │   └── ConfirmModal.tsx # Modal reutilizável de confirmação com variantes de ação
@@ -143,19 +151,19 @@ Kallia/
 │       │       │   ├── AudioRecordingPlayer.tsx # Player de áudio com marcador .audio-slider
 │       │       │   ├── TranscriptModal.tsx    # Modal de transcrição completa
 │       │       │   └── SummaryModal.tsx       # Modal de resumo por IA
-│       │       │       ├── settings/
+│       │       ├── settings/
 │       │       │   ├── SettingsTab.tsx        # Configurações de sistema (Chatwoot, Geral e Webhook)
-│       │       │   ├── AISettingsPane.tsx     # Painel de Integração de Voz multi-provedor (Gemini/Grok/OpenAI), vozes, idioma, reasoning effort
-│       │       │   ├── ToolsSettingsPane.tsx    # Painel de Ferramentas e Ações da IA
-│       │       │   ├── PostCallSettingsPane.tsx# Notificações e resumos pós-chamada
+│       │       │   ├── AISettingsPane.tsx     # Painel de Integração de Voz multi-provedor (Gemini/Grok/OpenAI)
+│       │       │   ├── ToolsSettingsPane.tsx  # Painel de Ferramentas e Ações da IA
+│       │       │   ├── PostCallSettingsPane.tsx # Notificações e resumos pós-chamada
 │       │       │   ├── NPSSettingsPane.tsx    # Pesquisa de satisfação pós-atendimento (NPS)
 │       │       │   └── FollowupSettingsPane.tsx # Mensagens de acompanhamento (Follow-up)
 │       │       └── session/AIDialog.tsx      # Dialog de voz e seleção de agente especialista
 │       ├── pages/
 │       │   ├── DashboardPage.tsx     # Dashboard executivo com KPIs, histórico de atendimentos e botões de IA
-│       │   ├── ContactsPage.tsx      # Módulo de CRM de contatos com busca, criação, edição e confirmação de exclusão
-│       │   ├── AgentsPage.tsx        # Central Única de Agentes IA (Master-Detail: Agente Principal + Especialistas + Tools + NPS)
-│       │   └── ConnectionsPage.tsx   # Conexões de WhatsApp escopadas pelo plano do projeto
+│       │   ├── ContactsPage.tsx      # Módulo de CRM de contatos com busca, criação, edição e exclusão
+│       │   ├── AgentsPage.tsx        # Central Única de Agentes IA (Master-Detail: Agente Principal + Especialistas)
+│       │   └── ConnectionsPage.tsx   # Conexões de WhatsApp com Visão Global para SuperAdmin
 │       ├── services/
 │       │   ├── auth.ts               # Login/Logout e utilitários de token no localStorage
 │       │   ├── contacts.ts           # Serviços REST de gerenciamento de contatos (CRM)
@@ -175,7 +183,7 @@ Kallia/
 
 ## 4. Multi-Tenancy, Autenticação, CRM e Gestão de Planos
 
-### 4.1 Modelo de Dados (PocketBase SSOT & Cache SQLite com Realtime Sync)
+### 4.1 Modelo de Dados (PocketBase SSOT & Sincronização em Tempo Real)
 
 O **PocketBase** atua como a **Fonte Única de Verdade (SSOT)** central para todos os metadados do ecossistema Kallia:
 
@@ -197,16 +205,15 @@ O **PocketBase** atua como a **Fonte Única de Verdade (SSOT)** central para tod
    - `id`, `session_id`, `call_id`, `score`, `comment`, `agent_id`.
 
 #### Arquitetura de Sincronização em Tempo Real (Dev ↔ VPS)
-- **Hidratação Inicial no Boot (`hydrateFromPocketBase`)**: Ao iniciar, o servidor Go obtém automaticamente o token de Superuser/Admin do PocketBase e sincroniza todos os projetos, sessões, agentes, provedores e contatos no SQLite local (`kallia_main.db`).
-- **Escuta em Tempo Real (`/api/realtime` SSE)**: O Go mantém uma subscrição SSE persistente conectada ao PocketBase. Qualquer alteração feita em produção na VPS ou no ambiente DEV é propagada e atualizada atomicamente no banco local e emitida aos clientes conectados via SSE interno.
+- **Hidratação Inicial no Boot (`hydrateFromPocketBase`)**: Ao iniciar, o servidor Go obtém automaticamente o token de Superuser/Admin do PocketBase e sincroniza todos os projetos, sessões, agentes, provedores e contatos no banco local.
+- **Escuta em Tempo Real (`/api/realtime` SSE)**: O Go mantém uma subscrição SSE persistente conectada ao PocketBase. Qualquer alteração feita na VPS ou no ambiente DEV é propagada e atualizada atomicamente no banco local e emitida aos clientes conectados via SSE interno.
 - **Sessões em Standby no Dev**: Instâncias ativas na VPS são carregadas no ambiente Dev no estado configurável (permitindo edição de Agentes, Prompts, Tools e CRM) sem colidir ou disputar o socket físico do WhatsApp.
+- **Exclusão Sincronizada nos Dois Bancos**: Ao excluir uma sessão pelo painel (pelo SuperAdmin ou proprietário), o sistema purga o registro tanto do SQLite local quanto do PocketBase remoto e deleta em cascata todos os agentes e contatos vinculados.
 - **Isolamento de Mídia VoIP**: No SQLite local (`./storage/whatsapp/{id}.db`), apenas as chaves criptográficas de handshake do WhatsApp (`whatsmeow`) e streams RTP de voz permanecem isolados na máquina servidora.
 
-### 4.2 Integridade do CRM e Navegação Reativa
-
-- O sistema sincroniza de forma transparente os números gravados no banco de contatos da sessão.
-- Ao clicar no botão de discagem em `ContactsPage.tsx`, o aplicativo dispara o evento de navegação reativa `navigateToWebphone(phone)`, abrindo a página do discador Webphone e preenchendo automaticamente o campo de telefone.
-- O hook `useContactDisplay` centraliza a resolução de identificadores, garantindo que o nome do contato cadastrado no CRM seja exibido em vez de números brutos em todas as telas do sistema.
+### 4.2 Visão Global para SuperAdmin (`appadmin`)
+- O usuário com perfil `appadmin` possui acesso irrestrito a todas as conexões da plataforma.
+- A listagem de sessões (`GET /api/sessions`) unifica e deduplica dados da memória ativa, SQLite e PocketBase, exibindo o status de cada conexão e identificando o tenant proprietário (`ownerEmail`).
 
 ---
 
@@ -222,19 +229,19 @@ Cada conexão do WhatsApp pode estar vinculada a múltiplos agentes especialista
 
 ### 5.2 Provedores de IA Multi-Provedor
 
-O sistema suporta múltiplos provedores de IA de voz, gerenciados via tabela `ai_providers` no PostgreSQL:
+O sistema suporta múltiplos provedores de IA de voz, gerenciados via coleção `ai_providers` no PocketBase:
 
 - **Google Gemini Live**: Vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo no `session.update`.
 - **xAI Grok Realtime**: 26 vozes nativas (Eve ⭐, Sal ⭐, Ara, Carina, Luna, Iris, Celeste, Ursa, Zagan, Helix, Orion, Altair, Zenith, Perseus, Helios, Kepler, Rigel, Sirius, Castor, Naksh, Atlas, Leo, Rex, Lux, Cosmo, Lumen). Funcionalidades exclusivas:
   - **Reasoning Effort**: `high` (raciocínio profundo) ou `none` (resposta ultrarrápida) via query param `reasoning.effort`.
   - **Ferramentas Nativas**: `web_search` (busca na web em tempo real) e `x_search` (busca no X/Twitter).
   - **Transcrição Nativa**: Motor `grok-transcribe` com parâmetro de `language`.
-  - **Diretiva de Idioma**: Injeção textual explícita nas `instructions` do Grok (não possui campo `language` nativo no `session.update`).
+  - **Diretiva de Idioma**: Injeção textual explícita nas `instructions` do Grok.
   - **VAD Ajustado**: `threshold: 0.5`, `prefix_padding_ms: 300`, `silence_duration_ms: 500`.
   - **Interrupção Instantânea (Barge-in)**: Evento `input_audio_buffer.speech_started` limpa a fila de áudio da IA.
 - **OpenAI Realtime** (planejado): Estrutura preparada.
 
-As chaves de API são armazenadas criptografadas com **AES-256-GCM** na tabela `ai_providers` e descriptografadas em runtime.
+As chaves de API são armazenadas criptografadas com **AES-256-GCM** na coleção `ai_providers` e descriptografadas em runtime.
 
 ### 5.3 Transferência Dinâmica entre Agentes (`TransferTo`)
 
@@ -250,8 +257,6 @@ Durante uma chamada em andamento operada pelo `ServerAIAgent`:
 
 ---
 
-## 6. Mídia VoIP, Audio Codec e Resiliência
-
 ## 6. Mídia VoIP, Sinalização e Resiliência
 
 ### 6.1 Codec MLow (Meta Low-bitrate)
@@ -263,31 +268,26 @@ Durante uma chamada em andamento operada pelo `ServerAIAgent`:
 ### 6.2 Parser de Sinalização VoIP Resiliente (`ExtractNodeInfo`)
 
 - O WhatsApp envolve nós binários `<call>` contendo estrofes secundárias de latência e transporte (como `<relaylatency>`, `<te>`, `<enc>`) junto com os nós de controle principal (`offer`, `accept`, `terminate`, `reject`, `transport`, `preaccept`).
-- O parser `ExtractNodeInfo` [internal/voip/signaling/signaling_parse.go](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/internal/voip/signaling/signaling_parse.go) utiliza um mapa de priorização de tags primárias (`signalingTags`). Ele varre a árvore XML em busca do comando de controle VoIP verdadeiro e do `call-id` correto, garantindo resiliência total mesmo quando a ordem ou quantidade de sub-nós é alterada pelo WhatsApp.
+- O parser `ExtractNodeInfo` utiliza um mapa de priorização de tags primárias (`signalingTags`). Ele varre a árvore XML em busca do comando de controle VoIP verdadeiro e do `call-id` correto, garantindo resiliência total mesmo quando a ordem ou quantidade de sub-nós é alterada pelo WhatsApp.
 
 ### 6.3 Resolução Assíncrona de LID e Encerramento `accepted_elsewhere`
 
-- **Sinalização Instantânea (0ms Delay)**: A resolução de telefones reais (PN) a partir de LIDs de dispositivos secundários (`realPhone`) é executada de forma **100% assíncrona** (`goSafe`) com um limite estrito de timeout (`context.WithTimeout(2s)`) e sanitização `.ToNonAD()`. Isso garante que a notificação de chamada recebida chegue ao WebSocket/SSE e toque no frontend imediatamente sem qualquer bloqueio.
+- **Sinalização Instantânea (0ms Delay)**: A resolução de telefones reais (PN) a partir de LIDs de dispositivos secundários (`realPhone`) é executada de forma **100% assíncrona** (`goSafe`) com um limite estrito de timeout (`context.WithTimeout(2s)`) e sanitização `.ToNonAD()`.
 - **Tratamento de Chamadas Atendidas em Outros Dispositivos (`accepted_elsewhere`)**:
   - Quando o usuário atende a chamada em seu celular principal ou em outro companion device, o WhatsApp envia um encerramento do tipo `reason="accepted_elsewhere"`.
   - O backend captura a estrofe de término, transiciona o estado da chamada para `accepted_elsewhere` e notifica o frontend via evento `call-ended` / `call-status`.
   - O store do frontend (`useCalls`) reage imediatamente alterando `incoming: null`, fechando o modal de toque e pausando a reprodução de áudio sem deixar a interface pendente.
-
-### 6.4 Marcador de Linha do Tempo Customizado (`.audio-slider`)
-
-- Para garantir que a linha do tempo das gravações de áudio no Dashboard e no Histórico não obstrua as informações do cabeçalho ou o número do contato, o player utiliza a classe CSS `.audio-slider`.
-- O elemento `input[type="range"]` utiliza estilização customizada via `::-webkit-slider-thumb` e `::-moz-range-thumb`, definindo o marcador de controle com diâmetro de 10px perfeitamente alinhado ao centro da faixa de 4px.
 
 ---
 
 ## 7. Segurança e Hardening
 
 - **Autenticação por JWT**: Senhas salvas via `bcrypt`. Tokens assinados com HMAC-SHA256 (`KALLIA_JWT_SECRET`).
-- **Criptografia de Chaves de IA (AES-256-GCM)**: Chaves de API dos provedores (Gemini, Grok, OpenAI) são criptografadas no banco (`ai_providers.api_key_encrypted`) com a variável `KALLIA_AI_ENCRYPTION_KEY` e descriptografadas apenas em runtime. Nunca transitam em plain text.
+- **Criptografia de Chaves de IA (AES-256-GCM)**: Chaves de API dos provedores (Gemini, Grok, OpenAI) são criptografadas no banco (`ai_providers.encrypted_api_key`) com a variável `KALLIA_ENCRYPTION_KEY` e descriptografadas apenas em runtime. Nunca transitam em plain text.
 - **Chaves de Conexão Individuais (`kc_*`)**: Cada conexão de WhatsApp gera uma API key única (`kc_...`) para consumo externo via header `X-Connection-API-Key`.
 - **Tickets de Uso Único para SSE/WebSockets**: O SSE (`/api/events`) e os proxies usam tickets gerados via `POST /api/events/ticket` com validade de 30s.
 - **Proteção Anti-SSRF (`safehttp.go`)**: URLs externas de mídia e webhooks são validadas contra endereços IP privados/reservados.
-- **Isolamento Multi-tenant**: Todas as rotas de gerenciamento filtram os recursos pelo `project_id` do usuário logado.
+- **Isolamento Multi-tenant**: Todas as rotas de gerenciamento filtram os recursos pelo `project_id` do usuário logado, exceto para o `appadmin` que possui acesso global.
 
 ---
 
