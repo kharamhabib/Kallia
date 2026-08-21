@@ -54,9 +54,10 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
   2. **Chave de Conexão WhatsApp (`kc_...`)**: Aceita em `X-API-Key` ou `X-Connection-API-Key` para automações externas (N8N, Typebot, Chatwoot, Make, Webhooks) vinculada com segurança à linha e ao Workspace.
   3. **Ticket de Uso Único / Query Param (`?ticket=` / `?token=`)**: Para transmissões em tempo real do navegador (SSE `/api/events` e WebSocket `/gemini/ws`).
 - **Controle de Acesso por Roles (RBAC)**:
-  - `appadmin`: Superadministrador com visão global de todos os workspaces, usuários e conexões em todos os bancos.
+  - `appadmin` / `superadmin`: Superadministrador com visão global de todos os workspaces, usuários e conexões em todos os bancos, destacado com **Badge de Coroa** no card de usuário da barra lateral.
   - `creator` / `owner`: Proprietário do Workspace. Gerencia conexões, membros, agentes de IA e planos.
   - `normal` / `member`: Operador com perfil de atendimento.
+- **Central de Perfil do Usuário (`/profile`)**: Tela completa acessível pelo rodapé da Sidebar para gerenciamento de dados pessoais (nome, avatar), listagem e troca de Workspaces, alteração de senha (PocketBase Auth) e visão dos limites de consumo do plano.
 - **Onboarding Automático**: Usuários cadastrados recebem automaticamente seu Workspace inicial provisionado no PocketBase (limite de 1 workspace para contas normais).
 
 ### ⚡ Gerenciamento de Filas & Concorrência (Redis 7 + Fallback In-Memory)

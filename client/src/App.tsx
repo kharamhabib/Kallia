@@ -14,6 +14,7 @@ import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage";
 import { NPSQualityPage } from "@/pages/NPSQualityPage";
 import { LiveMonitoringPage } from "@/pages/LiveMonitoringPage";
 import { BillingPage } from "@/pages/BillingPage";
+import { ProfilePage } from "@/pages/ProfilePage";
 import { SettingsTab } from "@/components/domain/settings/SettingsTab";
 import { IntegrationsTab } from "@/components/domain/integrations/IntegrationsTab";
 import { SchedulesTab } from "@/components/domain/schedule/SchedulesTab";
@@ -63,6 +64,8 @@ export const App = () => {
       <AppShell>
         {activeSection === "connections" ? (
           <ConnectionsPage />
+        ) : activeSection === "profile" ? (
+          <ProfilePage />
         ) : sessions.length === 0 ? (
           <EmptyState
             icon={<PlusCircle className="h-6 w-6" />}

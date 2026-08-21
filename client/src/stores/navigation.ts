@@ -15,7 +15,8 @@ export type NavSection =
   | "nps_qa"
   | "integrations"
   | "billing"
-  | "settings";
+  | "settings"
+  | "profile";
 
 type NavigationState = {
   activeSection: NavSection;

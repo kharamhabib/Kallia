@@ -23,6 +23,9 @@ export interface Workspace {
   agents_count?: number;
   default_session_id?: string;
   role?: string;
+  membership_role?: "owner" | "creator" | "admin" | "member" | string;
+  creator_name?: string;
+  creator_email?: string;
   created_at?: string;
 }
 

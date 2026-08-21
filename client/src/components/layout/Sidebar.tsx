@@ -16,6 +16,7 @@ import {
   Smartphone,
   Code2,
   LogOut,
+  Crown,
 } from "lucide-react";
 import { useNavigation, type NavSection } from "@/stores/navigation";
 import { getUser, clearAuth } from "@/lib/auth";
@@ -36,6 +37,7 @@ interface NavGroup {
 export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
   const { activeSection, setActiveSection } = useNavigation();
   const user = getUser();
+  const isSuperAdmin = user?.role === "appadmin" || user?.role === "superadmin";
 
   const navGroups: NavGroup[] = [
     {
@@ -133,13 +135,55 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
 
       {/* Sidebar Footer: User profile & controls */}
       <div className="pt-2.5 border-t border-border/70 space-y-2 shrink-0">
-        <div className="flex items-center justify-between gap-2 rounded-xl bg-card/60 border p-2 text-xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">
-              {user?.email ? user.email.slice(0, 1).toUpperCase() : "A"}
+        <div
+          onClick={() => {
+            setActiveSection("profile");
+            onNavigate?.();
+          }}
+          className={cn(
+            "group flex items-center justify-between gap-2 rounded-xl border p-2 text-xs transition-all duration-150 cursor-pointer",
+            isSuperAdmin
+              ? "border-amber-500/25 bg-amber-500/[0.04] hover:border-amber-500/50 hover:bg-amber-500/[0.08]"
+              : "bg-card/60 border-border hover:border-primary/50 hover:bg-card",
+            activeSection === "profile" &&
+              (isSuperAdmin
+                ? "border-amber-500/60 bg-amber-500/10 ring-1 ring-amber-500/30"
+                : "border-primary/60 bg-primary/5 ring-1 ring-primary/20"),
+          )}
+          title={isSuperAdmin ? "Superadmin Global - Ver Meu Perfil & Conta" : "Ver Meu Perfil & Conta"}
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div
+              className={cn(
+                "relative flex h-8 w-8 items-center justify-center rounded-full font-bold text-xs shrink-0 ring-1",
+                isSuperAdmin
+                  ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 ring-amber-500/30"
+                  : "bg-primary/10 text-primary ring-primary/20",
+              )}
+            >
+              {user?.avatar ? (
+                <img src={user.avatar} alt="Avatar" className="h-full w-full rounded-full object-cover" />
+              ) : (
+                <span>{user?.name ? user.name.slice(0, 1).toUpperCase() : user?.email ? user.email.slice(0, 1).toUpperCase() : "A"}</span>
+              )}
+              {isSuperAdmin && (
+                <div
+                  className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-white shadow-2xs"
+                  title="Superadmin"
+                >
+                  <Crown className="h-2 w-2 fill-white text-white" />
+                </div>
+              )}
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-foreground">
+            <div className="min-w-0 flex-1">
+              <p
+                className={cn(
+                  "truncate text-xs font-bold transition-colors",
+                  isSuperAdmin
+                    ? "text-amber-600 dark:text-amber-400 group-hover:text-amber-500"
+                    : "text-foreground group-hover:text-primary",
+                )}
+              >
                 {user?.name || user?.email?.split("@")[0] || "Administrador"}
               </p>
               <p className="truncate text-[10px] text-muted-foreground">
@@ -147,11 +191,12 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
             <ThemeToggle />
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 clearAuth();
                 window.location.reload();
               }}

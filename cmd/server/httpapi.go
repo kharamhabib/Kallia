@@ -141,6 +141,13 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/forgot-password", s.handleForgotPassword)
 	mux.HandleFunc("POST /api/auth/reset-password", s.handleResetPassword)
 
+	// Rotas do Superadmin SaaS (Painel Global)
+	mux.HandleFunc("GET /api/admin/overview", s.handleAdminOverview)
+	mux.HandleFunc("GET /api/admin/users", s.handleAdminListUsers)
+	mux.HandleFunc("PATCH /api/admin/users/{uid}/role", s.handleAdminUpdateUserRole)
+	mux.HandleFunc("GET /api/admin/workspaces", s.handleAdminListWorkspaces)
+	mux.HandleFunc("PATCH /api/admin/workspaces/{wid}", s.handleAdminUpdateWorkspace)
+
 
 	// Rotas Públicas de Documentação de API (Swagger / OpenAPI)
 	mux.HandleFunc("GET /api/docs", s.handleAPIDocs)
@@ -1857,15 +1864,14 @@ func (s *server) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value(ctxKeyUserID).(string)
-	userRole, _ := r.Context().Value(ctxKeyUserRole).(string)
 
 	var list []WorkspaceRow
 	var err error
 
-	if userRole == "appadmin" || userID == "" {
-		list, err = pbClient.ListWorkspacesPB(r.Context())
-	} else {
+	if userID != "" {
 		list, err = pbClient.ListWorkspacesForUserPB(r.Context(), userID)
+	} else {
+		list, err = pbClient.ListWorkspacesPB(r.Context())
 	}
 
 	if err != nil {
@@ -2184,4 +2190,178 @@ func (s *server) handleRemoveWorkspaceMember(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "membro removido"})
 }
+
+func (s *server) checkSuperAdmin(w http.ResponseWriter, r *http.Request) bool {
+	role, _ := r.Context().Value(ctxKeyUserRole).(string)
+	if role != "appadmin" && role != "superadmin" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "acesso negado: requer privilégios de superadmin"})
+		return false
+	}
+	return true
+}
+
+func (s *server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSuperAdmin(w, r) {
+		return
+	}
+
+	ctx := r.Context()
+	users, _ := pbClient.ListAllUsersPB(ctx)
+	workspaces, _ := pbClient.ListWorkspacesPB(ctx)
+	sessions := s.sessions.infos()
+
+	var totalCalls int
+	_ = s.sessions.store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM call_history`).Scan(&totalCalls)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"totalUsers":      len(users),
+		"totalWorkspaces": len(workspaces),
+		"activeSessions":  len(sessions),
+		"totalCalls":       totalCalls,
+	})
+}
+
+func (s *server) handleAdminListUsers(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSuperAdmin(w, r) {
+		return
+	}
+
+	users, err := pbClient.ListAllUsersPB(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
+func (s *server) handleAdminUpdateUserRole(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSuperAdmin(w, r) {
+		return
+	}
+
+	uid := r.PathValue("uid")
+	if uid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "uid obrigatório"})
+		return
+	}
+
+	var body struct {
+		Role string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Role) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "role inválida"})
+		return
+	}
+
+	if err := pbClient.UpdateUserRolePB(r.Context(), uid, strings.TrimSpace(body.Role)); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "role atualizada"})
+}
+
+func (s *server) handleAdminListWorkspaces(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSuperAdmin(w, r) {
+		return
+	}
+
+	workspaces, err := pbClient.ListWorkspacesPB(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	sessions := s.sessions.infos()
+	sessionCountMap := make(map[string]int)
+	for _, sess := range sessions {
+		wsID := sess.ProjectID
+		if wsID == "" {
+			wsID = "default"
+		}
+		sessionCountMap[wsID]++
+	}
+
+	users, _ := pbClient.ListAllUsersPB(r.Context())
+	userMap := make(map[string]UserRecordPB)
+	wsOwnerMap := make(map[string]UserRecordPB)
+	for _, u := range users {
+		userMap[u.ID] = u
+		if u.WorkspaceID != "" {
+			if _, exists := wsOwnerMap[u.WorkspaceID]; !exists {
+				wsOwnerMap[u.WorkspaceID] = u
+			}
+		}
+	}
+
+	var enriched []map[string]any
+	for _, ws := range workspaces {
+		creatorName := "Administrador"
+		creatorEmail := "admin@kallia.com"
+		if u, found := wsOwnerMap[ws.ID]; found {
+			if u.Name != "" {
+				creatorName = u.Name
+			} else {
+				creatorName = strings.Split(u.Email, "@")[0]
+			}
+			creatorEmail = u.Email
+		} else if members, err := pbClient.ListWorkspaceMembersPB(r.Context(), ws.ID); err == nil && len(members) > 0 {
+			for _, m := range members {
+				if m.Role == "owner" || m.Role == "creator" || m.Role == "admin" || creatorEmail == "" {
+					if u, ok := userMap[m.UserID]; ok {
+						if u.Name != "" {
+							creatorName = u.Name
+						} else {
+							creatorName = strings.Split(u.Email, "@")[0]
+						}
+						creatorEmail = u.Email
+						break
+					}
+				}
+			}
+		}
+
+		enriched = append(enriched, map[string]any{
+			"id":                   ws.ID,
+			"name":                 ws.Name,
+			"plan":                 ws.Plan,
+			"plan_status":          ws.PlanStatus,
+			"max_connections":      ws.MaxConnections,
+			"max_concurrent_calls": ws.MaxConcurrentCalls,
+			"max_agents":           ws.MaxAgents,
+			"connections_count":    sessionCountMap[ws.ID],
+			"creator_name":         creatorName,
+			"creator_email":        creatorEmail,
+			"created_at":           ws.CreatedAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"workspaces": enriched})
+}
+
+func (s *server) handleAdminUpdateWorkspace(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSuperAdmin(w, r) {
+		return
+	}
+
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid obrigatório"})
+		return
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payload inválido"})
+		return
+	}
+
+	if err := pbClient.UpdateWorkspacePB(r.Context(), wid, body); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "workspace atualizado"})
+}
+
 

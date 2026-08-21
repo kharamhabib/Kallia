@@ -58,15 +58,20 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - Correção na desserialização de eventos SSE Realtime do PocketBase (`jsonFieldToString`), impedindo que campos JSON (`ai_config` e `chatwoot`) fossem sobrescritos como string vazia.
   - Correção do filtro de busca por `sid` em `UpdateSessionAIConfigPB`.
   - Separação clara entre **Agente Principal** (Inbound Master mantido em `sessions.ai_config`) e **Agentes Especialistas** (Secundários/Outbound em `agents`), eliminando a duplicidade do Agente Principal na listagem de especialistas.
+- [x] **Página de Perfil do Usuário & Badge de Superadmin na Sidebar (21/08/2026)**:
+  - Criação da página completa [`ProfilePage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/ProfilePage.tsx) com 4 abas estruturadas: **Visão Geral & Dados** (edição de nome, avatar presets ou URL), **Meus Workspaces** (listagem e troca rápida de workspace ativo), **Segurança & Senha** (alteração de senha integrada ao PocketBase) e **Plano & Limites** (capacidade e consumo do workspace).
+  - Atualização do card de rodapé em [`Sidebar.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/layout/Sidebar.tsx) com navegação ao perfil ao clicar, isolamento de eventos em Logout/Tema e Badge compacto de **Superadmin** com ícone de Coroa âmbar (`Crown`) 100% responsivo e contido no card.
+- [x] **Painel Admin Global & Isolamento Estrito de "Meus Workspaces" (21/08/2026)**:
+  - **Isolamento de Workspaces**: A aba "Meus Workspaces" agora lista estritamente apenas os workspaces aos quais o usuário pertence diretamente (seja como Criador ou Convidado), inclusive para Superadmins.
+  - **Tags Diferenciadas no Card**: Exibição visual de tags `👑 Criador` vs `👥 Convidado` em cada workspace na aba "Meus Workspaces".
+  - **Painel Admin Global**: Aba exclusiva para Superadmins renomeada para **"Painel Admin Global"**, incluindo a nova coluna **"Criador / Proprietário"** com avatar, nome e e-mail do criador de cada workspace na tabela global.
+  - Endpoints de backend em [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go) protegidos por RBAC (`/api/admin/overview`, `/api/admin/users`, `/api/admin/users/{uid}/role`, `/api/admin/workspaces`, `/api/admin/workspaces/{wid}`).
 
 ---
 
 ## 🚀 Próximas Implementações (Roadmap)
 
-1. **Painel SaaS Admin Super-App (`appadmin`)**:
-   - Interface web para visualizar todos os projetos cadastrados, métricas de consumo de minutos de chamada por projeto, gerenciar status de assinaturas e alterar planos em tempo real.
-
-2. **Relatórios Avançados de Performance de Agentes**:
+1. **Relatórios Avançados de Performance de Agentes**:
    - Métricas de NPS acumulado por agente especialista.
    - Análise de sentimentos e tempo médio de atendimento (TMA) das ligações operadas por IA.
 
