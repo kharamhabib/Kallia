@@ -15,21 +15,32 @@ import (
 
 // --- SYNC METHODS (PUSH PARA POCKETBASE) ---
 
-func syncProjectToPB(id, name, plan, planStatus string, start time.Time, end *time.Time) {
+func syncWorkspaceToPB(id, name, plan, planStatus string, start time.Time, end *time.Time) {
 	goSafe(slog.Default(), func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := pbClient.UpsertProjectPB(ctx, id, name, plan, planStatus, start, end); err != nil {
-			slog.Warn("[PocketBase Sync] Falha ao sincronizar projeto", "id", id, "err", err)
+		data := map[string]any{
+			"name":        name,
+			"plan":        plan,
+			"plan_status": planStatus,
+		}
+		if !start.IsZero() {
+			data["plan_starts_at"] = start.UTC().Format("2006-01-02 15:04:05.000Z")
+		}
+		if end != nil {
+			data["plan_ends_at"] = end.UTC().Format("2006-01-02 15:04:05.000Z")
+		}
+		if err := pbClient.UpdateWorkspacePB(ctx, id, data); err != nil {
+			slog.Warn("[PocketBase Sync] Falha ao sincronizar workspace", "id", id, "err", err)
 		}
 	})
 }
 
-func syncSessionToPB(id, name, jid, webhook, chatwoot, aiConfig, projectID, apiKey string) {
+func syncSessionToPB(id, name, jid, webhook, chatwoot, aiConfig, workspaceID, apiKey string) {
 	goSafe(slog.Default(), func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := pbClient.UpsertSessionPB(ctx, id, name, jid, webhook, chatwoot, aiConfig, projectID, apiKey); err != nil {
+		if err := pbClient.UpsertSessionPB(ctx, id, name, jid, webhook, chatwoot, aiConfig, workspaceID, apiKey); err != nil {
 			slog.Warn("[PocketBase Sync] Falha ao sincronizar sessão", "id", id, "err", err)
 		}
 	})
@@ -95,12 +106,12 @@ func hydrateFromPocketBase(ctx context.Context, store *sessionStore, sessionMgr 
 	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// 1. Hidratar Projetos
-	projects, err := pbClient.ListProjectsPB(syncCtx)
+	// 1. Hidratar Workspaces
+	workspaces, err := pbClient.ListWorkspacesPB(syncCtx)
 	if err != nil {
-		log.Warn("não foi possível obter projetos do PocketBase", "err", err)
+		log.Warn("não foi possível obter workspaces do PocketBase", "err", err)
 	} else {
-		for _, p := range projects {
+		for _, w := range workspaces {
 			_, _ = store.db.ExecContext(syncCtx, `
 				INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
 				VALUES ($1, $2, $3, $4, $5, $6)
@@ -110,9 +121,9 @@ func hydrateFromPocketBase(ctx context.Context, store *sessionStore, sessionMgr 
 					plan_status = excluded.plan_status,
 					plan_starts_at = excluded.plan_starts_at,
 					plan_ends_at = excluded.plan_ends_at
-			`, p.ID, p.Name, p.Plan, p.PlanStatus, p.PlanStartsAt, p.PlanEndsAt)
+			`, w.ID, w.Name, w.Plan, w.PlanStatus, w.PlanStartsAt, w.PlanEndsAt)
 		}
-		log.Info("projetos hidratados do PocketBase", "count", len(projects))
+		log.Info("workspaces hidratados do PocketBase", "count", len(workspaces))
 	}
 
 	// 2. Hidratar Sessões (Conexões)
@@ -252,7 +263,16 @@ func pushAllLocalToPocketBase(ctx context.Context, store *sessionStore) {
 							end = &t
 						}
 					}
-					_ = pbClient.UpsertProjectPB(pushCtx, id, name, plan, planStatus, start, end)
+					data := map[string]any{
+						"name":           name,
+						"plan":           plan,
+						"plan_status":    planStatus,
+						"plan_starts_at": start.UTC().Format("2006-01-02 15:04:05.000Z"),
+					}
+					if end != nil {
+						data["plan_ends_at"] = end.UTC().Format("2006-01-02 15:04:05.000Z")
+					}
+					_ = pbClient.UpdateWorkspacePB(pushCtx, id, data)
 				}
 			}
 		}
@@ -400,6 +420,8 @@ func startPocketBaseRealtimeListener(appCtx context.Context, store *sessionStore
 							subPayload, _ := json.Marshal(map[string]any{
 								"clientId": clientID,
 								"subscriptions": []string{
+									"workspaces/*",
+									"workspace_members/*",
 									"projects/*",
 									"sessions/*",
 									"agents/*",
@@ -453,7 +475,7 @@ func handleRealtimeRecord(ctx context.Context, store *sessionStore, broker *Brok
 	recordID, _ := msg.Record["id"].(string)
 
 	switch collection {
-	case "projects":
+	case "workspaces", "projects":
 		if msg.Action == "delete" {
 			_, _ = store.db.ExecContext(ctx, `DELETE FROM projects WHERE id = $1`, recordID)
 		} else {
@@ -501,7 +523,10 @@ func handleRealtimeRecord(ctx context.Context, store *sessionStore, broker *Brok
 			name, _ := msg.Record["name"].(string)
 			jid, _ := msg.Record["jid"].(string)
 			webhook, _ := msg.Record["webhook"].(string)
-			projectID, _ := msg.Record["project_id"].(string)
+			projectID, _ := msg.Record["workspace_id"].(string)
+			if projectID == "" {
+				projectID, _ = msg.Record["project_id"].(string)
+			}
 			apiKey, _ := msg.Record["api_key"].(string)
 
 			var cwStr, aiStr string

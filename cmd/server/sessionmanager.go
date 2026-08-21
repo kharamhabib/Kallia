@@ -184,7 +184,6 @@ func (m *SessionManager) Create(name, projectID string) (string, string, error) 
 	if err := m.store.insert(m.appCtx, id, name, projectID, apiKey); err != nil {
 		return "", "", err
 	}
-	syncSessionToPB(id, name, "", "", "", "", projectID, apiKey)
 
 	container, db, err := m.db.openSessionContainer(m.appCtx, id)
 	if err != nil {

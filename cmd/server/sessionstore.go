@@ -821,7 +821,7 @@ func (s *sessionStore) createProject(ctx context.Context, id, name, plan, planSt
 		VALUES ($1, $2, $3, $4, $5, $6)
 	`, id, name, plan, planStatus, start, end)
 	if err == nil {
-		syncProjectToPB(id, name, plan, planStatus, start, end)
+		syncWorkspaceToPB(id, name, plan, planStatus, start, end)
 	}
 	return err
 }
@@ -896,7 +896,7 @@ func (s *sessionStore) createProjectAndUser(ctx context.Context, projectID, proj
 		return err
 	}
 
-	syncProjectToPB(projectID, projName, "basic", "active", time.Now(), &planEnds)
+	syncWorkspaceToPB(projectID, projName, "basic", "active", time.Now(), &planEnds)
 	return nil
 }
 

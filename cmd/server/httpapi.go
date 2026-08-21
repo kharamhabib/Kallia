@@ -1761,20 +1761,35 @@ func (s *server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("não foi possível obter workspaces do PocketBase, usando fallback", "err", err)
 	}
 
-	// Se a lista estiver vazia, cria o Workspace padrão default
+	// Se a lista estiver vazia, cria o Workspace inicial automaticamente no PocketBase
 	if len(list) == 0 {
-		list = []WorkspaceRow{
-			{
-				ID:                 "default",
-				Name:               "Workspace Principal",
-				Plan:               "trial",
-				PlanStatus:         "active",
-				MaxConnections:     1,
-				MaxConcurrentCalls: 1,
-				MaxAgents:          2,
-				PlanStartsAt:       time.Now(),
-				CreatedAt:          time.Now(),
-			},
+		wsName := "Meu Workspace"
+		if userID != "" {
+			if u, _ := s.sessions.store.getUserByID(r.Context(), userID); u != nil && u.Email != "" {
+				wsName = "Workspace de " + strings.Split(u.Email, "@")[0]
+			}
+		}
+		newWS, createErr := pbClient.CreateWorkspacePB(r.Context(), wsName, "trial", "active", 1, 1, 2)
+		if createErr == nil && newWS != nil {
+			if userID != "" {
+				_ = pbClient.AddWorkspaceMemberPB(r.Context(), newWS.ID, userID, "owner")
+			}
+			list = append(list, *newWS)
+		} else {
+			// Fallback temporário caso PocketBase esteja indisponível
+			list = []WorkspaceRow{
+				{
+					ID:                 "default",
+					Name:               "Workspace Principal",
+					Plan:               "trial",
+					PlanStatus:         "active",
+					MaxConnections:     1,
+					MaxConcurrentCalls: 1,
+					MaxAgents:          2,
+					PlanStartsAt:       time.Now(),
+					CreatedAt:          time.Now(),
+				},
+			}
 		}
 	}
 
