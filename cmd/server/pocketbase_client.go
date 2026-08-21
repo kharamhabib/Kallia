@@ -48,6 +48,35 @@ func jsonFieldToString(v any) string {
 	return string(b)
 }
 
+func sanitizeAIConfigMap(m any) any {
+	if m == nil {
+		return map[string]any{}
+	}
+	if asMap, ok := m.(map[string]any); ok {
+		clean := make(map[string]any)
+		for k, v := range asMap {
+			lk := strings.ToLower(k)
+			if strings.Contains(lk, "key") || strings.Contains(lk, "secret") || strings.Contains(lk, "token") {
+				continue
+			}
+			clean[k] = v
+		}
+		return clean
+	}
+	return m
+}
+
+func parseAndSanitizeAIConfig(rawJSON string) any {
+	if strings.TrimSpace(rawJSON) == "" {
+		return map[string]any{}
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(rawJSON), &m); err != nil {
+		return map[string]any{}
+	}
+	return sanitizeAIConfigMap(m)
+}
+
 func (c *PocketBaseClient) authAdmin(ctx context.Context) (string, error) {
 	c.mu.RLock()
 	if c.adminToken != "" && time.Now().Before(c.tokenExpiresAt.Add(-2*time.Minute)) {
@@ -896,10 +925,7 @@ func (c *PocketBaseClient) ListAgentsPB(ctx context.Context, targetID string) ([
 }
 
 func (c *PocketBaseClient) CreateAgentPB(ctx context.Context, id, workspaceID, name, description, aiConfig string, inbound, outbound bool) (string, error) {
-	var parsedConfig any = map[string]any{}
-	if aiConfig != "" {
-		_ = json.Unmarshal([]byte(aiConfig), &parsedConfig)
-	}
+	parsedConfig := parseAndSanitizeAIConfig(aiConfig)
 
 	if workspaceID == "" {
 		workspaceID = "default"
@@ -936,10 +962,7 @@ func (c *PocketBaseClient) CreateAgentPB(ctx context.Context, id, workspaceID, n
 }
 
 func (c *PocketBaseClient) UpdateAgentPB(ctx context.Context, id, name, description, aiConfig string, inbound, outbound bool) error {
-	var parsedConfig any = map[string]any{}
-	if aiConfig != "" {
-		_ = json.Unmarshal([]byte(aiConfig), &parsedConfig)
-	}
+	parsedConfig := parseAndSanitizeAIConfig(aiConfig)
 
 	data := map[string]any{
 		"name":        name,
@@ -983,10 +1006,7 @@ func (c *PocketBaseClient) UpsertMasterAgentPB(ctx context.Context, workspaceID 
 		workspaceID = "default"
 	}
 
-	var parsedConfig any = map[string]any{}
-	if aiConfig != "" {
-		_ = json.Unmarshal([]byte(aiConfig), &parsedConfig)
-	}
+	parsedConfig := parseAndSanitizeAIConfig(aiConfig)
 
 	data := map[string]any{
 		"workspace_id": workspaceID,
@@ -1231,10 +1251,7 @@ func (c *PocketBaseClient) ListCallHistoryPB(ctx context.Context, workspaceID, s
 }
 
 func (c *PocketBaseClient) UpdateSessionAIConfigPB(ctx context.Context, sessionID, aiConfigJSON string) error {
-	var parsedConfig any = map[string]any{}
-	if aiConfigJSON != "" {
-		_ = json.Unmarshal([]byte(aiConfigJSON), &parsedConfig)
-	}
+	parsedConfig := parseAndSanitizeAIConfig(aiConfigJSON)
 
 	data := map[string]any{
 		"ai_config": parsedConfig,

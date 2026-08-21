@@ -38,6 +38,10 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Transcrições de Chamadas**: Transcrições completas pós-chamada sincronizadas diretamente no PocketBase.
   - **Configurações de IA da Sessão (`sessions.ai_config`)**: Modificação do `handleSetAIConfig` e `handleDeleteAIConfig` para persistir diretamente na coluna `ai_config` do registro de sessão no PocketBase.
   - **Avaliações & Pesquisa NPS (`call_ratings`)**: Persistência de notas, feedbacks e cálculo de métricas de NPS (Promotores, Detratores, Neutros e NPS Score) lidos diretamente do PocketBase.
+- [x] **Sanitização de Segurança e Isolamento de Chaves de API (21/08/2026)**:
+  - Isolamento estrito de todas as chaves de API exclusivamente dentro da coleção criptografada `ai_providers` (AES-256-GCM).
+  - Sanitização automática (`parseAndSanitizeAIConfig`) removendo qualquer campo de chave (`geminiApiKey`, `apiKey`, `token`) antes de persistir em `agents.ai_config` ou `sessions.ai_config`.
+  - Atualização do modelo Gemini Live padrão para `models/gemini-3.1-flash-live-preview` e descriptografia resiliente multi-chave com verificação de integridade.
 
 ---
 

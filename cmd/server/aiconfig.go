@@ -109,7 +109,11 @@ func (s *server) handleSetAIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sess.setAIConfig(cfg)
-	b, _ := json.Marshal(cfg)
+
+	// Sanitiza para armazenamento (chaves de API residem exclusivamente em ai_providers criptografadas)
+	cfgToStore := cfg
+	cfgToStore.GeminiAPIKey = ""
+	b, _ := json.Marshal(cfgToStore)
 
 	wsID := sess.projectID
 	if wsID == "" {
