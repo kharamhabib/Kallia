@@ -3,6 +3,7 @@ export type Contact = {
   sessionId: string;
   phone: string;
   name: string;
+  username?: string;
   email: string;
   company: string;
   notes: string;
@@ -18,6 +19,7 @@ export type Contact = {
 export type UpsertContactPayload = {
   phone: string;
   name?: string;
+  username?: string;
   email?: string;
   company?: string;
   notes?: string;

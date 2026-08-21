@@ -1560,6 +1560,7 @@ func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q strin
 		SessionID   string `json:"session_id"`
 		Phone       string `json:"phone"`
 		Name        string `json:"name"`
+		Username    string `json:"username"`
 		Email       string `json:"email"`
 		Company     string `json:"company"`
 		Notes       string `json:"notes"`
@@ -1585,6 +1586,7 @@ func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q strin
 			SessionID: sessOrWs,
 			Phone:     item.Phone,
 			Name:      item.Name,
+			Username:  item.Username,
 			Email:     item.Email,
 			Company:   item.Company,
 			Notes:     item.Notes,
@@ -1619,6 +1621,9 @@ func (c *PocketBaseClient) UpsertContactPB(ctx context.Context, wsID, sessionID 
 		"avatar_url":   rec.AvatarURL,
 		"lid":          rec.LID,
 		"jid":          rec.JID,
+	}
+	if rec.Username != "" {
+		data["username"] = rec.Username
 	}
 	if strings.Contains(rec.Email, "@") {
 		data["email"] = rec.Email

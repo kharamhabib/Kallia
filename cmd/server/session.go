@@ -940,6 +940,7 @@ func (s *Session) enrichSingleContactAsync(phone string) {
 			SessionID:  s.id,
 			Phone:      info.Phone,
 			Name:       info.Name,
+			Username:   info.Username,
 			Email:      info.Email,
 			Company:    info.Company,
 			Notes:      info.Notes,
@@ -954,6 +955,9 @@ func (s *Session) enrichSingleContactAsync(phone string) {
 			rec.ID = existing.ID
 			if rec.Name == "" {
 				rec.Name = existing.Name
+			}
+			if rec.Username == "" {
+				rec.Username = existing.Username
 			}
 			if rec.AvatarURL == "" {
 				rec.AvatarURL = existing.AvatarURL
@@ -990,6 +994,7 @@ func (s *Session) enrichSingleContactAsync(phone string) {
 type ContactEnrichmentResult struct {
 	Phone     string
 	Name      string
+	Username  string
 	AvatarURL string
 	Company   string
 	Email     string
@@ -1070,7 +1075,7 @@ func (s *Session) enrichContactInfo(ctx context.Context, peerStr string) Contact
 		jidsToTry = append(jidsToTry, lidJID)
 	}
 
-	// 1. Extração do Nome (Store local e GetUserInfo)
+	// 1. Extração do Nome e Username (Store local e GetUserInfo)
 	if cli.Store != nil && cli.Store.Contacts != nil {
 		for _, jid := range jidsToTry {
 			if contact, err := cli.Store.Contacts.GetContact(ctx, jid); err == nil && contact.Found {
@@ -1085,6 +1090,9 @@ func (s *Session) enrichContactInfo(ctx context.Context, peerStr string) Contact
 					break
 				} else if contact.PushName != "" {
 					res.Name = contact.PushName
+					if res.Username == "" && strings.HasPrefix(contact.PushName, "@") {
+						res.Username = strings.TrimPrefix(contact.PushName, "@")
+					}
 					break
 				}
 			}
@@ -1096,6 +1104,9 @@ func (s *Session) enrichContactInfo(ctx context.Context, peerStr string) Contact
 			if user, ok := uinfo[jid]; ok {
 				if res.Notes == "" && user.Status != "" {
 					res.Notes = user.Status
+					if res.Username == "" && strings.HasPrefix(user.Status, "@") {
+						res.Username = strings.TrimPrefix(user.Status, "@")
+					}
 				}
 				if res.Name == "" && user.VerifiedName != nil && user.VerifiedName.Details != nil && user.VerifiedName.Details.GetVerifiedName() != "" {
 					res.Name = user.VerifiedName.Details.GetVerifiedName()

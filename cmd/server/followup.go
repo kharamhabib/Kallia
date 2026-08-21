@@ -30,7 +30,7 @@ func (f *FollowupEngine) ScheduleFollowup(sessionID, callID, peerJID string, cfg
 		return
 	}
 
-	phone := cleanPhoneNumber(peerJID)
+	phone := normalizePhone(peerJID)
 	delay := time.Duration(cfg.DelaySec) * time.Second
 	if delay < 1*time.Second {
 		delay = 30 * time.Second
@@ -78,7 +78,7 @@ func (f *FollowupEngine) ScheduleFollowup(sessionID, callID, peerJID string, cfg
 
 // CancelFollowup cancela o follow-up pendente se o cliente ligar/escrever antes
 func (f *FollowupEngine) CancelFollowup(phone string) {
-	cleanPhone := cleanPhoneNumber(phone)
+	cleanPhone := normalizePhone(phone)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if timer, found := f.pending[cleanPhone]; found && timer != nil {

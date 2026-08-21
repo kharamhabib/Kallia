@@ -153,7 +153,7 @@ func (s *server) handleUpdateAIProvider(w http.ResponseWriter, r *http.Request) 
 	var encryptedKey string
 	if body.ApiKey != "" {
 		// Se contiver a máscara ••••, preserva a chave existente
-		if existing != nil && (body.ApiKey == existing.EncryptedAPIKey || (len(body.ApiKey) > 0 && body.ApiKey[0:1] != "" && containsBullet(body.ApiKey))) {
+		if existing != nil && (body.ApiKey == existing.EncryptedAPIKey || (len(body.ApiKey) > 0 && strings.Contains(body.ApiKey, "•"))) {
 			encryptedKey = existing.EncryptedAPIKey
 		} else {
 			enc, err := encryptSecret(body.ApiKey)
@@ -208,10 +208,6 @@ func (s *server) handleUpdateAIProvider(w http.ResponseWriter, r *http.Request) 
 		"maskedKey":    masked,
 		"defaultModel": row.DefaultModel,
 	})
-}
-
-func containsBullet(s string) bool {
-	return strings.Contains(s, "•")
 }
 
 // resolveAIProviderKey busca e descriptografa a API Key do provedor no banco (PocketBase / SQLite ai_providers) ou nas variáveis de ambiente (.env)
@@ -289,7 +285,7 @@ func resolveAIConfigKeys(ctx context.Context, store *sessionStore, projectID str
 	}
 
 	// 2. Fallback: se GeminiAPIKey estiver vazia ou mascarada (•••••), busca a chave do Gemini ou .env
-	if config.GeminiAPIKey == "" || containsBullet(config.GeminiAPIKey) {
+	if config.GeminiAPIKey == "" || strings.Contains(config.GeminiAPIKey, "•") {
 		config.GeminiAPIKey = resolveAIProviderKey(ctx, store, projectID, "gemini")
 	}
 }

@@ -1533,7 +1533,12 @@ var (
 func loadTrustedProxies() {
 	trustedProxiesOnce.Do(func() {
 		trustedIPs = map[string]bool{}
-		for _, entry := range parseCSVEnv("KALLIA_TRUSTED_PROXIES") {
+		trustedCIDRs = nil
+		entries := parseCSVEnv("KALLIA_TRUSTED_PROXIES")
+		if len(entries) == 0 {
+			entries = parseCSVEnv("WACALLS_TRUSTED_PROXIES")
+		}
+		for _, entry := range entries {
 			if _, cidr, err := net.ParseCIDR(entry); err == nil {
 				trustedCIDRs = append(trustedCIDRs, cidr)
 				continue

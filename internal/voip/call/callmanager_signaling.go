@@ -1,6 +1,7 @@
 package call
 
 import (
+	"bytes"
 	"context"
 	"kallia/internal/voip/core"
 	"kallia/internal/voip/media"
@@ -153,7 +154,7 @@ func (m *CallManager) HandleCallAccept(ctx context.Context, node *waBinary.Node,
 	m.acceptedByJid = peerJid.String()
 
 	var reinitialized bool
-	if peerKey != nil && call.EncryptionKey != nil && !equalBytes(call.EncryptionKey, peerKey) {
+	if peerKey != nil && call.EncryptionKey != nil && !bytes.Equal(call.EncryptionKey, peerKey) {
 		m.reinitSrtpLocked(peerKey, peerJid)
 		reinitialized = true
 	}

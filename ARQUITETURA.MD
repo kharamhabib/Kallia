@@ -240,7 +240,7 @@ O banco PocketBase é estruturado nas seguintes coleções canônicas:
 | **`sessions`** | Base | Conexões de WhatsApp ativas | `id`, `sid`, `name`, `jid`, `webhook`, `chatwoot`, `ai_config`, `workspace_id` (FK), `api_key` |
 | **`agents`** | Base | Personas e especialistas de IA | `id`, `workspace_id` (FK), `name`, `description`, `ai_config` (JSON), `inbound`, `outbound` |
 | **`ai_providers`** | Base | Provedores de IA e chaves criptografadas | `id`, `workspace_id` (FK), `provider` (`gemini`, `grok`, `openai`), `encrypted_api_key`, `enabled`, `default_model`, `options_json` |
-| **`contacts`** | Base | CRM unificado de contatos | `id`, `workspace_id` (FK), `phone`, `name`, `email`, `company`, `notes`, `tags` (JSON), `avatar_url`, `lid`, `jid` |
+| **`contacts`** | Base | CRM unificado de contatos | `id`, `workspace_id` (FK), `phone`, `username`, `name`, `email`, `company`, `notes`, `tags` (JSON), `avatar_url`, `lid`, `jid` |
 | **`call_history`** | Base | Histórico de chamadas VoIP e gravações | `id`, `workspace_id` (FK), `session_id`, `call_id`, `peer`, `direction`, `started_at`, `ended_at`, `summary`, `recording_url`, `transcript`, `agent_id` |
 | **`call_ratings`** | Base | Pesquisas de satisfação pós-atendimento (NPS) | `id`, `workspace_id` (FK), `session_id`, `call_id`, `phone`, `score`, `comment`, `agent_id` |
 
@@ -262,7 +262,7 @@ O banco PocketBase é estruturado nas seguintes coleções canônicas:
 ## 7. Agentes de IA e Transferência de Chamadas (`TransferTo`)
 
 ### 7.1 Multi-Provedores de IA
-- **Google Gemini Live**: Vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), suporte a `languageCode` e chamada de funções (Tools).
+- **Google Gemini Live**: Modelo padrão `models/gemini-3.1-flash-live-preview`, vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), suporte a `languageCode` e chamada de funções (Tools).
 - **xAI Grok Realtime**: 26 vozes nativas, reasoning effort (`high`/`none`), ferramentas nativas `web_search` e `x_search`, transcrição `grok-transcribe` e barge-in instantâneo via `input_audio_buffer.speech_started`.
 - **Criptografia AES-256-GCM**: Todas as chaves de API dos provedores de IA são armazenadas criptografadas na coleção `ai_providers` com a chave `KALLIA_AI_ENCRYPTION_KEY` e descriptografadas somente em memória durante o atendimento.
 
@@ -275,7 +275,58 @@ Durante uma chamada em andamento atendida pela IA:
 
 ---
 
-## 8. Mídia VoIP, Codec MLow e Resiliência
+## 8. Tratamento Canônico de Identificadores do WhatsApp: Phone Number (PN) vs JID vs LID vs Username (@handle)
+
+Para evitar inconsistências no CRM, discador, webhooks e relatórios, o sistema estabelece uma diferenciação estrita e um **mecanismo canônico único** para lidar com identificadores no ecossistema do WhatsApp:
+
+### 8.1 O Quarteto de Identificadores:
+
+| Identificador | Formato / Exemplo | Comprimento | Onde é Usado | Onde NUNCA deve ser usado |
+| :--- | :--- | :--- | :--- | :--- |
+| **Phone Number (PN)** | `5527995307734`, `5511999998888` | 10 a 13 dígitos | **CRM (`contacts.phone`)**, discador Webphone, histórico (`call_history.peer`), webhooks externos (Chatwoot, N8N, Typebot), busca e relatórios. | NUNCA salvar LIDs (`26...`), usernames ou strings com `@...` no campo `phone`. |
+| **JID (WhatsApp ID)** | `5527995307734@s.whatsapp.net`, `261916165423237@lid` | Variável (`user@server`) | **Protocolo e rede**: envio de mensagens whatsmeow, sinalização VoIP `<call>`, roteamento de mídia, presença e eventos de socket. | NUNCA exibir como telefone direto na UI sem formatação. |
+| **LID (Linked Device ID)** | `261916165423237`, `261916165423237@lid` | 15 dígitos (inicia c/ `26` ou `27`) | **Mapeamento de privacidade**: campo `contacts.lid`, identificação de companion devices e chamadas VoIP com ID oculto. | **NUNCA salvar como `phone`**. Deve ser resolvido para o PN real. |
+| **Username (`@handle`)** | `@kalliacall`, `joaosilva` | 3 a 30 caracteres | **CRM (`contacts.username`)**, identificador amigável na interface, busca de contatos e futuras rotas de discagem direta por handle. | NUNCA substituir o `phone` ou o `jid` de rede pelo username. |
+
+### 8.2 Interceptação do `@username` da Meta:
+O WhatsApp/Meta está gradualmente liberando usernames (`@username`) para contas pessoais e comerciais. O Kallia intercepta e armazena usernames de forma nativa:
+1. **Nós Binários XML & Mensagens**: Captura de nós e atributos de mensagens interativas/vCard contendo `username`.
+2. **PushName & Status**: Quando o contato define um handle com `@` em seu nome de exibição ou biografia/status, o sistema extrai e vincula automaticamente a `contacts.username`.
+3. **Mapeamento no CRM**: Salvo nas colunas `username` do SQLite e do PocketBase, enriquecendo o cadastro do cliente sem alterar o roteamento numérico.
+
+### 8.3 Mecanismo Canônico Único: `s.realPhone(jid)`
+Todo o código do servidor Go deve utilizar exclusivamente o método unificado `s.realPhone(jid types.JID) string` (localizado em [`cmd/server/chatwoot.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/chatwoot.go)), evitando reescrever lógicas redundantes de resolução de LID.
+
+```
+                  ┌─────────────────────────────────────┐
+                  │          types.JID Recebido         │
+                  └──────────────────┬──────────────────┘
+                                     │
+                    É Server == DefaultUserServer E len <= 13?
+                                    / \
+                             SIM   /   \  NÃO (É LID ou Privacy)
+                                  /     \
+                                 ▼       ▼
+                       Retorna jid.User   Consulta Store.LIDs local
+                                         (s.getClient().Store.LIDs.GetPNForLID)
+                                                 / \
+                                          ACHOU /   \ NÃO ACHOU
+                                               /     \
+                                              ▼       ▼
+                                       Retorna PN    Consulta Servidor WhatsApp
+                                                     (cli.GetUserInfo com timeout 3s)
+                                                             │
+                                                             ├─► Salva no Store.LIDs (PutLIDAndPN)
+                                                             └─► Retorna PN real resolvido
+```
+
+### 8.3 Boas Práticas ao Salvar Contatos no CRM:
+1. **Chamadas Recebidas (`events.CallOffer`)**: Sempre verificar `evt.CallCreatorAlt` (onde o WhatsApp envia o PN real quando `evt.From` for um LID) e fazer fallback para `s.realPhone(evt.From)`.
+2. **Upsert no PocketBase (`UpsertContactPB`)**: O filtro de busca busca por `(workspace_id = ws OR session_id = sid) AND (phone = pn OR lid = lid)`. Se um contato foi cadastrado inicialmente com o LID e posteriormente o telefone real foi descoberto, a linha é atualizada automaticamente substituindo o `phone` pelo número real e preenchendo o campo `lid`.
+
+---
+
+## 9. Mídia VoIP, Codec MLow e Resiliência
 
 - **Codec MLow (Meta Low-bitrate)**: Exigido nativamente pelo WhatsApp para chamadas VoIP. Compilado via CGO com `-tags mlow` usando `libopus_mlow.so` (Linux) ou `opus_mlow.dll` (Windows).
 - **Parser de Sinalização Resiliente (`ExtractNodeInfo`)**: Varredura prioritária de sub-nós XML (`offer`, `accept`, `terminate`, `transport`), garantindo estabilidade mesmo em variações de estrofes de latência enviadas pelo WhatsApp.
@@ -284,10 +335,11 @@ Durante uma chamada em andamento atendida pela IA:
 
 ---
 
-## 9. Segurança e Hardening
+## 10. Segurança e Hardening
 
 - **Autenticação JWT**: Tokens assinados com HMAC-SHA256 (`KALLIA_JWT_SECRET`) vinculados ao `userId` e `role`.
-- **Criptografia AES-256-GCM**: Chaves de provedores de IA protegidas em repouso no PocketBase.
+- **Criptografia AES-256-GCM**: Chaves de provedores de IA protegidas em repouso no PocketBase na coleção `ai_providers`.
+- **Sanitização de Chaves**: Remoção estrita de campos de chaves de API (`geminiApiKey`, `apiKey`, `token`) dos objetos de configuração em trânsito e em repouso nas coleções `agents` e `sessions`.
 - **Chaves de Conexão Individuais (`kc_*`)**: Chave exclusiva por sessão para consumo de APIs externas via header `X-Connection-API-Key`.
 - **Tickets de Uso Único para SSE/WebSockets**: Tokens de 30s de uso único para conexões de streaming sem expor o JWT na URL.
 - **Proteção Anti-SSRF (`safehttp.go`)**: Validação de URLs de webhooks e mídia contra endereços IP privados/reservados.
@@ -295,6 +347,6 @@ Durante uma chamada em andamento atendida pela IA:
 
 ---
 
-## 10. Manutenção e Atualizações
+## 11. Manutenção e Atualizações
 
 Sempre que uma alteração estrutural, novo modelo de dados ou adição de protocolo for realizada no sistema, este arquivo **`ARQUITETURA.MD`** deve ser atualizado imediatamente.

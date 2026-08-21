@@ -101,26 +101,7 @@ func relayEndpointCount(rd *core.RelayData) int {
 	return len(rd.Endpoints)
 }
 
-func containsSsrc(s []uint32, v uint32) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
 
-func equalBytes(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
 
 func matchDevices(sock core.VoipSocket, j1, j2 types.JID) bool {
 	ctx := context.Background()

@@ -81,6 +81,7 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
   const [formData, setFormData] = useState<UpsertContactPayload>({
     phone: "",
     name: "",
+    username: "",
     email: "",
     company: "",
     notes: "",
@@ -101,6 +102,7 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
     setFormData({
       phone: "",
       name: "",
+      username: "",
       email: "",
       company: "",
       notes: "",
@@ -115,6 +117,7 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
     setFormData({
       phone: contact.phone,
       name: contact.name,
+      username: contact.username || "",
       email: contact.email,
       company: contact.company,
       notes: contact.notes,
@@ -332,6 +335,11 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                       <div className="min-w-0">
                         <h4 className="font-bold text-foreground truncate text-base group-hover:text-primary transition-colors flex items-center gap-1.5">
                           <span className="truncate">{displayName}</span>
+                          {c.username && (
+                            <span className="text-[11px] font-mono text-primary/90 bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
+                              @{c.username.replace(/^@/, '')}
+                            </span>
+                          )}
                         </h4>
                         <p className="text-xs font-mono text-muted-foreground truncate">
                           {formatPhoneNumber(c.phone)}
@@ -484,7 +492,16 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                               {initials}
                             </div>
                           )}
-                          <span className="font-semibold text-foreground">{displayName}</span>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-foreground flex items-center gap-1.5">
+                              {displayName}
+                              {c.username && (
+                                <span className="text-[10px] font-mono text-primary/90 bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
+                                  @{c.username.replace(/^@/, '')}
+                                </span>
+                              )}
+                            </span>
+                          </div>
                         </div>
                       </td>
                       <td className="py-3 px-4 font-mono text-xs text-muted-foreground">
@@ -568,6 +585,16 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
+                <Label htmlFor="username">@Username (Meta/WhatsApp)</Label>
+                <Input
+                  id="username"
+                  placeholder="@usuario"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                />
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="company">Empresa / Cargo</Label>
                 <Input
                   id="company"
@@ -576,17 +603,17 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                   onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                 />
               </div>
+            </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="email">E-mail</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="contato@empresa.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="email">E-mail</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="contato@empresa.com"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
             </div>
 
             <div className="space-y-1.5">
@@ -651,6 +678,11 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                   <div className="min-w-0 flex-1">
                     <SheetTitle className="text-xl font-bold text-foreground truncate flex items-center gap-2">
                       <span className="truncate">{selectedContact.name || "Contato WhatsApp"}</span>
+                      {selectedContact.username && (
+                        <span className="text-xs font-mono text-primary bg-primary/10 px-2 py-0.5 rounded-full shrink-0">
+                          @{selectedContact.username.replace(/^@/, '')}
+                        </span>
+                      )}
                     </SheetTitle>
                     <SheetDescription className="font-mono text-sm text-primary font-semibold">
                       {formatPhoneNumber(selectedContact.phone)}

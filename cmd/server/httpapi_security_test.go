@@ -148,9 +148,11 @@ func TestGetClientIPTrustedProxies(t *testing.T) {
 	}
 
 	// com proxy confiável configurado
-	t.Setenv("WACALLS_TRUSTED_PROXIES", "203.0.113.50, 10.0.0.0/8")
+	t.Setenv("KALLIA_TRUSTED_PROXIES", "203.0.113.50, 10.0.0.0/8")
 	// força recarga (a var sync.Once já foi usada acima — reinicializa manualmente)
 	trustedProxiesOnce = sync.Once{}
+	trustedIPs = nil
+	trustedCIDRs = nil
 	if ip := getClientIP(req); ip != "198.51.100.7" {
 		t.Fatalf("XFF deveria ser honrado via proxy confiável: %s", ip)
 	}

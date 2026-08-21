@@ -191,6 +191,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		avatar_url   TEXT NOT NULL DEFAULT '',
 		lid          TEXT NOT NULL DEFAULT '',
 		jid          TEXT NOT NULL DEFAULT '',
+		username     TEXT NOT NULL DEFAULT '',
 		tags         TEXT NOT NULL DEFAULT '',
 		enriched_at  DATETIME,
 		created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -200,6 +201,7 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 		return nil, fmt.Errorf("criar tabela contacts: %w", err)
 	}
 	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN workspace_id TEXT`)
+	_, _ = db.ExecContext(ctx, `ALTER TABLE contacts ADD COLUMN username TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_session_phone ON contacts(session_id, phone)`)
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_lid ON contacts(session_id, lid)`)
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_workspace ON contacts(workspace_id)`)
@@ -950,6 +952,7 @@ type ContactRecord struct {
 	SessionID  string     `json:"sessionId"`
 	Phone      string     `json:"phone"`
 	Name       string     `json:"name"`
+	Username   string     `json:"username,omitempty"`
 	Email      string     `json:"email"`
 	Company    string     `json:"company"`
 	Notes      string     `json:"notes"`
@@ -975,10 +978,10 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 	var existing ContactRecord
 	var enrichedAt sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
+		SELECT id, session_id, phone, name, username, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
 		FROM contacts WHERE session_id = $1 AND (phone = $2 OR (lid <> '' AND lid = $3))
 	`, c.SessionID, c.Phone, c.LID).Scan(
-		&existing.ID, &existing.SessionID, &existing.Phone, &existing.Name, &existing.Email,
+		&existing.ID, &existing.SessionID, &existing.Phone, &existing.Name, &existing.Username, &existing.Email,
 		&existing.Company, &existing.Notes, &existing.AvatarURL, &existing.LID, &existing.JID,
 		&existing.Tags, &enrichedAt, &existing.CreatedAt, &existing.UpdatedAt,
 	)
@@ -996,10 +999,10 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 	if err == sql.ErrNoRows {
 		var newID int64
 		err = s.db.QueryRowContext(ctx, `
-			INSERT INTO contacts (session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			INSERT INTO contacts (session_id, phone, name, username, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 			RETURNING id
-		`, c.SessionID, c.Phone, c.Name, c.Email, c.Company, c.Notes, c.AvatarURL, c.LID, c.JID, c.Tags, c.EnrichedAt, now, now).Scan(&newID)
+		`, c.SessionID, c.Phone, c.Name, c.Username, c.Email, c.Company, c.Notes, c.AvatarURL, c.LID, c.JID, c.Tags, c.EnrichedAt, now, now).Scan(&newID)
 		if err != nil {
 			return nil, err
 		}
@@ -1020,6 +1023,10 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 	if name == "" || name == existing.Phone || (c.Name != "" && existing.Name == "") {
 		name = c.Name
 	}
+	username := existing.Username
+	if c.Username != "" {
+		username = c.Username
+	}
 	avatar := existing.AvatarURL
 	if c.AvatarURL != "" {
 		avatar = c.AvatarURL
@@ -1038,15 +1045,16 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE contacts SET phone = $3, name = $4, avatar_url = $5, lid = $6, jid = $7, enriched_at = $8, updated_at = $9
+		UPDATE contacts SET phone = $3, name = $4, username = $5, avatar_url = $6, lid = $7, jid = $8, enriched_at = $9, updated_at = $10
 		WHERE id = $1 AND session_id = $2
-	`, existing.ID, c.SessionID, phone, name, avatar, lid, jid, enrichedToSave, now)
+	`, existing.ID, c.SessionID, phone, name, username, avatar, lid, jid, enrichedToSave, now)
 	if err != nil {
 		return nil, err
 	}
 
 	existing.Phone = phone
 	existing.Name = name
+	existing.Username = username
 	existing.AvatarURL = avatar
 	existing.LID = lid
 	existing.JID = jid
@@ -1061,9 +1069,9 @@ func (s *sessionStore) updateContactManual(ctx context.Context, c ContactRecord)
 	c.Phone = normalizePhone(c.Phone)
 
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE contacts SET phone = $3, name = $4, email = $5, company = $6, notes = $7, avatar_url = $8, tags = $9, updated_at = $10
+		UPDATE contacts SET phone = $3, name = $4, username = $5, email = $6, company = $7, notes = $8, avatar_url = $9, tags = $10, updated_at = $11
 		WHERE id = $1 AND session_id = $2
-	`, c.ID, c.SessionID, c.Phone, c.Name, c.Email, c.Company, c.Notes, c.AvatarURL, c.Tags, now)
+	`, c.ID, c.SessionID, c.Phone, c.Name, c.Username, c.Email, c.Company, c.Notes, c.AvatarURL, c.Tags, now)
 	if err != nil {
 		return nil, err
 	}
@@ -1080,14 +1088,14 @@ func (s *sessionStore) updateContactManual(ctx context.Context, c ContactRecord)
 
 func (s *sessionStore) listContacts(ctx context.Context, sessionID string, search string) ([]ContactRecord, error) {
 	query := `
-		SELECT id, session_id, phone, name, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
+		SELECT id, session_id, phone, name, username, email, company, notes, avatar_url, lid, jid, tags, enriched_at, created_at, updated_at
 		FROM contacts WHERE session_id = $1
 	`
 	var args []any
 	args = append(args, sessionID)
 
 	if search != "" {
-		query += ` AND (phone ILIKE $2 OR name ILIKE $2 OR company ILIKE $2 OR email ILIKE $2 OR tags ILIKE $2)`
+		query += ` AND (phone ILIKE $2 OR name ILIKE $2 OR username ILIKE $2 OR company ILIKE $2 OR email ILIKE $2 OR tags ILIKE $2)`
 		args = append(args, "%"+search+"%")
 	}
 	query += ` ORDER BY updated_at DESC LIMIT 300`
@@ -1102,7 +1110,7 @@ func (s *sessionStore) listContacts(ctx context.Context, sessionID string, searc
 		var c ContactRecord
 		var enrichedAt sql.NullTime
 		if err := rows.Scan(
-			&c.ID, &c.SessionID, &c.Phone, &c.Name, &c.Email,
+			&c.ID, &c.SessionID, &c.Phone, &c.Name, &c.Username, &c.Email,
 			&c.Company, &c.Notes, &c.AvatarURL, &c.LID, &c.JID,
 			&c.Tags, &enrichedAt, &c.CreatedAt, &c.UpdatedAt,
 		); err != nil {

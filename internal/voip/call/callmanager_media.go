@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"slices"
 	"time"
 	"kallia/internal/voip/core"
 	"kallia/internal/voip/media"
@@ -166,7 +167,7 @@ func (m *CallManager) onRelayData(data []byte) {
 		return
 	}
 	if !m.actualPeerSet {
-		if containsSsrc(m.allowedPeerSsrcs, ssrc) {
+		if slices.Contains(m.allowedPeerSsrcs, ssrc) {
 			m.actualPeerSet = true
 			m.peerSsrcs = []uint32{ssrc}
 			m.relay.SetSubscriptionSsrc(ssrc)
@@ -178,7 +179,7 @@ func (m *CallManager) onRelayData(data []byte) {
 			}
 		}
 	}
-	if !containsSsrc(m.peerSsrcs, ssrc) {
+	if !slices.Contains(m.peerSsrcs, ssrc) {
 		m.mu.Unlock()
 		return
 	}

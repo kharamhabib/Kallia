@@ -155,7 +155,7 @@ func (s *server) handleGetAIConfig(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		key = resolveAIProviderKey(r.Context(), s.sessions.store, sess.projectID, "gemini")
 	}
-	if key == "" && cfg.GeminiAPIKey != "" && !containsBullet(cfg.GeminiAPIKey) {
+	if key == "" && cfg.GeminiAPIKey != "" && !strings.Contains(cfg.GeminiAPIKey, "•") {
 		key = cfg.GeminiAPIKey
 	}
 

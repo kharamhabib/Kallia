@@ -49,6 +49,11 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - Implementação de persistência reativa no `upsertContact` e `updateContactManual` disparando `UpsertContactPB` diretamente para a coleção `contacts` do PocketBase.
   - Correção de mapeamento de chaves (`workspace_id` e `session_id`), busca resiliente e migração direta dos contatos locais existentes.
   - Resolução automática e enriquecimento de LIDs do WhatsApp (`@lid`) para o número de telefone real do contato (`phone`), vinculando simultaneamente `phone`, `lid` e `jid` no PocketBase.
+  - Suporte e interceptação do identificador de **`@username`** da Meta/WhatsApp no modelo de dados do CRM (`contacts.username`), extraindo handles de nós binários, pushnames e status.
+- [x] **Otimizações e Simplificação de Código (Ponytail Audit) (21/08/2026)**:
+  - Substituição de loops manuais por funções nativas da standard library Go: `bytes.Equal` e `slices.Contains`.
+  - Eliminação de goroutines ociosas em `ScheduleNPS` migrando para `time.AfterFunc`.
+  - Unificação de helpers de normalização de telefone (`normalizePhone`) e remoção de wrappers redundantes.
 
 ---
 

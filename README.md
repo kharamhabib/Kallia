@@ -38,8 +38,12 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Instâncias em Modo Standby no Dev**: Instâncias ativas na VPS aparecem no ambiente de desenvolvimento no estado configurável (permitindo edição de Agentes, Prompts, Tools e CRM) sem colidir ou disputar o socket físico do WhatsApp.
 - **Visão Global SuperAdmin**: Usuários `appadmin` possuem visão total de todas as instâncias e exclusão em cascata sincronizada em ambos os bancos (SQLite + PocketBase).
 
-### 👥 Módulo de CRM de Contatos Integrado por Workspace
-- **Base de Dados Centralizada (`contacts`)**: Armazenamento completo de clientes por Workspace contendo Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
+### 👥 Módulo de CRM de Contatos Integrado por Workspace & Padrão de Identificadores (PN vs JID vs LID)
+- **Base de Dados Centralizada (`contacts`)**: Armazenamento completo de clientes por Workspace contendo Nome, Telefone real (`phone`), E-mail, Empresa, Notas, Tags, LID (`lid`), JID (`jid`) e Foto de perfil em alta definição.
+- **Tratamento Canônico de Identificadores WhatsApp**:
+  - **Phone Number (`phone`)**: Exclusivamente números E.164 limpos (ex: `5527995307734`). Nunca armazena LIDs ou strings com `@...`.
+  - **LID (`lid`)**: Identificador de privacidade/dispositivo do WhatsApp de 15 dígitos (ex: `261916165423237`). Resolvido automaticamente para o número real via `s.realPhone(jid)` sem inchaço de código.
+  - **JID (`jid`)**: Identificador de rede para roteamento (ex: `5527995307734@s.whatsapp.net` ou `261916165423237@lid`).
 - **Discagem Direta p/ o Webphone**: Ao clicar no ícone de telefone em qualquer contato da lista, o sistema navega reativamente para a tela do discador e preenche o número automaticamente.
 - **Resolução Reativa de Identidade (`useContactDisplay`)**: Exibição automática do nome cadastrado no CRM e avatar do cliente nas telas de Dashboard, Histórico de Chamadas, Notificações e Webphone.
 
@@ -53,7 +57,7 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
   - `appadmin`: Superadministrador com visão global de todos os workspaces, usuários e conexões em todos os bancos.
   - `creator` / `owner`: Proprietário do Workspace. Gerencia conexões, membros, agentes de IA e planos.
   - `normal` / `member`: Operador com perfil de atendimento.
-- **Onboarding Automático**: Usuários cadastrados recebem automaticamente seu Workspace inicial provisionado no PocketBase.
+- **Onboarding Automático**: Usuários cadastrados recebem automaticamente seu Workspace inicial provisionado no PocketBase (limite de 1 workspace para contas normais).
 
 ### ⚡ Gerenciamento de Filas & Concorrência (Redis 7 + Fallback In-Memory)
 - **Outbound Call Queue**: Fila de discagem por projeto/sessão com controle estrito de capacidade simultânea e rate limiter anti-spam para proteger números WhatsApp de bloqueios.
@@ -62,8 +66,9 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 
 ### 🤖 Agentes Especialistas, IA Multi-Provedor & Transferência (`TransferTo`)
 - **Provedores Suportados**:
-  - **Google Gemini Live**: Vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo.
+  - **Google Gemini Live**: Modelo padrão `models/gemini-3.1-flash-live-preview`, vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo.
   - **xAI Grok Realtime**: 26 vozes nativas (Eve ⭐, Sal ⭐), Reasoning Effort (`high`/`none`), ferramentas nativas (`web_search`, `x_search`), transcrição `grok-transcribe`.
+- **Isolamento de Segurança de Chaves**: Chaves de API armazenadas exclusivamente na coleção criptografada `ai_providers` com AES-256-GCM, com sanitização automática em `agents` e `sessions`.
 - **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa.
 
 ---

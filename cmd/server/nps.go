@@ -44,7 +44,7 @@ func (n *NPSEngine) ScheduleNPS(sessionID, callID, peerJID string, callDurationS
 		return
 	}
 
-	phone := cleanPhoneNumber(peerJID)
+	phone := normalizePhone(peerJID)
 	delay := time.Duration(cfg.DelaySec) * time.Second
 	if delay < 1*time.Second {
 		delay = 5 * time.Second
@@ -52,9 +52,7 @@ func (n *NPSEngine) ScheduleNPS(sessionID, callID, peerJID string, callDurationS
 
 	n.log.Info("agendando pesquisa NPS", "session", sessionID, "callId", callID, "phone", phone, "delay", delay)
 
-	go func() {
-		time.Sleep(delay)
-
+	time.AfterFunc(delay, func() {
 		sess := n.sessionGetter(sessionID)
 		if sess == nil || !sess.IsPaired() {
 			return
@@ -85,11 +83,11 @@ func (n *NPSEngine) ScheduleNPS(sessionID, callID, peerJID string, callDurationS
 			ExpiresAt: time.Now().Add(24 * time.Hour),
 		}
 		n.mu.Unlock()
-	}()
+	})
 }
 
 func (n *NPSEngine) HandleIncomingMessage(sessionID, senderJID, text string) bool {
-	phone := cleanPhoneNumber(senderJID)
+	phone := normalizePhone(senderJID)
 
 	n.mu.Lock()
 	p, exists := n.pending[phone]
@@ -139,7 +137,7 @@ func (n *NPSEngine) HandleIncomingMessage(sessionID, senderJID, text string) boo
 		// Se nota detratora (<= 6), notifica o supervisor no WhatsApp se configurado
 		cfg := sess.getAIConfig()
 		if score <= 6 && strings.TrimSpace(cfg.NPS.SupervisorPhone) != "" {
-			supPhone := cleanPhoneNumber(cfg.NPS.SupervisorPhone)
+			supPhone := normalizePhone(cfg.NPS.SupervisorPhone)
 			supJID, err := waTypes.ParseJID(supPhone + "@s.whatsapp.net")
 			if err == nil {
 				alertMsg := fmt.Sprintf("⚠️ *Alerta NPS Detrator*\nO cliente +%s atribuiu nota %d/10 no atendimento (Chamada ID: %s).", phone, score, p.CallID)
@@ -149,17 +147,4 @@ func (n *NPSEngine) HandleIncomingMessage(sessionID, senderJID, text string) boo
 	}
 
 	return true
-}
-
-func cleanPhoneNumber(jidOrPhone string) string {
-	parts := strings.Split(jidOrPhone, "@")
-	num := parts[0]
-	numParts := strings.Split(num, ":")
-	cleaned := strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
-			return r
-		}
-		return -1
-	}, numParts[0])
-	return cleaned
 }
