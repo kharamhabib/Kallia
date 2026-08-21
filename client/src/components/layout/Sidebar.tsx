@@ -14,7 +14,6 @@ import {
   CreditCard,
   Settings,
   Smartphone,
-  Sparkles,
   Code2,
   LogOut,
 } from "lucide-react";
@@ -132,15 +131,8 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
         </nav>
       </div>
 
-      {/* Retell Sidebar Footer: User profile & Plan status */}
-      <div className="pt-3 border-t border-border/70 space-y-2 shrink-0">
-        <div className="flex items-center justify-between px-1">
-          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-            <Sparkles className="h-3 w-3" /> Plano Expert
-          </span>
-          <span className="text-[10px] text-muted-foreground font-mono">v1.2.6</span>
-        </div>
-
+      {/* Sidebar Footer: User profile & controls */}
+      <div className="pt-2.5 border-t border-border/70 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2 rounded-xl bg-card/60 border p-2 text-xs">
           <div className="flex items-center gap-2 min-w-0">
             <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs shrink-0">

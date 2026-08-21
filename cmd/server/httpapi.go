@@ -416,10 +416,7 @@ func (s *server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
-	projectID, _ := r.Context().Value(ctxKeyProjectID).(string)
-	role, _ := r.Context().Value(ctxKeyUserRole).(string)
-
+func (s *server) getAllSessionsMap(ctx context.Context) map[string]SessionInfo {
 	// 1. Obter todas as sessões registradas em memória (com live state do whatsmeow)
 	memInfos := s.sessions.infos()
 	sessionMap := make(map[string]SessionInfo)
@@ -428,9 +425,9 @@ func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Obter todas as sessões do SQLite local
-	if localRows, err := s.sessions.store.listAll(r.Context()); err == nil {
+	if localRows, err := s.sessions.store.listAll(ctx); err == nil {
 		for _, row := range localRows {
-			if _, exists := sessionMap[row.ID]; !exists {
+			if existing, exists := sessionMap[row.ID]; !exists {
 				sessionMap[row.ID] = SessionInfo{
 					ID:        row.ID,
 					Name:      row.Name,
@@ -439,12 +436,17 @@ func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 					ProjectID: row.ProjectID,
 					APIKey:    row.APIKey,
 				}
+			} else {
+				if existing.ProjectID == "" || existing.ProjectID == "default" {
+					existing.ProjectID = row.ProjectID
+					sessionMap[row.ID] = existing
+				}
 			}
 		}
 	}
 
 	// 3. Obter todas as sessões do PocketBase
-	if pbSessions, err := pbClient.ListSessionsPB(r.Context()); err == nil {
+	if pbSessions, err := pbClient.ListSessionsPB(ctx); err == nil {
 		for _, pb := range pbSessions {
 			existing, exists := sessionMap[pb.ID]
 			if !exists {
@@ -468,10 +470,32 @@ func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Filtrar por perfil (SuperAdmin / appadmin vê absolutamente TODAS as conexões de todos os bancos)
+	return sessionMap
+}
+
+func (s *server) handleSessionList(w http.ResponseWriter, r *http.Request) {
+	projectID, _ := r.Context().Value(ctxKeyProjectID).(string)
+	role, _ := r.Context().Value(ctxKeyUserRole).(string)
+	userID, _ := r.Context().Value(ctxKeyUserID).(string)
+
+	sessionMap := s.getAllSessionsMap(r.Context())
+
+	// Buscar workspaces que o usuário tem acesso
+	allowedWorkspaces := map[string]bool{}
+	if projectID != "" {
+		allowedWorkspaces[projectID] = true
+	}
+	if userID != "" && role != "appadmin" {
+		if userWorkspaces, err := pbClient.ListWorkspacesForUserPB(r.Context(), userID); err == nil {
+			for _, ws := range userWorkspaces {
+				allowedWorkspaces[ws.ID] = true
+			}
+		}
+	}
+
 	filtered := []SessionInfo{}
 	for _, info := range sessionMap {
-		if role == "appadmin" || info.ProjectID == projectID {
+		if role == "appadmin" || allowedWorkspaces[info.ProjectID] || (len(allowedWorkspaces) == 0 && (info.ProjectID == "" || info.ProjectID == "default")) {
 			if role == "appadmin" {
 				var ownerEmail, ownerName string
 				_ = s.sessions.store.db.QueryRowContext(r.Context(),
@@ -1894,10 +1918,10 @@ func (s *server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleListWorkspaceConnections(w http.ResponseWriter, r *http.Request) {
 	wid := r.PathValue("wid")
-	all := s.sessions.infos()
+	allMap := s.getAllSessionsMap(r.Context())
 	var filtered []SessionInfo
-	for _, item := range all {
-		if item.ProjectID == wid || (wid == "default" && item.ProjectID == "") {
+	for _, item := range allMap {
+		if item.ProjectID == wid || (wid == "default" && (item.ProjectID == "" || item.ProjectID == "default")) {
 			filtered = append(filtered, item)
 		}
 	}
@@ -1912,10 +1936,10 @@ func (s *server) handleCreateWorkspaceConnection(w http.ResponseWriter, r *http.
 		maxConn = ws.MaxConnections
 	}
 
-	all := s.sessions.infos()
+	allMap := s.getAllSessionsMap(r.Context())
 	currentConnCount := 0
-	for _, item := range all {
-		if item.ProjectID == wid || (wid == "default" && item.ProjectID == "") {
+	for _, item := range allMap {
+		if item.ProjectID == wid || (wid == "default" && (item.ProjectID == "" || item.ProjectID == "default")) {
 			currentConnCount++
 		}
 	}

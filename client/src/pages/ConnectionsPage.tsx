@@ -160,6 +160,10 @@ export const ConnectionsPage = () => {
     }
   };
 
+  useEffect(() => {
+    refreshSessionsList();
+  }, [currentWsId]);
+
   const handleRotateKeySubmit = async () => {
     if (!rotateSession) return;
     setRotatingKey(true);

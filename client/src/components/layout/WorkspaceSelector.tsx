@@ -68,17 +68,20 @@ export const WorkspaceSelector: React.FC = () => {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between gap-2.5 rounded-xl border bg-card/80 p-2 text-xs font-semibold shadow-xs hover:border-primary/40 transition-all cursor-pointer group"
+        className={cn(
+          "flex w-full items-center justify-between gap-2 rounded-xl border bg-card/80 p-2 text-xs font-semibold shadow-xs transition-all cursor-pointer group",
+          isOpen ? "border-primary ring-1 ring-primary/20 bg-card" : "hover:border-primary/40 hover:bg-card",
+        )}
       >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary/90 to-primary text-primary-foreground font-bold text-xs shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary/90 to-primary text-primary-foreground font-bold text-xs shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
             {currentWorkspace ? (
               currentWorkspace.name.slice(0, 1).toUpperCase()
             ) : (
-              <Building2 className="h-4 w-4" />
+              <Building2 className="h-3.5 w-3.5" />
             )}
           </div>
-          <div className="min-w-0 text-left">
+          <div className="min-w-0 flex-1 text-left">
             <p className="truncate text-xs font-bold text-foreground leading-tight">
               {currentWorkspace ? currentWorkspace.name : "Selecionar Workspace"}
             </p>
@@ -92,7 +95,7 @@ export const WorkspaceSelector: React.FC = () => {
                 {planBadge.label}
               </span>
               {currentWorkspace?.connections_count !== undefined && (
-                <span className="text-[10px] text-muted-foreground font-mono">
+                <span className="text-[10px] text-muted-foreground font-mono truncate">
                   • {currentWorkspace.connections_count}/{currentWorkspace.max_connections || 1} Whats
                 </span>
               )}
@@ -102,27 +105,27 @@ export const WorkspaceSelector: React.FC = () => {
         <ChevronDown
           className={cn(
             "h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform duration-200",
-            isOpen && "rotate-180",
+            isOpen && "rotate-180 text-primary",
           )}
         />
       </button>
 
-      {/* Menu Dropdown */}
+      {/* Menu Dropdown adaptado perfeitamente à largura do menu */}
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute top-13 left-0 right-0 z-50 rounded-xl border bg-popover p-1.5 shadow-xl animate-in fade-in-80 space-y-1 w-[260px]">
+          <div className="absolute top-full left-0 right-0 mt-1.5 z-50 rounded-xl border border-border/80 bg-popover/95 backdrop-blur-md p-1.5 shadow-xl animate-in fade-in-50 zoom-in-95 space-y-1 w-full max-w-full">
             <div className="flex items-center justify-between px-2 py-1">
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                Seus Workspaces
+                Workspaces
               </p>
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground font-mono font-medium">
                 {workspaces.length} total
               </span>
             </div>
 
             {/* Lista de Workspaces */}
-            <div className="space-y-0.5 max-h-52 overflow-y-auto custom-scrollbar">
+            <div className="space-y-0.5 max-h-48 overflow-y-auto custom-scrollbar">
               {workspaces.map((ws) => {
                 const isSelected = ws.id === currentWorkspace?.id;
                 const badge = getPlanBadge(ws.plan);
@@ -130,21 +133,22 @@ export const WorkspaceSelector: React.FC = () => {
                 return (
                   <button
                     key={ws.id}
+                    type="button"
                     onClick={() => {
                       setCurrentWorkspace(ws);
                       setIsOpen(false);
                     }}
                     className={cn(
-                      "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs transition-colors cursor-pointer text-left",
+                      "flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs transition-colors cursor-pointer text-left",
                       isSelected
                         ? "bg-primary/10 text-primary font-semibold"
-                        : "hover:bg-muted/60 text-foreground",
+                        : "hover:bg-muted/70 text-foreground",
                     )}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
                       <div
                         className={cn(
-                          "flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-bold shrink-0",
+                          "flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-bold shrink-0",
                           isSelected
                             ? "bg-primary text-primary-foreground"
                             : "bg-muted text-muted-foreground",
@@ -152,8 +156,8 @@ export const WorkspaceSelector: React.FC = () => {
                       >
                         {ws.name.slice(0, 1).toUpperCase()}
                       </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-xs">{ws.name}</p>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs leading-tight">{ws.name}</p>
                         <span
                           className={cn(
                             "inline-flex items-center px-1 py-0 rounded text-[8px] font-medium border mt-0.5",
@@ -165,7 +169,7 @@ export const WorkspaceSelector: React.FC = () => {
                       </div>
                     </div>
                     {isSelected && (
-                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />
+                      <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-1.5" />
                     )}
                   </button>
                 );
@@ -173,12 +177,12 @@ export const WorkspaceSelector: React.FC = () => {
             </div>
 
             {/* Ações Inferiores */}
-            <div className="pt-1.5 border-t border-border/50 space-y-1">
+            <div className="pt-1 border-t border-border/50 space-y-1">
               {!isCreating ? (
                 <button
                   type="button"
                   onClick={() => setIsCreating(true)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-primary font-medium hover:bg-primary/10 transition-colors cursor-pointer"
+                  className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-primary font-medium hover:bg-primary/10 transition-colors cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>Novo Workspace</span>
@@ -191,20 +195,20 @@ export const WorkspaceSelector: React.FC = () => {
                     value={newWorkspaceName}
                     onChange={(e) => setNewWorkspaceName(e.target.value)}
                     autoFocus
-                    className="w-full text-xs px-2.5 py-1.5 rounded-lg border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="w-full text-xs px-2 py-1 rounded-md border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                   <div className="flex items-center gap-1.5 justify-end">
                     <button
                       type="button"
                       onClick={() => setIsCreating(false)}
-                      className="px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted rounded cursor-pointer"
+                      className="px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted rounded cursor-pointer"
                     >
                       Cancelar
                     </button>
                     <button
                       type="submit"
                       disabled={isSubmitting || !newWorkspaceName.trim()}
-                      className="px-2.5 py-1 text-[11px] bg-primary text-primary-foreground font-semibold rounded hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+                      className="px-2 py-0.5 text-[10px] bg-primary text-primary-foreground font-semibold rounded hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
                     >
                       {isSubmitting ? "Criando..." : "Criar"}
                     </button>
