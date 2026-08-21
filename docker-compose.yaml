@@ -42,7 +42,6 @@ services:
       - ./pb_hooks:/pocketbase/pb_hooks
       - ./pb_migrations:/pb/pb_migrations
       - ./pb_hooks:/pb/pb_hooks
-    command: ["/pocketbase/pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb_data", "--migrationsDir=/pb_migrations", "--hooksDir=/pb_hooks"]
 
   redis:
     image: redis:7-alpine

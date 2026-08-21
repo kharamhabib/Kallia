@@ -1758,8 +1758,7 @@ func (s *server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
+		s.log.Warn("não foi possível obter workspaces do PocketBase, usando fallback", "err", err)
 	}
 
 	// Se a lista estiver vazia, cria o Workspace padrão default
