@@ -526,27 +526,19 @@ func (s *server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Obter plano do projeto
-		proj, err := s.sessions.store.getProject(r.Context(), projectID)
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao obter projeto"})
-			return
-		}
-		if proj == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "projeto não encontrado"})
-			return
-		}
-
+		// Obter limite do workspace no PocketBase
+		ws, err := pbClient.GetWorkspacePB(r.Context(), projectID)
 		limit := 1
-		switch proj.Plan {
-		case "advantage":
-			limit = 3
-		case "expert":
-			limit = 5
+		planName := "trial"
+		if err == nil && ws != nil {
+			planName = ws.Plan
+			if ws.MaxConnections > 0 {
+				limit = ws.MaxConnections
+			}
 		}
 
 		if count >= limit {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("limite de conexões do plano %s atingido (%d/%d)", proj.Plan, count, limit)})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("limite de conexões do plano %s atingido (%d/%d)", planName, count, limit)})
 			return
 		}
 	}

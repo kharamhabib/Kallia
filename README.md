@@ -1,10 +1,10 @@
 <div align="center">
 
-# 📞 Kallia
+# 📞 Kallia 2.0
 
-**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado, Backend OpenSource PocketBase (SSOT), Sincronização em Tempo Real (SSE), Fila Redis e Agentes de IA Multi-Provedor em Go puro — pronta para deploy no Coolify.**
+**Plataforma PABX VoIP profissional SaaS para WhatsApp com CRM Integrado, Backend PocketBase (SSOT), Workspaces Desacoplados, Sincronização em Tempo Real (SSE), Fila Redis e Agentes de IA Multi-Provedor em Go puro — pronta para deploy no Coolify.**
 
-Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos e permissões RBAC: `appadmin`, `creator`, `normal`), login por E-mail e **Google OAuth2**, IA de voz **Gemini Live** + **xAI Grok Realtime** (26 vozes, Web Search, X Search, Reasoning Effort), transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks com retries exponenciais e fila Redis, integração nativa com **Chatwoot**, chaves de API criptografadas (AES-256-GCM) e **deploy containerizado no Coolify via `docker-compose.yml`**.
+Mídia VoIP nativa, CRM de contatos por Workspace, multi-tenant desacoplado (Workspaces, planos, cotas e permissões RBAC: `appadmin`, `creator`, `normal`), login por E-mail e **Google OAuth2**, IA de voz **Gemini Live** + **xAI Grok Realtime** (26 vozes, Web Search, X Search, Reasoning Effort), transferência em tempo real entre agentes especialistas (`TransferTo`), gravação dual-channel, API de mensagens, webhooks com retries exponenciais e fila Redis, integração nativa com **Chatwoot**, chaves de API criptografadas (AES-256-GCM) e **deploy containerizado no Coolify via `docker-compose.yml`**.
 
 [![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -18,38 +18,38 @@ Mídia VoIP nativa, CRM de contatos por sessão, multi-tenant (projetos, planos 
 
 ---
 
-> **Kallia** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant (projetos, planos de cobrança e perfis de usuário), módulo de CRM de contatos por sessão, arquitetura de **PocketBase como Fonte Única de Verdade (SSOT)** com sincronização bidirecional em tempo real via **SSE (`/api/realtime`)**, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA multi-provedor (**Gemini Live** + **xAI Grok Realtime**), chaves de API criptografadas com AES-256-GCM, gravação de chamadas no servidor, **gerenciamento de filas e concorrência via Redis 7 (com fallback in-memory)**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy monolítico no Coolify**.
+> **Kallia 2.0** é uma plataforma PABX VoIP desenvolvida a partir de evoluções dos projetos originários **AstraCalls** e [**WaCalls**](https://github.com/JotaDev66/WaCalls) (de [@jotadev66](https://github.com/jotadev66)). Mantém todo o núcleo VoIP nativo em Go e adiciona suporte multi-tenant em **Workspaces Desacoplados**, módulo de CRM de contatos unificado por Workspace, arquitetura de **PocketBase como Fonte Única de Verdade (SSOT)** com sincronização bidirecional em tempo real via **SSE (`/api/realtime`)**, agentes especialistas com transferência de chamadas em tempo real (`TransferTo`), atendimento autônomo por IA multi-provedor (**Gemini Live** + **xAI Grok Realtime**), chaves de API criptografadas com AES-256-GCM, gravação de chamadas no servidor, **gerenciamento de filas e concorrência via Redis 7 (com fallback in-memory)**, **API de mensagens**, **webhooks**, **integração nativa com Chatwoot** e **deploy monolítico no Coolify**.
 
 ---
 
 ## 📋 Visão Geral
 
-O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas por projetos, gerenciar uma base de contatos em formato CRM e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA multi-provedor. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
+O **Kallia** permite parear múltiplas contas do WhatsApp via **QR code** organizadas em **Workspaces desacoplados**, gerenciar uma base de contatos em formato CRM e realizar/receber **chamadas de voz 1:1** diretamente do navegador ou via atendimento 100% autônomo por IA multi-provedor. O microfone do navegador é enviado por **WebRTC (Opus)** para o servidor Go, que transcodifica para o codec **MLow** da Meta e injeta a mídia na malha de **relay SRTP** do WhatsApp — e o caminho inverso traz o áudio do outro lado de volta ao navegador.
 
 Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem **RTP/SRTP**, **STUN**, o transporte **WebRTC/SCTP relay** e a sinalização `<call>`, integrados ao [**whatsmeow**](https://github.com/tulir/whatsmeow) com persistência em SQLite puro para chaves criptográficas e servidos a um cliente **React 19**.
 
 ---
 
-## 🚀 Recursos e Funcionalidades do Kallia
+## 🚀 Recursos e Funcionalidades do Kallia 2.0
 
 ### 🔄 PocketBase como Fonte Única de Verdade (SSOT) & Sincronização em Tempo Real
 - **Sincronização Bidirecional Dev ↔ VPS**: O servidor Go assina os eventos SSE do PocketBase (`/api/realtime`). Alterações feitas em produção ou no ambiente local são refletidas instantaneamente em todos os nós.
-- **Hidratação Inicial Automática**: Ao iniciar, o backend carrega automaticamente todos os Projetos, Conexões, Agentes, Provedores de IA e Contatos do CRM a partir do PocketBase remoto.
+- **Hidratação Inicial Automática**: Ao iniciar, o backend carrega automaticamente todos os Workspaces, Conexões, Agentes, Provedores de IA e Contatos do CRM a partir do PocketBase remoto.
 - **Instâncias em Modo Standby no Dev**: Instâncias ativas na VPS aparecem no ambiente de desenvolvimento no estado configurável (permitindo edição de Agentes, Prompts, Tools e CRM) sem colidir ou disputar o socket físico do WhatsApp.
 - **Visão Global SuperAdmin**: Usuários `appadmin` possuem visão total de todas as instâncias e exclusão em cascata sincronizada em ambos os bancos (SQLite + PocketBase).
 
-### 👥 Módulo de CRM de Contatos Integrado
-- **Base de Dados Centralizada (`contacts`)**: Armazenamento completo de clientes contendo Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
+### 👥 Módulo de CRM de Contatos Integrado por Workspace
+- **Base de Dados Centralizada (`contacts`)**: Armazenamento completo de clientes por Workspace contendo Nome, Telefone, E-mail, Empresa, Notas, Tags, LID, JID e Foto de perfil.
 - **Discagem Direta p/ o Webphone**: Ao clicar no ícone de telefone em qualquer contato da lista, o sistema navega reativamente para a tela do discador e preenche o número automaticamente.
 - **Resolução Reativa de Identidade (`useContactDisplay`)**: Exibição automática do nome cadastrado no CRM e avatar do cliente nas telas de Dashboard, Histórico de Chamadas, Notificações e Webphone.
 
-### 🏢 Multi-Tenancy & Autenticação PocketBase (Google OAuth2 + E-mail)
+### 🏢 Multi-Tenancy Desacoplado & Autenticação PocketBase (Google OAuth2 + E-mail)
 - **Autenticação Dupla**: Login e Registro por E-mail/Senha e **Google OAuth2** integrado com popup nativo.
 - **Controle de Acesso por Roles (RBAC)**:
-  - `appadmin`: Superadministrador com visão global de todos os projetos, usuários e conexões em todos os bancos.
-  - `creator`: Proprietário/Criador do projeto/tenant. Gerencia conexões, membros, agentes de IA e planos.
-  - `normal`: Operador com perfil de atendimento (sem permissão para excluir conexões ou alterar configurações críticas).
-- **Onboarding Automático**: Usuários criados via Google OAuth2 recebem automaticamente o papel `creator` e um novo projeto com plano `trial`.
+  - `appadmin`: Superadministrador com visão global de todos os workspaces, usuários e conexões em todos os bancos.
+  - `creator` / `owner`: Proprietário do Workspace. Gerencia conexões, membros, agentes de IA e planos.
+  - `normal` / `member`: Operador com perfil de atendimento.
+- **Onboarding Automático**: Usuários cadastrados recebem automaticamente seu Workspace inicial provisionado no PocketBase.
 
 ### ⚡ Gerenciamento de Filas & Concorrência (Redis 7 + Fallback In-Memory)
 - **Outbound Call Queue**: Fila de discagem por projeto/sessão com controle estrito de capacidade simultânea e rate limiter anti-spam para proteger números WhatsApp de bloqueios.

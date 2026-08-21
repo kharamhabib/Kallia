@@ -106,24 +106,12 @@ func hydrateFromPocketBase(ctx context.Context, store *sessionStore, sessionMgr 
 	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// 1. Hidratar Workspaces
+	// 1. Verificar Workspaces no PocketBase
 	workspaces, err := pbClient.ListWorkspacesPB(syncCtx)
 	if err != nil {
 		log.Warn("não foi possível obter workspaces do PocketBase", "err", err)
 	} else {
-		for _, w := range workspaces {
-			_, _ = store.db.ExecContext(syncCtx, `
-				INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (id) DO UPDATE SET
-					name = excluded.name,
-					plan = excluded.plan,
-					plan_status = excluded.plan_status,
-					plan_starts_at = excluded.plan_starts_at,
-					plan_ends_at = excluded.plan_ends_at
-			`, w.ID, w.Name, w.Plan, w.PlanStatus, w.PlanStartsAt, w.PlanEndsAt)
-		}
-		log.Info("workspaces hidratados do PocketBase", "count", len(workspaces))
+		log.Info("workspaces sincronizados do PocketBase", "count", len(workspaces))
 	}
 
 	// 2. Hidratar Sessões (Conexões)
@@ -244,47 +232,14 @@ func pushAllLocalToPocketBase(ctx context.Context, store *sessionStore) {
 		pushCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		// 1. Push Projetos locais
-		pRows, err := store.db.QueryContext(pushCtx, `SELECT id, name, plan, plan_status, plan_starts_at, plan_ends_at FROM projects`)
-		if err == nil {
-			defer pRows.Close()
-			for pRows.Next() {
-				var id, name, plan, planStatus string
-				var startStr string
-				var endStr *string
-				if err := pRows.Scan(&id, &name, &plan, &planStatus, &startStr, &endStr); err == nil {
-					start, _ := time.Parse(time.RFC3339, startStr)
-					if start.IsZero() {
-						start = time.Now()
-					}
-					var end *time.Time
-					if endStr != nil {
-						if t, err := time.Parse(time.RFC3339, *endStr); err == nil {
-							end = &t
-						}
-					}
-					data := map[string]any{
-						"name":           name,
-						"plan":           plan,
-						"plan_status":    planStatus,
-						"plan_starts_at": start.UTC().Format("2006-01-02 15:04:05.000Z"),
-					}
-					if end != nil {
-						data["plan_ends_at"] = end.UTC().Format("2006-01-02 15:04:05.000Z")
-					}
-					_ = pbClient.UpdateWorkspacePB(pushCtx, id, data)
-				}
-			}
-		}
-
-		// 2. Push Sessões locais (Conexões)
-		sRows, err := store.db.QueryContext(pushCtx, `SELECT id, name, COALESCE(jid,''), COALESCE(webhook,''), COALESCE(chatwoot,''), COALESCE(ai_config,''), COALESCE(project_id,'default'), COALESCE(api_key,'') FROM sessions`)
+		// 1. Push Sessões locais (Conexões)
+		sRows, err := store.db.QueryContext(pushCtx, `SELECT id, name, COALESCE(jid,''), COALESCE(webhook,''), COALESCE(chatwoot,''), COALESCE(ai_config,''), COALESCE(workspace_id, project_id, 'default'), COALESCE(api_key,'') FROM sessions`)
 		if err == nil {
 			defer sRows.Close()
 			for sRows.Next() {
-				var id, name, jid, webhook, chatwoot, aiConfig, projectID, apiKey string
-				if err := sRows.Scan(&id, &name, &jid, &webhook, &chatwoot, &aiConfig, &projectID, &apiKey); err == nil {
-					_ = pbClient.UpsertSessionPB(pushCtx, id, name, jid, webhook, chatwoot, aiConfig, projectID, apiKey)
+				var id, name, jid, webhook, chatwoot, aiConfig, workspaceID, apiKey string
+				if err := sRows.Scan(&id, &name, &jid, &webhook, &chatwoot, &aiConfig, &workspaceID, &apiKey); err == nil {
+					_ = pbClient.UpsertSessionPB(pushCtx, id, name, jid, webhook, chatwoot, aiConfig, workspaceID, apiKey)
 				}
 			}
 		}
@@ -475,38 +430,8 @@ func handleRealtimeRecord(ctx context.Context, store *sessionStore, broker *Brok
 	recordID, _ := msg.Record["id"].(string)
 
 	switch collection {
-	case "workspaces", "projects":
-		if msg.Action == "delete" {
-			_, _ = store.db.ExecContext(ctx, `DELETE FROM projects WHERE id = $1`, recordID)
-		} else {
-			name, _ := msg.Record["name"].(string)
-			plan, _ := msg.Record["plan"].(string)
-			planStatus, _ := msg.Record["plan_status"].(string)
-			startStr, _ := msg.Record["plan_starts_at"].(string)
-			endStr, _ := msg.Record["plan_ends_at"].(string)
-
-			startsAt, _ := time.Parse(time.RFC3339, startStr)
-			if startsAt.IsZero() {
-				startsAt = time.Now()
-			}
-			var endsAt *time.Time
-			if endStr != "" {
-				if t, err := time.Parse(time.RFC3339, endStr); err == nil {
-					endsAt = &t
-				}
-			}
-
-			_, _ = store.db.ExecContext(ctx, `
-				INSERT INTO projects (id, name, plan, plan_status, plan_starts_at, plan_ends_at)
-				VALUES ($1, $2, $3, $4, $5, $6)
-				ON CONFLICT (id) DO UPDATE SET
-					name = excluded.name,
-					plan = excluded.plan,
-					plan_status = excluded.plan_status,
-					plan_starts_at = excluded.plan_starts_at,
-					plan_ends_at = excluded.plan_ends_at
-			`, recordID, name, plan, planStatus, startsAt, endsAt)
-		}
+	case "workspaces", "workspace_members":
+		log.Info("evento em tempo real de workspace recebido", "workspaceId", recordID, "action", msg.Action)
 
 	case "sessions":
 		sid, _ := msg.Record["sid"].(string)

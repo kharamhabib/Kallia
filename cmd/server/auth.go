@@ -207,13 +207,11 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Criar o projeto e sincronizar na base local
-	projectID := newSessionID()
-	planEnds := time.Now().Add(30 * 24 * time.Hour) // 30 dias de trial inicial
+	// 2. Cache local do usuário
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	_ = s.sessions.store.createProjectAndUser(r.Context(), projectID, projName, pbUserID, email, string(hashed), "creator", planEnds)
+	_ = s.sessions.store.createUser(r.Context(), pbUserID, email, string(hashed), "creator", "")
 
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "sucesso", "projectId": projectID})
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "sucesso", "userId": pbUserID})
 }
 
 // registerInPocketBase cria o registro do usuário na collection 'users' do PocketBase
@@ -279,18 +277,22 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Garantir que cada usuário possua seu próprio projeto isolado (nunca compartilhar 'default')
-	projectID := s.ensureUserProject(r.Context(), pbUserID, email, pbRole, pbProjectID)
+	// Garantir que cada usuário possua seu próprio workspace
+	projectID := pbProjectID
+	if projectID == "" || projectID == "default" {
+		projectID = "ws_" + pbUserID
+	}
 
 	// Sincronizar dados do usuário no banco local
 	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	_, _ = s.sessions.store.db.ExecContext(r.Context(), `
-		INSERT INTO users (id, email, password_hash, role, project_id)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO users (id, email, password_hash, role, workspace_id, project_id)
+		VALUES ($1, $2, $3, $4, $5, $5)
 		ON CONFLICT (email) DO UPDATE SET
 			id = EXCLUDED.id,
 			password_hash = EXCLUDED.password_hash,
 			role = EXCLUDED.role,
+			workspace_id = EXCLUDED.workspace_id,
 			project_id = EXCLUDED.project_id
 	`, pbUserID, email, string(hashed), pbRole, projectID)
 
@@ -309,57 +311,6 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			"projectId": projectID,
 		},
 	})
-}
-
-// ensureUserProject garante que cada usuário tenha um ID de projeto exclusivo e provisionado
-func (s *server) ensureUserProject(ctx context.Context, userID, email, role, existingProjectID string) string {
-	// Se já possui um project_id válido e diferente de "" e "default"
-	if existingProjectID != "" && existingProjectID != "default" {
-		proj, err := s.sessions.store.getProject(ctx, existingProjectID)
-		if err == nil && proj != nil {
-			return existingProjectID
-		}
-	}
-
-	// Verificar se já existe um projeto dedicado a este usuário no banco local
-	var existingPID string
-	err := s.sessions.store.db.QueryRowContext(ctx, `SELECT project_id FROM users WHERE id = $1 AND project_id IS NOT NULL AND project_id != '' AND project_id != 'default'`, userID).Scan(&existingPID)
-	if err == nil && existingPID != "" {
-		return existingPID
-	}
-
-	// Criar um projeto dedicado para este usuário/tenant
-	projectID := "prj_" + userID
-	if len(projectID) > 32 {
-		projectID = projectID[:32]
-	}
-	projectName := "Projeto de " + strings.Split(email, "@")[0]
-	plan := "expert"
-	if role != "appadmin" {
-		plan = "trial"
-	}
-	planEnds := time.Now().Add(30 * 24 * time.Hour)
-
-	_ = s.sessions.store.createProject(ctx, projectID, projectName, plan, "active", time.Now(), &planEnds)
-
-	// Atualizar no PocketBase de forma assíncrona
-	go func() {
-		pbURL := envStr("POCKETBASE_URL", "http://pocketbase:8090")
-		if pbURL != "" {
-			patchPayload, _ := json.Marshal(map[string]string{"project_id": projectID})
-			req, _ := http.NewRequest("PATCH", strings.TrimRight(pbURL, "/")+"/api/collections/users/records/"+userID, bytes.NewReader(patchPayload))
-			if req != nil {
-				req.Header.Set("Content-Type", "application/json")
-				client := &http.Client{Timeout: 3 * time.Second}
-				resp, _ := client.Do(req)
-				if resp != nil {
-					resp.Body.Close()
-				}
-			}
-		}
-	}()
-
-	return projectID
 }
 
 // authenticateWithPocketBase valida as credenciais contra a API do PocketBase (seja superadmin ou user)
@@ -573,17 +524,9 @@ func (s *server) withUserAuth(h http.Handler) http.Handler {
 
 		planStatus := "active"
 		if projectID != "" && role != "appadmin" {
-			proj, err := s.sessions.store.getProject(r.Context(), projectID)
-			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "erro ao carregar dados do projeto"})
-				return
-			}
-			if proj != nil {
-				planStatus = proj.PlanStatus
-				if proj.PlanEndsAt != nil && time.Now().After(*proj.PlanEndsAt) && proj.PlanStatus == "active" {
-					_ = s.sessions.store.updateProjectBilling(r.Context(), projectID, proj.Plan, "inactive", proj.PlanEndsAt)
-					planStatus = "inactive"
-				}
+			ws, err := pbClient.GetWorkspacePB(r.Context(), projectID)
+			if err == nil && ws != nil && ws.PlanStatus != "" {
+				planStatus = ws.PlanStatus
 			}
 		}
 
@@ -602,31 +545,21 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// 1. Servir o frontend estático e as rotas públicas sem autenticação
-		if !strings.HasPrefix(path, "/api/") {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if path == "/healthz" || path == "/ready" ||
-			path == "/api/auth/login" || path == "/api/auth/register" ||
-			path == "/api/auth/forgot-password" || path == "/api/auth/reset-password" ||
-			path == "/api/config" || path == "/api/metrics" ||
-			path == "/api/docs" || path == "/api/swagger" || path == "/api/openapi.yaml" ||
-			path == "/api-docs.html" || path == "/openapi.yaml" {
+		// Rotas públicas liberadas
+		if strings.HasPrefix(path, "/api/auth/") ||
+			path == "/api/health" ||
+			path == "/api/version" ||
+			path == "/api/docs" ||
+			strings.HasPrefix(path, "/api/webhook/webrtc/") ||
+			strings.HasPrefix(path, "/api/webhook/gemini-live/") {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// 2. Webhook do Chatwoot tem segurança interna por token em query param
-		if strings.HasSuffix(strings.TrimRight(path, "/"), "/chatwoot/webhook") {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// 3. Tentar autenticação via JWT (Authorization: Bearer <token>)
+		// 1. Tentar autenticar via Bearer Token (JWT de usuário)
 		authHeader := r.Header.Get("Authorization")
-		if authHeader != "" && strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
-			parts := strings.Split(authHeader, " ")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) == 2 {
 				claims, err := parseToken(parts[1])
 				if err == nil {
@@ -636,13 +569,9 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 
 					planStatus := "active"
 					if projectID != "" && role != "appadmin" {
-						proj, err := s.sessions.store.getProject(r.Context(), projectID)
-						if err == nil && proj != nil {
-							planStatus = proj.PlanStatus
-							if proj.PlanEndsAt != nil && time.Now().After(*proj.PlanEndsAt) && proj.PlanStatus == "active" {
-								_ = s.sessions.store.updateProjectBilling(r.Context(), projectID, proj.Plan, "inactive", proj.PlanEndsAt)
-								planStatus = "inactive"
-							}
+						ws, err := pbClient.GetWorkspacePB(r.Context(), projectID)
+						if err == nil && ws != nil && ws.PlanStatus != "" {
+							planStatus = ws.PlanStatus
 						}
 					}
 
