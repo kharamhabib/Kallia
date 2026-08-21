@@ -691,8 +691,19 @@ func (p *pgHistoryPersister) SaveCall(rec CallRecord) {
 	goSafe(p.log, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		var startedAt int64 = rec.StartedAt
+		var endedAt int64 = 0
+		if rec.EndedAt != nil {
+			endedAt = *rec.EndedAt
+		}
+
+		// 1. Persistir no PocketBase (SSOT)
+		_ = pbClient.SaveCallHistoryPB(ctx, rec.WorkspaceID, rec.SessionID, rec.CallID, rec.Peer, rec.Direction, startedAt, endedAt, rec.Summary, rec.RecordingURL, "", rec.AgentID)
+
+		// 2. Persistir no SQLite local (cache)
 		if err := p.store.saveCallHistory(ctx, rec); err != nil {
-			p.log.Error("falha ao persistir histórico da chamada", "callId", rec.CallID, "err", err)
+			p.log.Error("falha ao persistir histórico da chamada no SQLite", "callId", rec.CallID, "err", err)
 		}
 	})
 }
@@ -701,8 +712,13 @@ func (p *pgHistoryPersister) SaveSummary(sessionID, callID, summary string) {
 	goSafe(p.log, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+
+		// 1. Atualizar no PocketBase (SSOT)
+		_ = pbClient.UpdateCallSummaryPB(ctx, callID, summary)
+
+		// 2. Atualizar no SQLite local
 		if err := p.store.updateCallSummary(ctx, sessionID, callID, summary); err != nil {
-			p.log.Error("falha ao persistir resumo da chamada", "callId", callID, "err", err)
+			p.log.Error("falha ao persistir resumo da chamada no SQLite", "callId", callID, "err", err)
 		}
 	})
 }

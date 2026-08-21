@@ -110,6 +110,17 @@ func (s *server) handleSetAIConfig(w http.ResponseWriter, r *http.Request) {
 
 	sess.setAIConfig(cfg)
 	b, _ := json.Marshal(cfg)
+
+	wsID := sess.projectID
+	if wsID == "" {
+		wsID = "default"
+	}
+
+	// Persistir no PocketBase (SSOT): Coleção sessions e Coleção agents
+	_ = pbClient.UpdateSessionAIConfigPB(r.Context(), sess.id, string(b))
+	_ = pbClient.UpsertMasterAgentPB(r.Context(), wsID, "Agente Principal", "Agente de Atendimento Principal", string(b), true, true)
+
+	// Persistir no SQLite local
 	if err := sess.mgr.store.setAIConfig(r.Context(), sess.id, string(b)); err != nil {
 		sess.log.Error("falha ao persistir ai-config", "session", sess.id, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao salvar configuração no banco"})
@@ -130,19 +141,35 @@ func (s *server) handleGetAIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg := sess.getAIConfig()
-	hasKey := cfg.GeminiAPIKey != ""
+	prov := cfg.Provider
+	if prov == "" {
+		prov = "gemini"
+	}
 
-	if hasKey && len(cfg.GeminiAPIKey) > 6 {
-		cfg.GeminiAPIKey = cfg.GeminiAPIKey[:3] + "•••••" + cfg.GeminiAPIKey[len(cfg.GeminiAPIKey)-3:]
-	} else if hasKey {
-		cfg.GeminiAPIKey = "•••••"
+	// Resolve se há chave configurada no PocketBase, SQLite ou .env para o provedor selecionado
+	key := resolveAIProviderKey(r.Context(), s.sessions.store, sess.projectID, prov)
+	if key == "" {
+		key = resolveAIProviderKey(r.Context(), s.sessions.store, sess.projectID, "gemini")
+	}
+	if key == "" && cfg.GeminiAPIKey != "" && !containsBullet(cfg.GeminiAPIKey) {
+		key = cfg.GeminiAPIKey
+	}
+
+	hasKey := key != ""
+
+	if hasKey {
+		if len(key) > 6 {
+			cfg.GeminiAPIKey = key[:3] + "•••••" + key[len(key)-3:]
+		} else {
+			cfg.GeminiAPIKey = "•••••"
+		}
+	} else {
+		cfg.GeminiAPIKey = ""
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"aiConfig": cfg,
-		"enabled":  hasKey,
-		// Indica ao cliente que a key pode ser usada via proxy do servidor
-		// (sem expor a key no navegador) — ver /api/sessions/{sid}/gemini/*.
+		"aiConfig":    cfg,
+		"enabled":     hasKey,
 		"geminiProxy": true,
 	})
 }
@@ -154,6 +181,7 @@ func (s *server) handleDeleteAIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sess.setAIConfig(AIConfig{})
+	_ = pbClient.UpdateSessionAIConfigPB(r.Context(), sess.id, "")
 	if err := sess.mgr.store.setAIConfig(r.Context(), sess.id, ""); err != nil {
 		sess.log.Error("falha ao remover ai-config", "session", sess.id, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao remover configuração no banco"})

@@ -175,17 +175,22 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
         getAIConfig(sid).catch(() => null),
         getAIProviders().catch(() => ({ providers: [] })),
       ]);
+      const providersList = resProviders.providers || [];
       setAgents(resAgents);
-      setAiProviders(resProviders.providers || []);
+      setAiProviders(providersList);
       if (resConfig) {
-        setEnabled(resConfig.enabled);
         const c = resConfig.aiConfig || defaultConfig;
+        const provKey = c.provider || "gemini";
+        const provHasKey = providersList.some((p) => p.provider === provKey && p.hasKey);
+        const isAIEnabled = !!resConfig.enabled || provHasKey || (!!c.geminiApiKey && !c.geminiApiKey.includes("•••••"));
+        setEnabled(isAIEnabled);
+
         setAiConfig({
           ...defaultConfig,
           ...c,
           serverSideAI: !!c.serverSideAI,
-          provider: c.provider || "grok",
-          modelName: c.modelName || "grok-voice-latest",
+          provider: c.provider || "gemini",
+          modelName: c.modelName || (c.provider === "gemini" ? "gemini-3.1-flash-live-preview" : "grok-voice-latest"),
           geminiApiKey: c.geminiApiKey || "",
           voiceName: c.voiceName || (c.provider === "gemini" ? "Puck" : "eve"),
           languageCode: c.languageCode || "pt-BR",
@@ -227,7 +232,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
     if (selectedId !== "master") {
       const target = agents.find((a) => a.id === selectedId);
       if (target) {
-        const prov = target.aiConfig?.provider || "grok";
+        const prov = target.aiConfig?.provider || "gemini";
         const mod = target.aiConfig?.modelName || (prov === "gemini" ? "gemini-3.1-flash-live-preview" : prov === "openai" ? "gpt-4o-realtime-preview" : "grok-voice-latest");
         const v = target.aiConfig?.voiceName || (prov === "gemini" ? "Puck" : prov === "openai" ? "alloy" : "eve");
 
@@ -251,7 +256,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
     try {
       await setAIConfig(sid, aiConfig);
       toast.success("Configurações do Agente Principal salvas!");
-      setEnabled(aiConfig.geminiApiKey !== "");
+      await loadData();
       useAIAgents.getState().setActiveSessionConfig(aiConfig);
     } catch (e) {
       toast.error((e as Error).message);

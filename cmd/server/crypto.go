@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"io"
 	"os"
 	"strings"
@@ -46,33 +45,90 @@ func encryptSecret(plaintext string) (string, error) {
 	return base64.StdEncoding.EncodeToString(ciphertext), nil
 }
 
-// decryptSecret descriptografa uma string codificada em Base64 usando AES-256-GCM.
+// candidateEncryptionKeys retorna todas as chaves possíveis para descriptografia
+func candidateEncryptionKeys() [][]byte {
+	var keys [][]byte
+	seen := make(map[string]bool)
+
+	addKeyStr := func(s string) {
+		s = strings.TrimSpace(s)
+		if s != "" && !seen[s] {
+			seen[s] = true
+			hash := sha256.Sum256([]byte(s))
+			keys = append(keys, hash[:])
+			if len(s) == 32 {
+				keys = append(keys, []byte(s))
+			}
+		}
+	}
+
+	addKeyStr(os.Getenv("KALLIA_ENCRYPTION_KEY"))
+	addKeyStr(os.Getenv("POCKETBASE_ENCRYPTION_KEY"))
+	addKeyStr(os.Getenv("KALLIA_AI_ENCRYPTION_KEY"))
+	addKeyStr(os.Getenv("KALLIA_JWT_SECRET"))
+	addKeyStr("kallia_master_secret_encryption_key_prod_2026")
+	addKeyStr("kallia_pb_encryption_key_prod_2026")
+	addKeyStr("kallia_jwt_secret_key_prod_2026_secure")
+	addKeyStr("kallia_master_encryption_key_2026_secure")
+	addKeyStr("kallia_master_secret_encryption_fallback_v1")
+
+	return keys
+}
+
+// decryptSecret descriptografa uma string codificada em Base64 usando AES-256-GCM com suporte a múltiplas chaves.
+// Se a string já estiver em texto claro ou se a decodificação falhar, retorna o próprio texto.
 func decryptSecret(cryptoText string) (string, error) {
-	if cryptoText == "" {
+	txt := strings.TrimSpace(cryptoText)
+	if txt == "" {
 		return "", nil
 	}
-	data, err := base64.StdEncoding.DecodeString(cryptoText)
-	if err != nil {
-		return "", err
+
+	// Se começar com prefixos conhecidos de chaves de IA em texto claro, retorna diretamente
+	if strings.HasPrefix(txt, "AIza") || strings.HasPrefix(txt, "xai-") || strings.HasPrefix(txt, "sk-") {
+		return txt, nil
 	}
-	block, err := aes.NewCipher(getEncryptionKey())
-	if err != nil {
-		return "", err
+
+	// Decodifica Base64 tentando os formatos padrão, URL e RAW
+	var data []byte
+	for _, enc := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.URLEncoding,
+		base64.RawStdEncoding,
+		base64.RawURLEncoding,
+	} {
+		if d, e := enc.DecodeString(txt); e == nil && len(d) > 0 {
+			data = d
+			break
+		}
 	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", err
+
+	if len(data) == 0 {
+		return txt, nil
 	}
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		return "", errors.New("ciphertext muito curto")
+
+	// Tenta descriptografar com todas as chaves candidatas
+	for _, keyBytes := range candidateEncryptionKeys() {
+		block, err := aes.NewCipher(keyBytes)
+		if err != nil {
+			continue
+		}
+		gcm, err := cipher.NewGCM(block)
+		if err != nil {
+			continue
+		}
+		nonceSize := gcm.NonceSize()
+		if len(data) < nonceSize {
+			continue
+		}
+		nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+		plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+		if err == nil && len(plaintext) > 0 {
+			return string(plaintext), nil
+		}
 	}
-	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "", err
-	}
-	return string(plaintext), nil
+
+	// Fallback para texto original caso tenha sido salvo sem criptografia
+	return txt, nil
 }
 
 // maskSecret devolve uma versão mascarada da chave para ser exibida no frontend (ex: xai-••••1234).

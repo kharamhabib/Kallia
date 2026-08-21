@@ -15,13 +15,13 @@ type AIModelInfo struct {
 }
 
 type AIProviderConfigResponse struct {
-	Provider        string        `json:"provider"`
-	Name            string        `json:"name"`
-	Enabled         bool          `json:"enabled"`
-	HasKey          bool          `json:"hasKey"`
-	MaskedKey       string        `json:"maskedKey"`
-	DefaultModel    string        `json:"defaultModel"`
-	AvailableModels []AIModelInfo `json:"availableModels"`
+	Provider        string         `json:"provider"`
+	Name            string         `json:"name"`
+	Enabled         bool           `json:"enabled"`
+	HasKey          bool           `json:"hasKey"`
+	MaskedKey       string         `json:"maskedKey"`
+	DefaultModel    string         `json:"defaultModel"`
+	AvailableModels []AIModelInfo  `json:"availableModels"`
 	Options         map[string]any `json:"options"`
 }
 
@@ -214,30 +214,60 @@ func containsBullet(s string) bool {
 	return strings.Contains(s, "•")
 }
 
-// resolveAIProviderKey busca e descriptografa a API Key do provedor no banco (ai_providers) ou nas variáveis de ambiente (.env)
+// resolveAIProviderKey busca e descriptografa a API Key do provedor no banco (PocketBase / SQLite ai_providers) ou nas variáveis de ambiente (.env)
 func resolveAIProviderKey(ctx context.Context, store *sessionStore, projectID, provider string) string {
 	if projectID == "" {
 		projectID = "default"
 	}
+
+	// 1. Tentar buscar no PocketBase (SSOT)
+	if pbRows, err := pbClient.ListAIProvidersPB(ctx); err == nil {
+		for _, r := range pbRows {
+			if r.Provider == provider && r.EncryptedAPIKey != "" {
+				if r.ProjectID == projectID || r.ProjectID == "default" || projectID == "default" || r.ProjectID == "" {
+					key, _ := decryptSecret(r.EncryptedAPIKey)
+					if key != "" {
+						return key
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Tentar buscar no SQLite local
 	if store != nil {
 		row, err := store.getAIProvider(ctx, projectID, provider)
-		if err == nil && row != nil && row.EncryptedAPIKey != "" {
+		if (err != nil || row == nil || row.EncryptedAPIKey == "") && projectID != "default" {
+			row, _ = store.getAIProvider(ctx, "default", provider)
+		}
+		if row != nil && row.EncryptedAPIKey != "" {
 			key, err := decryptSecret(row.EncryptedAPIKey)
 			if err == nil && key != "" {
 				return key
 			}
 		}
 	}
+
+	// 3. Fallback para variáveis de ambiente (.env)
 	switch provider {
 	case "gemini":
-		return os.Getenv("GEMINI_API_KEY")
+		if k := os.Getenv("GEMINI_API_KEY"); k != "" {
+			return k
+		}
+		if k := os.Getenv("KALLIA_GEMINI_API_KEY"); k != "" {
+			return k
+		}
 	case "grok":
 		if k := os.Getenv("XAI_API_KEY"); k != "" {
 			return k
 		}
-		return os.Getenv("GROK_API_KEY")
+		if k := os.Getenv("GROK_API_KEY"); k != "" {
+			return k
+		}
 	case "openai":
-		return os.Getenv("OPENAI_API_KEY")
+		if k := os.Getenv("OPENAI_API_KEY"); k != "" {
+			return k
+		}
 	}
 	return ""
 }

@@ -20,6 +20,8 @@ const maxHistorySize = 500
 
 type CallRecord struct {
 	SessionID    string     `json:"sessionId"`
+	WorkspaceID  string     `json:"workspaceId,omitempty"`
+	AgentID      string     `json:"agentId,omitempty"`
 	CallID       string     `json:"callId"`
 	Owner        *string    `json:"owner"`
 	Direction    string     `json:"direction"`

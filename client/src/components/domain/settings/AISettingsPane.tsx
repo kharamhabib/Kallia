@@ -47,11 +47,12 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
   // Provedores efetivamente configurados com API key ativa no banco
   const activeProviders = aiProviders.filter((p) => p.enabled && p.hasKey);
 
-  // Provedor selecionado no config ou fallback inteligente para o primeiro ativo
-  const currentProviderKey = config.provider || (activeProviders[0]?.provider ?? "grok");
+  // Provedor selecionado no config ou fallback inteligente para o primeiro ativo ou gemini
+  const currentProviderKey = config.provider || (activeProviders[0]?.provider ?? "gemini");
 
   // Dados do provedor selecionado
   const currentProviderConfig = aiProviders.find((p) => p.provider === currentProviderKey);
+  const isVoiceActive = enabled || !!currentProviderConfig?.hasKey || (activeProviders.length > 0);
 
   const availableSpecialists = agents.filter((a) => !a.inbound && !a.outbound);
   const allowedIds = config.allowedSpecialistIds || [];
@@ -92,11 +93,13 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
         <Sparkles className="h-4 w-4 text-primary fill-primary/20" />
         <span className="text-sm font-medium">Integração de Voz</span>
         <span
-          className={`ml-auto text-xs font-medium px-2 py-0.5 rounded-full ${
-            enabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+          className={`ml-auto text-xs font-semibold px-2.5 py-0.5 rounded-full ${
+            isVoiceActive
+              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+              : "bg-muted text-muted-foreground border border-border"
           }`}
         >
-          {enabled ? "Ativa" : "Inativa"}
+          {isVoiceActive ? "Ativa" : "Inativa"}
         </span>
       </div>
 

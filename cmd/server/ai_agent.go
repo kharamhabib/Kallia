@@ -1064,9 +1064,10 @@ func (a *ServerAIAgent) executePostCallActions() {
 		return
 	}
 
-	// Salva a transcrição no banco de dados principal
+	// Salva a transcrição no banco de dados principal (PocketBase SSOT + SQLite)
 	if a.sess.mgr != nil && a.sess.mgr.store != nil {
 		goSafe(a.log, func() {
+			_ = pbClient.UpdateCallTranscriptPB(context.Background(), a.callID, transcript)
 			err := a.sess.mgr.store.saveTranscript(context.Background(), a.sess.id, a.callID, transcript)
 			if err != nil {
 				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no banco", "err", err)

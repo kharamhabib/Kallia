@@ -15,7 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// geminiLiveModel é o modelo usado para sessões de voz bidirecional.
+// geminiLiveModel é o modelo padrão usado para sessões de voz bidirecional.
 const geminiLiveModel = "models/gemini-3.1-flash-live-preview"
 
 // TranscriptLine representa uma linha de transcrição acumulada.
@@ -156,8 +156,15 @@ func (g *GeminiLiveClient) ReconnectWithConfig(newConfig AIConfig) error {
 // buildSetup constrói o payload de setup com voice, tools e system instruction.
 func (g *GeminiLiveClient) buildSetup() map[string]any {
 	tools := g.buildTools()
+	model := g.config.ModelName
+	if model == "" {
+		model = geminiLiveModel
+	} else if !strings.HasPrefix(model, "models/") {
+		model = "models/" + model
+	}
+
 	setup := map[string]any{
-		"model": geminiLiveModel,
+		"model": model,
 		"generationConfig": map[string]any{
 			"responseModalities": []string{"AUDIO"},
 			"speechConfig": map[string]any{

@@ -31,6 +31,13 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Autorização Multi-Workspace & Resolução 403 de Sessões (21/08/2026)**: Implementação do verificador `userCanAccessSession` no backend Go, validando permissões de acesso através de todos os workspaces aos quais o usuário pertence, além de projetos padrão e SQLite/PocketBase, eliminando bloqueios indevidos de 403 Forbidden em rotas de IA, histórico, pareamento e NPS.
 - [x] **Redesign Moderno & Mobile-First da Gestão de Conexões (21/08/2026)**: Reformulação da interface de Conexões do Workspace com eliminação de tags redundantes, introdução de badge pulsante de status, toolbar unificada de ações, pré-visualização de agentes vinculados e atalho direto para o Webphone.
 - [x] **Preservação de Múltiplos Workspaces & Limite de 1 Workspace por Conta Normal (21/08/2026)**: Correção na associação de membros no PocketBase garantindo que workspaces existentes nunca desapareçam ao criar novos. Implementação da regra de negócio que restringe contas padrão a 1 único Workspace, liberando múltiplos workspaces exclusivamente para administradores (`appadmin`) ou contas com upgrade.
+- [x] **Resolução Dinâmica de Chaves de IA & Correção de Status dos Agentes (21/08/2026)**: Integração da coleção `ai_providers` do PocketBase com fallback resiliente para SQLite e variáveis de ambiente no resolvedor de chaves de IA (`resolveAIProviderKey`), suporte transparente a chaves em texto claro e criptografadas, e atualização reativa do status do Agente Principal e Integração de Voz (`🟢 IA Ativa`).
+- [x] **Unificação Definitiva do PocketBase como Banco de Dados Único (SSOT) (21/08/2026)**:
+  - **Agentes Especialistas (`agents`)**: Correção do payload e filtros alinhados a `workspace_id`, persistência e listagem nativa no PocketBase com sincronia de cache local.
+  - **Histórico de Chamadas (`call_history`)**: Persistência e listagem centralizada no PocketBase com gravação de timestamps, transcrições (`transcript`), resumo gerado por IA (`summary`), gravação (`recording_url`) e vínculo com agente (`agent_id`).
+  - **Transcrições de Chamadas**: Transcrições completas pós-chamada sincronizadas diretamente no PocketBase.
+  - **Configurações de IA da Sessão (`sessions.ai_config`)**: Modificação do `handleSetAIConfig` e `handleDeleteAIConfig` para persistir diretamente na coluna `ai_config` do registro de sessão no PocketBase.
+  - **Avaliações & Pesquisa NPS (`call_ratings`)**: Persistência de notas, feedbacks e cálculo de métricas de NPS (Promotores, Detratores, Neutros e NPS Score) lidos diretamente do PocketBase.
 
 ---
 

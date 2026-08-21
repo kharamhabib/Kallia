@@ -774,6 +774,17 @@ func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	rawRows := s.broker.historyRows(sess.id, 50)
 	
+	// Se memória/SQLite local estiver vazio, buscar do PocketBase (SSOT)
+	if len(rawRows) == 0 {
+		wsID := sess.projectID
+		if wsID == "" {
+			wsID = "default"
+		}
+		if pbRows, err := pbClient.ListCallHistoryPB(r.Context(), wsID, sess.id, 50); err == nil && len(pbRows) > 0 {
+			rawRows = append(rawRows, pbRows...)
+		}
+	}
+	
 	type ExtendedRow struct {
 		CallID       string `json:"callId"`
 		Peer         string `json:"peer"`
@@ -842,7 +853,8 @@ func (s *server) handleDeleteHistoryCall(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// 2. Delete from database history tables
+	// 2. Delete from PocketBase & SQLite database history tables
+	_ = pbClient.DeleteCallHistoryPB(r.Context(), callID)
 	if err := s.sessions.store.deleteCall(r.Context(), sess.id, callID); err != nil {
 		s.log.Error("falha ao deletar chamada do banco", "session", sess.id, "call_id", callID, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -919,9 +931,10 @@ func (s *server) handleGetCallTranscript(w http.ResponseWriter, r *http.Request)
 	callID := r.PathValue("callId")
 
 	lines, err := s.sessions.store.getTranscript(r.Context(), sess.id, callID)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
+	if err != nil || len(lines) == 0 {
+		if pbLines, pbErr := pbClient.GetCallTranscriptPB(r.Context(), callID); pbErr == nil && len(pbLines) > 0 {
+			lines = pbLines
+		}
 	}
 
 	if lines == nil {
@@ -1678,6 +1691,19 @@ func (s *server) handleListNPS(w http.ResponseWriter, r *http.Request) {
 	if sess == nil {
 		return
 	}
+
+	wsID := sess.projectID
+	if wsID == "" {
+		wsID = "default"
+	}
+
+	// 1. Tentar buscar do PocketBase (SSOT)
+	if pbRatings, err := pbClient.ListCallRatingsPB(r.Context(), wsID, sid); err == nil && len(pbRatings) > 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"ratings": pbRatings})
+		return
+	}
+
+	// 2. Fallback SQLite local
 	ratings, err := s.sessions.store.listRatings(r.Context(), sid, 100)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -1695,6 +1721,46 @@ func (s *server) handleNPSSummary(w http.ResponseWriter, r *http.Request) {
 	if sess == nil {
 		return
 	}
+
+	wsID := sess.projectID
+	if wsID == "" {
+		wsID = "default"
+	}
+
+	// 1. Calcular a partir do PocketBase se disponível
+	if pbRatings, err := pbClient.ListCallRatingsPB(r.Context(), wsID, sid); err == nil && len(pbRatings) > 0 {
+		var total, sum, promoters, detractors, neutrals int
+		for _, r := range pbRatings {
+			total++
+			sum += r.Score
+			if r.Score >= 9 {
+				promoters++
+			} else if r.Score <= 6 {
+				detractors++
+			} else {
+				neutrals++
+			}
+		}
+		var avg float64
+		var score float64
+		if total > 0 {
+			avg = float64(sum) / float64(total)
+			score = (float64(promoters-detractors) / float64(total)) * 100
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": map[string]any{
+				"total":      total,
+				"average":    avg,
+				"npsScore":   score,
+				"promoters":  promoters,
+				"detractors": detractors,
+				"neutrals":   neutrals,
+			},
+		})
+		return
+	}
+
+	// 2. Fallback SQLite
 	summary, err := s.sessions.store.getNPSSummary(r.Context(), sid)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
