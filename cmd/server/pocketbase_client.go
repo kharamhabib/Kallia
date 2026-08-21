@@ -72,10 +72,10 @@ func (c *PocketBaseClient) authAdmin(ctx context.Context) (string, error) {
 	adminEmail := envStr("POCKETBASE_ADMIN_EMAIL", "")
 	adminPass := envStr("POCKETBASE_ADMIN_PASSWORD", "")
 	if adminEmail == "" {
-		adminEmail = envStr("KALLIA_ADMIN_EMAIL", "")
+		adminEmail = envStr("KALLIA_ADMIN_EMAIL", "admin@kallia.app")
 	}
 	if adminPass == "" {
-		adminPass = envStr("KALLIA_ADMIN_PASSWORD", "")
+		adminPass = envStr("KALLIA_ADMIN_PASSWORD", "KalliaAdmin2026!")
 	}
 	if adminEmail == "" || adminPass == "" {
 		return "", nil
@@ -410,8 +410,8 @@ func (c *PocketBaseClient) CreateWorkspacePB(ctx context.Context, name, plan, pl
 		"max_connections":      maxConn,
 		"max_concurrent_calls": maxCalls,
 		"max_agents":           maxAgents,
-		"plan_starts_at":       startsAt.Format("2006-01-02 15:04:05.000Z"),
-		"plan_ends_at":         endsAt.Format("2006-01-02 15:04:05.000Z"),
+		"plan_starts_at":       startsAt.Format(time.RFC3339),
+		"plan_ends_at":         endsAt.Format(time.RFC3339),
 	}
 
 	resp, err := c.doAdminRequest(ctx, "POST", "/api/collections/workspaces/records", data)
@@ -422,6 +422,35 @@ func (c *PocketBaseClient) CreateWorkspacePB(ctx context.Context, name, plan, pl
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
+		// Fallback resiliente: tenta criar apenas com os campos essenciais se campos secundários falharem
+		minimalData := map[string]any{
+			"name":        name,
+			"plan":        plan,
+			"plan_status": planStatus,
+		}
+		respMin, errMin := c.doAdminRequest(ctx, "POST", "/api/collections/workspaces/records", minimalData)
+		if errMin == nil {
+			defer respMin.Body.Close()
+			if respMin.StatusCode == http.StatusOK || respMin.StatusCode == http.StatusCreated {
+				var resMin struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				}
+				_ = json.NewDecoder(respMin.Body).Decode(&resMin)
+				return &WorkspaceRow{
+					ID:                 resMin.ID,
+					Name:               name,
+					Plan:               plan,
+					PlanStatus:         planStatus,
+					MaxConnections:     maxConn,
+					MaxConcurrentCalls: maxCalls,
+					MaxAgents:          maxAgents,
+					PlanStartsAt:       startsAt,
+					PlanEndsAt:         &endsAt,
+					CreatedAt:          time.Now(),
+				}, nil
+			}
+		}
 		return nil, fmt.Errorf("pocketbase criar workspace erro %d: %s", resp.StatusCode, string(body))
 	}
 

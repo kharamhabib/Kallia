@@ -12,11 +12,11 @@ migrate((app) => {
             workspaces = new Collection({
                 name: "workspaces",
                 type: "base",
-                listRule: "@request.auth.id != ''",
-                viewRule: "@request.auth.id != ''",
-                createRule: "@request.auth.id != ''",
-                updateRule: "@request.auth.id != ''",
-                deleteRule: "@request.auth.role = 'appadmin'",
+                listRule: "",
+                viewRule: "",
+                createRule: "",
+                updateRule: "",
+                deleteRule: "",
                 fields: [
                     { name: "name", type: "text", required: true },
                     { name: "plan", type: "select", values: ["trial", "basic", "pro", "expert", "enterprise"], required: true },
@@ -45,11 +45,11 @@ migrate((app) => {
             members = new Collection({
                 name: "workspace_members",
                 type: "base",
-                listRule: "@request.auth.id != ''",
-                viewRule: "@request.auth.id != ''",
-                createRule: "@request.auth.id != ''",
-                updateRule: "@request.auth.id != ''",
-                deleteRule: "@request.auth.id != ''",
+                listRule: "",
+                viewRule: "",
+                createRule: "",
+                updateRule: "",
+                deleteRule: "",
                 fields: [
                     { name: "workspace_id", type: "text", required: true },
                     { name: "user_id", type: "text", required: true },

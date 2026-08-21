@@ -25,6 +25,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Poda de Código Morto e Simplificação Ponytail (20/08/2026)**: Remoção de push de projetos legados no PocketBase sync, eliminação de métodos não utilizados e wrappers redundantes, e inlining de helpers desnecessários.
 - [x] **Correção do Middleware de Arquivos Estáticos & SPA Fallback (20/08/2026)**: Isenção explícita de autenticação para todas as rotas estáticas frontend (`/`, `/favicon.ico`, `/assets/*`), endpoints de healthcheck (`/healthz`, `/ready`) e adição de handler SPA robusto para carregar o `index.html` em recarregamentos diretos de rotas.
 - [x] **Consolidação do Modelo Direto PocketBase SSOT & Limpeza de Sincronizações Legadas (20/08/2026)**: Eliminação de loops redundantes de hidratação (`hydrateFromPocketBase`) e push (`pushAllLocalToPocketBase`), remoção de chamadas duplicadas de sincronização em SQLite, e transição definitiva para leitura/escrita direta no PocketBase com inicialização instantânea e reatividade SSE pura.
+- [x] **Correção de Criação de Workspaces no PocketBase (20/08/2026)**: Ajuste das credenciais de fallback de admin no cliente PocketBase, formatação das datas no padrão RFC3339, fallback resiliente de criação com payload essencial e abertura das regras de API de coleções no `pb_schema.json` e migrações para comunicação direta do backend.
 
 ---
 

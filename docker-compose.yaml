@@ -12,6 +12,8 @@ services:
       - "${KALLIA_UDP_PORT:-50000}:${KALLIA_UDP_PORT:-50000}/tcp"
     environment:
       - POCKETBASE_URL=http://pocketbase:8090
+      - POCKETBASE_ADMIN_EMAIL=${POCKETBASE_ADMIN_EMAIL:-admin@kallia.app}
+      - POCKETBASE_ADMIN_PASSWORD=${POCKETBASE_ADMIN_PASSWORD:-KalliaAdmin2026!}
       - REDIS_URL=redis://redis:6379
       - KALLIA_PUBLIC_IP=${KALLIA_PUBLIC_IP:-auto}
       - KALLIA_UDP_PORT=${KALLIA_UDP_PORT:-50000}
@@ -34,6 +36,8 @@ services:
       - 8090
     environment:
       - PB_ENCRYPTION_KEY=${POCKETBASE_ENCRYPTION_KEY:-}
+      - PB_ADMIN_EMAIL=${POCKETBASE_ADMIN_EMAIL:-admin@kallia.app}
+      - PB_ADMIN_PASSWORD=${POCKETBASE_ADMIN_PASSWORD:-KalliaAdmin2026!}
     volumes:
       - ./storage/pb_data:/pb_data
       - ./pb_migrations:/pb_migrations
