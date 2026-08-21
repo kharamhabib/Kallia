@@ -42,6 +42,13 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - Isolamento estrito de todas as chaves de API exclusivamente dentro da coleção criptografada `ai_providers` (AES-256-GCM).
   - Sanitização automática (`parseAndSanitizeAIConfig`) removendo qualquer campo de chave (`geminiApiKey`, `apiKey`, `token`) antes de persistir em `agents.ai_config` ou `sessions.ai_config`.
   - Atualização do modelo Gemini Live padrão para `models/gemini-3.1-flash-live-preview` e descriptografia resiliente multi-chave com verificação de integridade.
+- [x] **Sincronização Contínua de Metadados de Sessões (`sessions`) (21/08/2026)**:
+  - Criação do método `UpsertSessionFullPB` e gatilho `s.syncToPocketBase` em todos os eventos de ciclo de vida (conexão/pareamento WhatsApp, alteração de JID, status de linha, webhook, chatwoot e configurações de IA).
+  - Preenchimento e sincronização automática de `jid`, `phone_number`, `status` (`connected`/`disconnected`/`pairing`), `workspace_id`, `chatwoot` e `ai_config` no PocketBase.
+- [x] **Sincronização de Contatos do CRM (`contacts`) no PocketBase (21/08/2026)**:
+  - Implementação de persistência reativa no `upsertContact` e `updateContactManual` disparando `UpsertContactPB` diretamente para a coleção `contacts` do PocketBase.
+  - Correção de mapeamento de chaves (`workspace_id` e `session_id`), busca resiliente e migração direta dos contatos locais existentes.
+  - Resolução automática e enriquecimento de LIDs do WhatsApp (`@lid`) para o número de telefone real do contato (`phone`), vinculando simultaneamente `phone`, `lid` e `jid` no PocketBase.
 
 ---
 

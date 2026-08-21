@@ -86,22 +86,26 @@ func (s *Session) realPhone(jid types.JID) string {
 	if jid.User == "" {
 		return ""
 	}
-	if jid.Server == types.DefaultUserServer {
+	if jid.Server == types.DefaultUserServer && len(jid.User) <= 13 {
 		return jid.User
 	}
 	nonAD := jid.ToNonAD()
-	if pn, err := s.getClient().Store.LIDs.GetPNForLID(context.Background(), nonAD); err == nil && pn.User != "" {
-		return pn.User
+	if cli := s.getClient(); cli != nil && cli.Store != nil && cli.Store.LIDs != nil {
+		if pn, err := cli.Store.LIDs.GetPNForLID(context.Background(), nonAD); err == nil && pn.User != "" && len(pn.User) <= 13 {
+			return pn.User
+		}
 	}
-	// Força busca rápida no servidor do WhatsApp com timeout de 2s para resolver LID -> PN
-	if s.getClient() != nil {
+	// Força busca rápida no servidor do WhatsApp para resolver LID -> PN
+	if cli := s.getClient(); cli != nil {
 		s.log.Info("realPhone: LID not in local DB, querying WhatsApp server", "lid", nonAD.String())
-		ctxTimeout, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctxTimeout, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if resp, err := s.getClient().GetUserInfo(ctxTimeout, []types.JID{nonAD}); err == nil && resp != nil {
-			if pn2, err := s.getClient().Store.LIDs.GetPNForLID(context.Background(), nonAD); err == nil && pn2.User != "" {
-				s.log.Info("realPhone: LID resolved from WhatsApp server", "lid", nonAD.String(), "pn", pn2.User)
-				return pn2.User
+		if resp, err := cli.GetUserInfo(ctxTimeout, []types.JID{nonAD}); err == nil && resp != nil {
+			if cli.Store != nil && cli.Store.LIDs != nil {
+				if pn2, err := cli.Store.LIDs.GetPNForLID(context.Background(), nonAD); err == nil && pn2.User != "" && len(pn2.User) <= 13 {
+					s.log.Info("realPhone: LID resolved from WhatsApp server", "lid", nonAD.String(), "pn", pn2.User)
+					return pn2.User
+				}
 			}
 		}
 	}
@@ -112,7 +116,7 @@ func (s *Session) realPhone(jid types.JID) string {
 		for _, ac := range s.reg.calls {
 			if ac.cm != nil {
 				if info := ac.cm.CurrentCall(); info != nil {
-					if (info.PeerJid == jidStr || info.CallCreator == jidStr) && info.CallerPn != "" {
+					if (info.PeerJid == jidStr || info.CallCreator == jidStr) && info.CallerPn != "" && len(info.CallerPn) <= 13 {
 						s.reg.mu.Unlock()
 						return info.CallerPn
 					}
@@ -703,6 +707,7 @@ func (s *server) handleSetChatwoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.setChatwoot(cfg)
+	go sess.syncToPocketBase(context.Background())
 	b, _ := json.Marshal(cfg)
 	if err := sess.mgr.store.setChatwoot(r.Context(), sess.id, string(b)); err != nil {
 		s.log.Error("falha ao persistir config chatwoot", "session", sess.id, "err", err)
@@ -728,6 +733,7 @@ func (s *server) handleDeleteChatwoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.setChatwoot(ChatwootConfig{})
+	go sess.syncToPocketBase(context.Background())
 	if err := sess.mgr.store.setChatwoot(r.Context(), sess.id, ""); err != nil {
 		s.log.Error("falha ao remover config chatwoot", "session", sess.id, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao remover configuração no banco"})

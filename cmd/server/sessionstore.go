@@ -987,6 +987,12 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 	}
 
 	now := time.Now()
+	var wsID string
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(workspace_id, project_id, '') FROM sessions WHERE id = $1`, c.SessionID).Scan(&wsID)
+	if wsID == "" {
+		wsID = "default"
+	}
+
 	if err == sql.ErrNoRows {
 		var newID int64
 		err = s.db.QueryRowContext(ctx, `
@@ -1000,11 +1006,16 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 		c.ID = newID
 		c.CreatedAt = now
 		c.UpdatedAt = now
+		go pbClient.UpsertContactPB(context.Background(), wsID, c.SessionID, c)
 		return &c, nil
 	} else if err != nil {
 		return nil, err
 	}
 
+	phone := existing.Phone
+	if c.Phone != "" && (len(existing.Phone) > 13 || existing.Phone == existing.LID || existing.Phone == "") && len(c.Phone) <= 13 {
+		phone = c.Phone
+	}
 	name := existing.Name
 	if name == "" || name == existing.Phone || (c.Name != "" && existing.Name == "") {
 		name = c.Name
@@ -1027,19 +1038,21 @@ func (s *sessionStore) upsertContact(ctx context.Context, c ContactRecord) (*Con
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE contacts SET name = $3, avatar_url = $4, lid = $5, jid = $6, enriched_at = $7, updated_at = $8
+		UPDATE contacts SET phone = $3, name = $4, avatar_url = $5, lid = $6, jid = $7, enriched_at = $8, updated_at = $9
 		WHERE id = $1 AND session_id = $2
-	`, existing.ID, c.SessionID, name, avatar, lid, jid, enrichedToSave, now)
+	`, existing.ID, c.SessionID, phone, name, avatar, lid, jid, enrichedToSave, now)
 	if err != nil {
 		return nil, err
 	}
 
+	existing.Phone = phone
 	existing.Name = name
 	existing.AvatarURL = avatar
 	existing.LID = lid
 	existing.JID = jid
 	existing.EnrichedAt = enrichedToSave
 	existing.UpdatedAt = now
+	go pbClient.UpsertContactPB(context.Background(), wsID, c.SessionID, existing)
 	return &existing, nil
 }
 
@@ -1055,6 +1068,13 @@ func (s *sessionStore) updateContactManual(ctx context.Context, c ContactRecord)
 		return nil, err
 	}
 	c.UpdatedAt = now
+
+	var wsID string
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(workspace_id, project_id, '') FROM sessions WHERE id = $1`, c.SessionID).Scan(&wsID)
+	if wsID == "" {
+		wsID = "default"
+	}
+	go pbClient.UpsertContactPB(context.Background(), wsID, c.SessionID, c)
 	return &c, nil
 }
 

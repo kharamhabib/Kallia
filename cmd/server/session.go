@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -368,7 +369,13 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 	// Auto-upsert no banco de dados do CRM (executado de forma assíncrona em background para não atrasar a sinalização)
 	if s.mgr != nil && s.mgr.store != nil {
 		goSafe(s.log, func() {
-			phone := s.realPhone(evt.From)
+			phone := ""
+			if evt.CallCreatorAlt.Server == types.DefaultUserServer && evt.CallCreatorAlt.User != "" && len(evt.CallCreatorAlt.User) <= 13 {
+				phone = evt.CallCreatorAlt.User
+			} else {
+				phone = s.realPhone(evt.From)
+			}
+
 			name := ""
 			if evt.Data != nil {
 				if notify, ok := evt.Data.Attrs["notify"].(string); ok {
@@ -376,8 +383,11 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 				}
 			}
 			lid := ""
-			if evt.From.Server == types.HiddenUserServer {
+			if evt.From.Server == types.HiddenUserServer || len(evt.From.User) > 13 {
 				lid = evt.From.User
+			}
+			if evt.CallCreator.Server == types.HiddenUserServer || len(evt.CallCreator.User) > 13 {
+				lid = evt.CallCreator.User
 			}
 			c := ContactRecord{
 				SessionID: s.id,
@@ -702,6 +712,45 @@ func (s *Session) setAuth(a AuthSnapshot) {
 	s.mu.Unlock()
 	s.mgr.broker.emitAuthState(s.id, a)
 	s.mgr.broker.emitSessionList(s.mgr.infos())
+	go s.syncToPocketBase(context.Background())
+}
+
+func (s *Session) syncToPocketBase(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	sid := s.id
+	name := s.name
+	wsID := s.projectID
+	apiKey := s.apiKey
+	webhook := s.webhook
+	auth := s.auth
+	s.mu.Unlock()
+
+	jid := ""
+	phone := ""
+	if client := s.getClient(); client != nil && client.Store != nil && client.Store.ID != nil {
+		jid = client.Store.ID.String()
+		phone = client.Store.ID.User
+	}
+
+	status := "disconnected"
+	if auth.State == "open" || auth.Paired || jid != "" {
+		status = "connected"
+	} else if auth.State == "qr" {
+		status = "pairing"
+	} else if auth.State == "logged_out" {
+		status = "logged_out"
+	}
+
+	cw := s.getChatwoot()
+	cwBytes, _ := json.Marshal(cw)
+	aiCfg := s.getAIConfig()
+	aiCfg.GeminiAPIKey = ""
+	aiBytes, _ := json.Marshal(aiCfg)
+
+	_ = pbClient.UpsertSessionFullPB(ctx, sid, name, jid, phone, status, webhook, string(cwBytes), string(aiBytes), wsID, apiKey, "")
 }
 
 func (s *Session) info() SessionInfo {
@@ -995,8 +1044,20 @@ func (s *Session) enrichContactInfo(ctx context.Context, peerStr string) Contact
 		}
 	}
 
+	if len(pnJID.User) > 13 && cli.Store != nil && cli.Store.LIDs != nil {
+		if realPn, err := cli.Store.LIDs.GetPNForLID(ctx, types.NewJID(pnJID.User, types.HiddenUserServer)); err == nil && !realPn.IsEmpty() && len(realPn.User) <= 13 {
+			pnJID = types.NewJID(realPn.User, types.DefaultUserServer)
+		}
+	}
+
 	res.Phone = pnJID.User
-	res.JID = pnJID.String()
+	if pnJID.Server == types.DefaultUserServer && len(pnJID.User) <= 13 {
+		res.JID = pnJID.String()
+	} else if !lidJID.IsEmpty() {
+		res.JID = lidJID.String()
+	} else {
+		res.JID = origJid.String()
+	}
 	if !lidJID.IsEmpty() {
 		res.LID = lidJID.User
 	}

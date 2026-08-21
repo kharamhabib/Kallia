@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -467,6 +468,7 @@ func (s *server) handleSetWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	url := strings.TrimSpace(b.URL)
 	sess.setWebhook(url)
+	go sess.syncToPocketBase(context.Background())
 	if err := sess.mgr.store.setWebhook(r.Context(), sess.id, url); err != nil {
 		sess.log.Error("falha ao persistir webhook", "session", sess.id, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao salvar webhook no banco"})
@@ -489,6 +491,7 @@ func (s *server) handleDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.setWebhook("")
+	go sess.syncToPocketBase(context.Background())
 	if err := sess.mgr.store.setWebhook(r.Context(), sess.id, ""); err != nil {
 		sess.log.Error("falha ao remover webhook", "session", sess.id, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao remover webhook no banco"})

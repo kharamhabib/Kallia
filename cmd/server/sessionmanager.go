@@ -214,6 +214,7 @@ func (m *SessionManager) Create(name, projectID string) (string, string, error) 
 	s.waDB = db
 	m.register(s)
 	m.broker.emitSessionList(m.infos())
+	go s.syncToPocketBase(m.appCtx)
 	if err := s.startPairing(m.appCtx); err != nil {
 		m.log.Error("start pairing failed", "session", id, "err", err)
 		return "", "", fmt.Errorf("start pairing: %w", err)
@@ -232,16 +233,9 @@ func (m *SessionManager) Rename(ctx context.Context, id, name string) error {
 	}
 	s.mu.Lock()
 	s.name = name
-	projectID := s.projectID
-	apiKey := s.apiKey
-	webhook := s.webhook
-	jid := ""
-	if client := s.getClient(); client != nil && client.Store != nil && client.Store.ID != nil {
-		jid = client.Store.ID.String()
-	}
 	s.mu.Unlock()
 
-	syncSessionToPB(id, name, jid, webhook, "", "", projectID, apiKey)
+	go s.syncToPocketBase(ctx)
 	m.broker.emitSessionList(m.infos())
 	return nil
 }
@@ -259,6 +253,7 @@ func (m *SessionManager) RotateAPIKey(ctx context.Context, id, customKey string)
 		return "", fmt.Errorf("salvar nova chave de api: %w", err)
 	}
 	s.setAPIKey(newKey)
+	go s.syncToPocketBase(ctx)
 	m.broker.emitSessionList(m.infos())
 	m.log.Info("session api key rotated", "session", id)
 	return newKey, nil

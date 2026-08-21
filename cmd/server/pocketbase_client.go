@@ -778,26 +778,48 @@ func (c *PocketBaseClient) ListSessionsPB(ctx context.Context) ([]sessionRow, er
 }
 
 func (c *PocketBaseClient) UpsertSessionPB(ctx context.Context, id, name, jid, webhook, chatwoot, aiConfig, workspaceID, apiKey string) error {
+	return c.UpsertSessionFullPB(ctx, id, name, jid, "", "", webhook, chatwoot, aiConfig, workspaceID, apiKey, "")
+}
+
+func (c *PocketBaseClient) UpsertSessionFullPB(ctx context.Context, id, name, jid, phoneNumber, status, webhook, chatwoot, aiConfig, workspaceID, apiKey, defaultAgentID string) error {
 	var cwObj any = map[string]any{}
 	if chatwoot != "" {
 		_ = json.Unmarshal([]byte(chatwoot), &cwObj)
 	}
-	var aiObj any = map[string]any{}
-	if aiConfig != "" {
-		_ = json.Unmarshal([]byte(aiConfig), &aiObj)
+	parsedAIConfig := parseAndSanitizeAIConfig(aiConfig)
+
+	// Extrai número de telefone se não fornecido
+	if phoneNumber == "" && jid != "" {
+		if atIdx := strings.Index(jid, "@"); atIdx > 0 {
+			userPart := jid[:atIdx]
+			if colonIdx := strings.Index(userPart, ":"); colonIdx > 0 {
+				userPart = userPart[:colonIdx]
+			}
+			phoneNumber = userPart
+		}
 	}
 
 	data := map[string]any{
 		"sid":          id,
 		"name":         name,
 		"jid":          jid,
+		"phone_number": phoneNumber,
 		"chatwoot":     cwObj,
-		"ai_config":    aiObj,
+		"ai_config":    parsedAIConfig,
 		"workspace_id": workspaceID,
 		"api_key":      apiKey,
 	}
+
+	if status != "" {
+		data["status"] = status
+	}
+	if defaultAgentID != "" {
+		data["default_agent_id"] = defaultAgentID
+	}
 	if strings.HasPrefix(webhook, "http://") || strings.HasPrefix(webhook, "https://") {
 		data["webhook"] = webhook
+	} else if webhook == "" {
+		data["webhook"] = ""
 	}
 
 	// 1. Procurar se já existe registro com este sid ou id no PocketBase
@@ -1514,10 +1536,10 @@ func (c *PocketBaseClient) UpsertAIProviderPB(ctx context.Context, r aiProviderR
 func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q string) ([]ContactRecord, error) {
 	reqPath := "/api/collections/contacts/records?perPage=500&sort=-created"
 	if targetID != "" && q != "" {
-		filter := fmt.Sprintf(`workspace_id="%s" && (name ~ "%s" || phone ~ "%s" || email ~ "%s" || company ~ "%s")`, targetID, q, q, q, q)
+		filter := fmt.Sprintf(`(workspace_id="%s" || session_id="%s") && (name ~ "%s" || phone ~ "%s" || email ~ "%s" || company ~ "%s")`, targetID, targetID, q, q, q, q)
 		reqPath = fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=500&sort=-created", url.QueryEscape(filter))
 	} else if targetID != "" {
-		filter := fmt.Sprintf(`workspace_id="%s"`, targetID)
+		filter := fmt.Sprintf(`workspace_id="%s" || session_id="%s"`, targetID, targetID)
 		reqPath = fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=500&sort=-created", url.QueryEscape(filter))
 	}
 
@@ -1576,14 +1598,19 @@ func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q strin
 	return list, nil
 }
 
-func (c *PocketBaseClient) UpsertContactPB(ctx context.Context, rec ContactRecord) error {
+func (c *PocketBaseClient) UpsertContactPB(ctx context.Context, wsID, sessionID string, rec ContactRecord) error {
 	var tagsObj any = []string{}
 	if rec.Tags != "" {
 		_ = json.Unmarshal([]byte(rec.Tags), &tagsObj)
 	}
 
+	if wsID == "" {
+		wsID = "default"
+	}
+
 	data := map[string]any{
-		"workspace_id": rec.SessionID,
+		"workspace_id": wsID,
+		"session_id":   sessionID,
 		"phone":        rec.Phone,
 		"name":         rec.Name,
 		"company":      rec.Company,
@@ -1595,20 +1622,27 @@ func (c *PocketBaseClient) UpsertContactPB(ctx context.Context, rec ContactRecor
 	}
 	if strings.Contains(rec.Email, "@") {
 		data["email"] = rec.Email
+	} else {
+		data["email"] = ""
 	}
 
-	// 1. Verificar se já existe por workspace_id e phone
-	filter := fmt.Sprintf(`workspace_id="%s" && phone="%s"`, rec.SessionID, rec.Phone)
+	// 1. Verificar se já existe por workspace_id/session_id e (phone ou lid)
+	var filter string
+	if rec.LID != "" {
+		filter = fmt.Sprintf(`(workspace_id="%s" || session_id="%s") && (phone="%s" || (lid != "" && lid="%s"))`, wsID, sessionID, rec.Phone, rec.LID)
+	} else {
+		filter = fmt.Sprintf(`(workspace_id="%s" || session_id="%s") && phone="%s"`, wsID, sessionID, rec.Phone)
+	}
 	searchURL := fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
 	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
-	if err == nil {
+	if err == nil && resp != nil {
 		defer resp.Body.Close()
 		var res PBListResponse[struct {
 			ID string `json:"id"`
 		}]
 		if json.NewDecoder(resp.Body).Decode(&res) == nil && len(res.Items) > 0 {
 			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/contacts/records/"+res.Items[0].ID, data)
-			if patchErr == nil {
+			if patchErr == nil && patchResp != nil {
 				defer patchResp.Body.Close()
 				return nil
 			}
@@ -1617,7 +1651,7 @@ func (c *PocketBaseClient) UpsertContactPB(ctx context.Context, rec ContactRecor
 
 	// 2. Se não existe, cria novo
 	createResp, createErr := c.doAdminRequest(ctx, "POST", "/api/collections/contacts/records", data)
-	if createErr == nil {
+	if createErr == nil && createResp != nil {
 		defer createResp.Body.Close()
 	}
 	return createErr

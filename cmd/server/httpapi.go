@@ -1395,7 +1395,7 @@ func (s *server) handleCreateCRMContact(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	req.SessionID = sess.id
-	_ = pbClient.UpsertContactPB(r.Context(), req)
+	_ = pbClient.UpsertContactPB(r.Context(), sess.projectID, sess.id, req)
 	res, err := s.sessions.store.upsertContact(r.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -1426,7 +1426,7 @@ func (s *server) handleUpdateCRMContact(w http.ResponseWriter, r *http.Request) 
 	}
 	req.ID = id
 	req.SessionID = sess.id
-	_ = pbClient.UpsertContactPB(r.Context(), req)
+	_ = pbClient.UpsertContactPB(r.Context(), sess.projectID, sess.id, req)
 	res, err := s.sessions.store.updateContactManual(r.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
