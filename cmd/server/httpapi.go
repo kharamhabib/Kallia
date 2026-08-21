@@ -1863,6 +1863,19 @@ func (s *server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	userID, _ := r.Context().Value(ctxKeyUserID).(string)
+	userRole, _ := r.Context().Value(ctxKeyUserRole).(string)
+
+	// Regra de Negócio: Contas normais (não appadmin) só têm direito a 1 único workspace
+	if userRole != "appadmin" && userID != "" {
+		userWorkspaces, err := pbClient.ListWorkspacesForUserPB(r.Context(), userID)
+		if err == nil && len(userWorkspaces) >= 1 {
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"error": "Limite de workspaces atingido. Contas normais podem possuir apenas 1 workspace. Faça upgrade da sua conta para criar múltiplos workspaces.",
+			})
+			return
+		}
+	}
+
 	var body struct {
 		Name string `json:"name"`
 		Plan string `json:"plan"`

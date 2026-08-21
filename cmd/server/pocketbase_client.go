@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -566,35 +567,105 @@ func (c *PocketBaseClient) RemoveWorkspaceMemberPB(ctx context.Context, memberID
 	return nil
 }
 
-func (c *PocketBaseClient) ListWorkspacesForUserPB(ctx context.Context, userID string) ([]WorkspaceRow, error) {
-	// 1. Buscar membros do usuário
-	filter := fmt.Sprintf(`user_id="%s"`, userID)
-	reqURL := fmt.Sprintf("/api/collections/workspace_members/records?filter=(%s)&perPage=100", url.QueryEscape(filter))
+func (c *PocketBaseClient) GetUserPB(ctx context.Context, userID string) (*struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	Role        string `json:"role"`
+	WorkspaceID string `json:"workspace_id"`
+}, error) {
+	resp, err := c.doAdminRequest(ctx, "GET", "/api/collections/users/records/"+userID, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("user not found")
+	}
+	var res struct {
+		ID          string `json:"id"`
+		Email       string `json:"email"`
+		Role        string `json:"role"`
+		WorkspaceID string `json:"workspace_id"`
+		ProjectID   string `json:"project_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
+	if res.WorkspaceID == "" {
+		res.WorkspaceID = res.ProjectID
+	}
+	return &struct {
+		ID          string `json:"id"`
+		Email       string `json:"email"`
+		Role        string `json:"role"`
+		WorkspaceID string `json:"workspace_id"`
+	}{
+		ID:          res.ID,
+		Email:       res.Email,
+		Role:        res.Role,
+		WorkspaceID: res.WorkspaceID,
+	}, nil
+}
 
-	resp, err := c.doAdminRequest(ctx, "GET", reqURL, nil)
-	if err == nil {
-		defer resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			var pbRes PBListResponse[struct {
-				WorkspaceID string `json:"workspace_id"`
-				Role        string `json:"role"`
-			}]
-			if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
-				var list []WorkspaceRow
-				for _, m := range pbRes.Items {
-					if ws, err := c.GetWorkspacePB(ctx, m.WorkspaceID); err == nil && ws != nil {
-						list = append(list, *ws)
+func (c *PocketBaseClient) ListWorkspacesForUserPB(ctx context.Context, userID string) ([]WorkspaceRow, error) {
+	wsMap := make(map[string]WorkspaceRow)
+
+	// 1. Buscar no workspace_members
+	if userID != "" {
+		filter := fmt.Sprintf(`user_id="%s"`, userID)
+		reqURL := fmt.Sprintf("/api/collections/workspace_members/records?filter=(%s)&perPage=100", url.QueryEscape(filter))
+
+		resp, err := c.doAdminRequest(ctx, "GET", reqURL, nil)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var pbRes PBListResponse[struct {
+					WorkspaceID string `json:"workspace_id"`
+					Role        string `json:"role"`
+				}]
+				if json.NewDecoder(resp.Body).Decode(&pbRes) == nil {
+					for _, m := range pbRes.Items {
+						if ws, err := c.GetWorkspacePB(ctx, m.WorkspaceID); err == nil && ws != nil {
+							wsMap[ws.ID] = *ws
+						}
 					}
 				}
-				if len(list) > 0 {
-					return list, nil
+			}
+		}
+
+		// 2. Verificar se o registro do usuário em users possui um workspace_id direto
+		if u, err := c.GetUserPB(ctx, userID); err == nil && u != nil && u.WorkspaceID != "" {
+			if _, exists := wsMap[u.WorkspaceID]; !exists {
+				if ws, err := c.GetWorkspacePB(ctx, u.WorkspaceID); err == nil && ws != nil {
+					wsMap[ws.ID] = *ws
+					// Auto-vincular a workspace_members para consistência
+					_ = c.AddWorkspaceMemberPB(ctx, ws.ID, userID, "owner")
 				}
 			}
 		}
 	}
 
-	// 2. Se não encontrar membros ou coleção nova, retorna listagem geral de workspaces
-	return c.ListWorkspacesPB(ctx)
+	// 3. Se ainda não encontrou nenhum workspace vinculado a este usuário, buscar todos do PocketBase
+	if len(wsMap) == 0 {
+		all, _ := c.ListWorkspacesPB(ctx)
+		for _, ws := range all {
+			wsMap[ws.ID] = ws
+			if userID != "" {
+				_ = c.AddWorkspaceMemberPB(ctx, ws.ID, userID, "owner")
+			}
+		}
+	}
+
+	var list []WorkspaceRow
+	for _, ws := range wsMap {
+		list = append(list, ws)
+	}
+
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].CreatedAt.Before(list[j].CreatedAt)
+	})
+
+	return list, nil
 }
 
 func (c *PocketBaseClient) RequestPasswordResetPB(ctx context.Context, email string) error {

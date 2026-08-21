@@ -4,8 +4,11 @@ import {
   ChevronDown,
   Plus,
   Check,
+  Crown,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { useNavigation } from "@/stores/navigation";
+import { getUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -17,6 +20,11 @@ export const WorkspaceSelector: React.FC = () => {
     setCurrentWorkspace,
     createWorkspace,
   } = useWorkspaceStore();
+  const { setActiveSection } = useNavigation();
+
+  const user = getUser();
+  const isSuperAdmin = user?.role === "appadmin";
+  const canCreateMore = isSuperAdmin || workspaces.length < 1;
 
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -178,42 +186,62 @@ export const WorkspaceSelector: React.FC = () => {
 
             {/* Ações Inferiores */}
             <div className="pt-1 border-t border-border/50 space-y-1">
-              {!isCreating ? (
-                <button
-                  type="button"
-                  onClick={() => setIsCreating(true)}
-                  className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-primary font-medium hover:bg-primary/10 transition-colors cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>Novo Workspace</span>
-                </button>
+              {canCreateMore ? (
+                !isCreating ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreating(true)}
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-primary font-medium hover:bg-primary/10 transition-colors cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Novo Workspace</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handleCreateWorkspace} className="p-1 space-y-1.5">
+                    <input
+                      type="text"
+                      placeholder="Nome do Workspace..."
+                      value={newWorkspaceName}
+                      onChange={(e) => setNewWorkspaceName(e.target.value)}
+                      autoFocus
+                      className="w-full text-xs px-2 py-1 rounded-md border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsCreating(false)}
+                        className="px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted rounded cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !newWorkspaceName.trim()}
+                        className="px-2 py-0.5 text-[10px] bg-primary text-primary-foreground font-semibold rounded hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSubmitting ? "Criando..." : "Criar"}
+                      </button>
+                    </div>
+                  </form>
+                )
               ) : (
-                <form onSubmit={handleCreateWorkspace} className="p-1 space-y-1.5">
-                  <input
-                    type="text"
-                    placeholder="Nome do Workspace..."
-                    value={newWorkspaceName}
-                    onChange={(e) => setNewWorkspaceName(e.target.value)}
-                    autoFocus
-                    className="w-full text-xs px-2 py-1 rounded-md border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  />
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setIsCreating(false)}
-                      className="px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted rounded cursor-pointer"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !newWorkspaceName.trim()}
-                      className="px-2 py-0.5 text-[10px] bg-primary text-primary-foreground font-semibold rounded hover:bg-primary/90 disabled:opacity-50 cursor-pointer"
-                    >
-                      {isSubmitting ? "Criando..." : "Criar"}
-                    </button>
+                <div className="p-1.5 rounded-lg bg-muted/40 space-y-1.5 border border-border/40">
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                    <span>Workspaces da Conta:</span>
+                    <span className="font-mono font-bold text-foreground">1/1</span>
                   </div>
-                </form>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      setActiveSection("billing");
+                    }}
+                    className="flex w-full items-center justify-center gap-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 py-1 text-[10px] font-bold transition-colors cursor-pointer border border-amber-500/25"
+                  >
+                    <Crown className="h-3 w-3" />
+                    <span>Upgrade Multi-Workspace</span>
+                  </button>
+                </div>
               )}
             </div>
           </div>
