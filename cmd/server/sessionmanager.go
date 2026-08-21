@@ -120,8 +120,23 @@ func (m *SessionManager) snapshotEvents() []any {
 
 func (m *SessionManager) Restore(ctx context.Context) error {
 	rows, err := m.store.listAll(ctx)
-	if err != nil {
-		return err
+	if err != nil || len(rows) == 0 {
+		pbSessions, pbErr := pbClient.ListSessionsPB(ctx)
+		if pbErr == nil && len(pbSessions) > 0 {
+			for _, ps := range pbSessions {
+				_ = m.store.insert(ctx, ps.ID, ps.Name, ps.ProjectID, ps.APIKey)
+				if ps.Webhook != "" {
+					_ = m.store.setWebhook(ctx, ps.ID, ps.Webhook)
+				}
+				if ps.Chatwoot != "" {
+					_ = m.store.setChatwoot(ctx, ps.ID, ps.Chatwoot)
+				}
+				if ps.AIConfig != "" {
+					_ = m.store.setAIConfig(ctx, ps.ID, ps.AIConfig)
+				}
+			}
+			rows, _ = m.store.listAll(ctx)
+		}
 	}
 	for _, row := range rows {
 		var client *whatsmeow.Client

@@ -62,6 +62,18 @@ func (s *Session) getClient() *whatsmeow.Client {
 	return s.client.Load()
 }
 
+func (s *Session) setName(name string) {
+	s.mu.Lock()
+	s.name = name
+	s.mu.Unlock()
+}
+
+func (s *Session) getName() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.name
+}
+
 func (s *Session) setWebhook(url string) {
 	s.mu.Lock()
 	s.webhook = url

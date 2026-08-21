@@ -34,7 +34,7 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 
 ### 🔄 PocketBase como Fonte Única de Verdade (SSOT) & Sincronização em Tempo Real
 - **Sincronização Bidirecional Dev ↔ VPS**: O servidor Go assina os eventos SSE do PocketBase (`/api/realtime`). Alterações feitas em produção ou no ambiente local são refletidas instantaneamente em todos os nós.
-- **Hidratação Inicial Automática**: Ao iniciar, o backend carrega automaticamente todos os Workspaces, Conexões, Agentes, Provedores de IA e Contatos do CRM a partir do PocketBase remoto.
+- **Inicialização Instantânea**: O backend restaura diretamente as conexões do WhatsApp e opera como cliente direto do PocketBase (Direct SSOT), sem loops pesados de cópia ou sincronização redundante no boot.
 - **Instâncias em Modo Standby no Dev**: Instâncias ativas na VPS aparecem no ambiente de desenvolvimento no estado configurável (permitindo edição de Agentes, Prompts, Tools e CRM) sem colidir ou disputar o socket físico do WhatsApp.
 - **Visão Global SuperAdmin**: Usuários `appadmin` possuem visão total de todas as instâncias e exclusão em cascata sincronizada em ambos os bancos (SQLite + PocketBase).
 

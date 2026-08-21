@@ -545,11 +545,23 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		// Rotas públicas liberadas
+		// 1. Servir o frontend estático, favicon e rotas não-API sem autenticação
+		if !strings.HasPrefix(path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// 2. Rotas públicas da API liberadas (auth, health, swagger, docs, webhooks)
 		if strings.HasPrefix(path, "/api/auth/") ||
 			path == "/api/health" ||
 			path == "/api/version" ||
+			path == "/api/config" ||
+			path == "/api/metrics" ||
 			path == "/api/docs" ||
+			path == "/api/swagger" ||
+			path == "/api/openapi.yaml" ||
+			path == "/api-docs.html" ||
+			strings.HasSuffix(strings.TrimRight(path, "/"), "/chatwoot/webhook") ||
 			strings.HasPrefix(path, "/api/webhook/webrtc/") ||
 			strings.HasPrefix(path, "/api/webhook/gemini-live/") {
 			next.ServeHTTP(w, r)

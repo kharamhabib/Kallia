@@ -879,7 +879,6 @@ func (s *sessionStore) createAgent(ctx context.Context, id, sessionID, name, des
 		return err
 	}
 
-	syncAgentToPB(id, sessionID, name, description, aiConfig, inbound, outbound)
 	return nil
 }
 
@@ -921,7 +920,6 @@ func (s *sessionStore) updateAgent(ctx context.Context, id, name, description, a
 		return err
 	}
 
-	syncAgentToPB(id, sessionID, name, description, aiConfig, inbound, outbound)
 	return nil
 }
 

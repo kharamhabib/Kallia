@@ -23,6 +23,8 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Otimização e Limpeza Ponytail (20/08/2026)**: Poda de dependências não utilizadas (`github.com/jackc/pgx/v5` e submódulos), remoção de tabelas SQLite legadas de projetos, simplificação do bootstrap de admin e unificação de serialização JSON com `jsonFieldToString`. Redução de mais de 200 linhas de código e complexidade.
 - [x] **Padronização e Alinhamento do SQLite Local com Workspaces (20/08/2026)**: Todas as tabelas operacionais locais no SQLite (`sessions`, `agents`, `ai_providers`, `contacts`, `call_history`, `call_ratings`, `call_transcripts`) migradas e alinhadas para a coluna `workspace_id`, com migração transparente de dados legados e compatibilidade retroativa com o PocketBase.
 - [x] **Poda de Código Morto e Simplificação Ponytail (20/08/2026)**: Remoção de push de projetos legados no PocketBase sync, eliminação de métodos não utilizados e wrappers redundantes, e inlining de helpers desnecessários.
+- [x] **Correção do Middleware de Arquivos Estáticos & SPA Fallback (20/08/2026)**: Isenção explícita de autenticação para todas as rotas estáticas frontend (`/`, `/favicon.ico`, `/assets/*`), endpoints de healthcheck (`/healthz`, `/ready`) e adição de handler SPA robusto para carregar o `index.html` em recarregamentos diretos de rotas.
+- [x] **Consolidação do Modelo Direto PocketBase SSOT & Limpeza de Sincronizações Legadas (20/08/2026)**: Eliminação de loops redundantes de hidratação (`hydrateFromPocketBase`) e push (`pushAllLocalToPocketBase`), remoção de chamadas duplicadas de sincronização em SQLite, e transição definitiva para leitura/escrita direta no PocketBase com inicialização instantânea e reatividade SSE pura.
 
 ---
 

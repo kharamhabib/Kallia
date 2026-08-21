@@ -71,11 +71,9 @@ func (s *server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
 		projectID = "default"
 	}
 
-	rows, err := s.sessions.store.listAIProviders(r.Context(), projectID)
-	if err != nil {
-		s.log.Error("falha ao listar ai_providers", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao buscar provedores de IA"})
-		return
+	rows, err := pbClient.ListAIProvidersPB(r.Context())
+	if err != nil || len(rows) == 0 {
+		rows, _ = s.sessions.store.listAIProviders(r.Context(), projectID)
 	}
 
 	rowMap := make(map[string]aiProviderRow)
@@ -197,12 +195,8 @@ func (s *server) handleUpdateAIProvider(w http.ResponseWriter, r *http.Request) 
 		OptionsJSON:     optionsJSON,
 	}
 
-	if err := s.sessions.store.upsertAIProvider(r.Context(), row); err != nil {
-		s.log.Error("falha ao salvar ai_provider", "provider", provider, "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "falha ao salvar no banco"})
-		return
-	}
-	syncAIProviderToPB(row)
+	_ = pbClient.UpsertAIProviderPB(r.Context(), row)
+	_ = s.sessions.store.upsertAIProvider(r.Context(), row)
 
 	decryptedKey, _ := decryptSecret(encryptedKey)
 	masked := maskSecret(decryptedKey)
