@@ -4,15 +4,12 @@ import {
   ChevronDown,
   Plus,
   Check,
-  Smartphone,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-export const WorkspaceSelector: React.FC<{ onNavigateToConnections?: () => void }> = ({
-  onNavigateToConnections,
-}) => {
+export const WorkspaceSelector: React.FC = () => {
   const {
     workspaces,
     currentWorkspace,
@@ -213,20 +210,6 @@ export const WorkspaceSelector: React.FC<{ onNavigateToConnections?: () => void 
                     </button>
                   </div>
                 </form>
-              )}
-
-              {onNavigateToConnections && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOpen(false);
-                    onNavigateToConnections();
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
-                >
-                  <Smartphone className="h-3.5 w-3.5 text-emerald-500" />
-                  <span>Gerenciar Linhas WhatsApp</span>
-                </button>
               )}
             </div>
           </div>

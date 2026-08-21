@@ -43,8 +43,12 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Discagem Direta p/ o Webphone**: Ao clicar no ícone de telefone em qualquer contato da lista, o sistema navega reativamente para a tela do discador e preenche o número automaticamente.
 - **Resolução Reativa de Identidade (`useContactDisplay`)**: Exibição automática do nome cadastrado no CRM e avatar do cliente nas telas de Dashboard, Histórico de Chamadas, Notificações e Webphone.
 
-### 🏢 Multi-Tenancy Desacoplado & Autenticação PocketBase (Google OAuth2 + E-mail)
-- **Autenticação Dupla**: Login e Registro por E-mail/Senha e **Google OAuth2** integrado com popup nativo.
+### 🏢 Multi-Tenancy Desacoplado & Métodos Canônicos de Autenticação
+- **Autenticação Unificada (PocketBase SSOT)**: Login e Registro por E-mail/Senha e **Google OAuth2** integrado com popup nativo.
+- **3 Métodos Especializados de Autenticação na API**:
+  1. **JWT Bearer (`Authorization: Bearer <TOKEN>`)**: Exclusivo para o Frontend / Dashboard de operadores.
+  2. **Chave de Conexão WhatsApp (`kc_...`)**: Aceita em `X-API-Key` ou `X-Connection-API-Key` para automações externas (N8N, Typebot, Chatwoot, Make, Webhooks) vinculada com segurança à linha e ao Workspace.
+  3. **Ticket de Uso Único / Query Param (`?ticket=` / `?token=`)**: Para transmissões em tempo real do navegador (SSE `/api/events` e WebSocket `/gemini/ws`).
 - **Controle de Acesso por Roles (RBAC)**:
   - `appadmin`: Superadministrador com visão global de todos os workspaces, usuários e conexões em todos os bancos.
   - `creator` / `owner`: Proprietário do Workspace. Gerencia conexões, membros, agentes de IA e planos.

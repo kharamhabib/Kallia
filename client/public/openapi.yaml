@@ -6,11 +6,10 @@ info:
     API HTTP do **Kallia** — plataforma PABX VoIP profissional para WhatsApp com agentes de IA (Gemini Live) e suporte a SaaS Multi-tenant.
 
     ## Autenticação
-    A API suporta múltiplos métodos de autenticação:
-    1. **JWT Bearer Token**: Envie no cabeçalho `Authorization: Bearer <TOKEN>` (obtido via `POST /api/auth/login`).
-    2. **Chave Mestre de API**: Envie no cabeçalho `X-API-Key` (configurada via `KALLIA_API_KEY`).
-    3. **Chave de API da Conexão**: Envie no cabeçalho `X-Connection-API-Key` ou `X-API-Key` (chave individual `kc_...` gerada por WhatsApp).
-    4. **Ticket de Uso Único (SSE / WS)**: Obtenha em `POST /api/events/ticket` e passe em `?ticket=` para conexões sem headers.
+    A API opera com 3 métodos canônicos e objetivos de autenticação:
+    1. **JWT Bearer Token**: Envie no cabeçalho `Authorization: Bearer <TOKEN>` (obtido via `POST /api/auth/login` validado pelo PocketBase). Ideal para o Painel Web / Dashboard.
+    2. **Chave de API da Conexão (`kc_...`)**: Envie no cabeçalho `X-API-Key` ou `X-Connection-API-Key` (chave individual `kc_...` gerada por linha de WhatsApp). Ideal para ferramentas e integrações externas (N8N, Typebot, Chatwoot, Make, Webhooks).
+    3. **Ticket de Uso Único / Query Param**: Obtenha em `POST /api/events/ticket` e passe em `?ticket=` ou envie `?token=<JWT>` para transmissões em tempo real do navegador (SSE /api/events e WebSockets).
 
     > ⚠️ A API inicia e gerencia as chamadas (sinalização VoIP e IA no servidor), enquanto o **áudio manual via navegador** utiliza WebRTC.
 servers:
@@ -19,7 +18,7 @@ servers:
 
 tags:
   - name: Autenticação
-    description: Login, registro e consulta de perfil do usuário
+    description: Login, registro e consulta de perfil do usuário (PocketBase SSOT)
   - name: Sessões & Conexões
     description: Contas WhatsApp escopadas por projeto (Device linkado via QR Code)
   - name: Agentes Especialistas
@@ -37,7 +36,6 @@ tags:
 
 security:
   - bearerAuth: []
-  - apiKeyAuth: []
   - connectionApiKeyAuth: []
 
 components:
@@ -46,17 +44,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Token JWT retornado por /api/auth/login
-    apiKeyAuth:
-      type: apiKey
-      in: header
-      name: X-API-Key
-      description: Chave mestre configurada em KALLIA_API_KEY
+      description: Token JWT retornado por /api/auth/login (autenticado no PocketBase)
     connectionApiKeyAuth:
       type: apiKey
       in: header
-      name: X-Connection-API-Key
-      description: Chave individual da conexão (kc_...)
+      name: X-API-Key
+      description: Chave individual da conexão WhatsApp (kc_...) aceita em X-API-Key ou X-Connection-API-Key
 
   parameters:
     Sid:

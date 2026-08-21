@@ -52,7 +52,7 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
     {
       category: "OPERAÇÃO",
       items: [
-        { id: "connections", label: "Conexões WhatsApp", icon: Smartphone },
+        { id: "connections", label: "Conexões do Workspace", icon: Smartphone },
         { id: "webphone", label: "Webphone & Ligações", icon: PhoneCall },
         { id: "schedules", label: "Disparos & Agenda", icon: Calendar },
       ],
@@ -87,12 +87,7 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
     <div className="flex h-full flex-col justify-between bg-sidebar border-r border-border/70 text-sidebar-foreground p-3 select-none">
       <div className="space-y-4 overflow-y-auto custom-scrollbar pr-0.5">
         {/* Workspace Selector Header */}
-        <WorkspaceSelector
-          onNavigateToConnections={() => {
-            setActiveSection("connections");
-            onNavigate?.();
-          }}
-        />
+        <WorkspaceSelector />
 
         {/* Retell Categorized Navigation */}
         <nav className="space-y-3.5">

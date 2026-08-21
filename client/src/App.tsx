@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType } from "react";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, Smartphone } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -43,7 +44,7 @@ const DevAgentation = (): React.ReactElement | null => {
 export const App = () => {
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
-  const { activeSection } = useNavigation();
+  const { activeSection, setActiveSection } = useNavigation();
   const theme = useTheme((s) => s.theme);
 
   // Ativa os hooks automáticos de IA e Agendamentos
@@ -66,7 +67,16 @@ export const App = () => {
           <EmptyState
             icon={<PlusCircle className="h-6 w-6" />}
             title="Nenhuma conta conectada"
-            description="Acesse a aba 'Conexões' para cadastrar sua primeira sessão do WhatsApp."
+            description="Acesse as Conexões do Workspace para cadastrar sua primeira sessão do WhatsApp."
+            action={
+              <Button
+                onClick={() => setActiveSection("connections")}
+                className="gap-2 rounded-xl text-xs font-semibold cursor-pointer shadow-xs"
+              >
+                <Smartphone className="h-4 w-4" />
+                <span>Ir para Conexões do Workspace</span>
+              </Button>
+            }
           />
         ) : active ? (
           <>

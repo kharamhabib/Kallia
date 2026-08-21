@@ -2,6 +2,15 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
 
+export interface WorkspaceMember {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: "owner" | "admin" | "member";
+  created: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -12,6 +21,7 @@ export interface Workspace {
   max_agents?: number;
   connections_count?: number;
   agents_count?: number;
+  default_session_id?: string;
   role?: string;
   created_at?: string;
 }
@@ -19,14 +29,21 @@ export interface Workspace {
 interface WorkspaceState {
   workspaces: Workspace[];
   currentWorkspace: Workspace | null;
+  members: WorkspaceMember[];
   isLoading: boolean;
+  isLoadingMembers: boolean;
   error: string | null;
 
   fetchWorkspaces: () => Promise<Workspace[]>;
   setCurrentWorkspace: (workspace: Workspace | string) => void;
-  createWorkspace: (name: string) => Promise<Workspace>;
+  createWorkspace: (name: string, plan?: string) => Promise<Workspace>;
   updateWorkspace: (id: string, data: Partial<Workspace>) => Promise<Workspace>;
   deleteWorkspace: (id: string) => Promise<void>;
+  setDefaultSession: (wid: string, sessionId: string) => Promise<Workspace>;
+
+  fetchMembers: (wid: string) => Promise<WorkspaceMember[]>;
+  inviteMember: (wid: string, email: string, role?: string) => Promise<void>;
+  removeMember: (wid: string, memberId: string) => Promise<void>;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -34,7 +51,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     (set, get) => ({
       workspaces: [],
       currentWorkspace: null,
+      members: [],
       isLoading: false,
+      isLoadingMembers: false,
       error: null,
 
       fetchWorkspaces: async () => {
@@ -76,8 +95,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }
       },
 
-      createWorkspace: async (name: string) => {
-        const res = await apiPost<{ workspace: Workspace }>("/api/workspaces", { name });
+      createWorkspace: async (name: string, plan = "trial") => {
+        const res = await apiPost<{ workspace: Workspace }>("/api/workspaces", { name, plan });
         const newWs = res.workspace;
         const updated = [...get().workspaces, newWs];
         set({ workspaces: updated, currentWorkspace: newWs });
@@ -102,6 +121,34 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           workspaces: list,
           currentWorkspace: list.length > 0 ? list[0] : null,
         });
+      },
+
+      setDefaultSession: async (wid: string, sessionId: string) => {
+        return get().updateWorkspace(wid, { default_session_id: sessionId });
+      },
+
+      fetchMembers: async (wid: string) => {
+        set({ isLoadingMembers: true });
+        try {
+          const res = await apiGet<{ members: WorkspaceMember[] }>(`/api/workspaces/${wid}/members`);
+          const membersList = res.members || [];
+          set({ members: membersList });
+          return membersList;
+        } catch {
+          return [];
+        } finally {
+          set({ isLoadingMembers: false });
+        }
+      },
+
+      inviteMember: async (wid: string, email: string, role = "member") => {
+        await apiPost(`/api/workspaces/${wid}/members`, { email, role });
+        await get().fetchMembers(wid);
+      },
+
+      removeMember: async (wid: string, memberId: string) => {
+        await apiDelete(`/api/workspaces/${wid}/members/${memberId}`);
+        set({ members: get().members.filter((m) => m.id !== memberId) });
       },
     }),
     {

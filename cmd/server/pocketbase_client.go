@@ -557,6 +557,15 @@ func (c *PocketBaseClient) AddWorkspaceMemberPB(ctx context.Context, workspaceID
 	return nil
 }
 
+func (c *PocketBaseClient) RemoveWorkspaceMemberPB(ctx context.Context, memberID string) error {
+	resp, err := c.doAdminRequest(ctx, "DELETE", "/api/collections/workspace_members/records/"+memberID, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 func (c *PocketBaseClient) ListWorkspacesForUserPB(ctx context.Context, userID string) ([]WorkspaceRow, error) {
 	// 1. Buscar membros do usuário
 	filter := fmt.Sprintf(`user_id="%s"`, userID)
@@ -586,6 +595,34 @@ func (c *PocketBaseClient) ListWorkspacesForUserPB(ctx context.Context, userID s
 
 	// 2. Se não encontrar membros ou coleção nova, retorna listagem geral de workspaces
 	return c.ListWorkspacesPB(ctx)
+}
+
+func (c *PocketBaseClient) RequestPasswordResetPB(ctx context.Context, email string) error {
+	data := map[string]string{"email": email}
+	resp, err := c.doAdminRequest(ctx, "POST", "/api/collections/users/request-password-reset", data)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (c *PocketBaseClient) ConfirmPasswordResetPB(ctx context.Context, token, password, passwordConfirm string) error {
+	data := map[string]string{
+		"token":           token,
+		"password":        password,
+		"passwordConfirm": passwordConfirm,
+	}
+	resp, err := c.doAdminRequest(ctx, "POST", "/api/collections/users/confirm-password-reset", data)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pocketbase erro ao redefinir senha (%d): %s", resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 // --- SESSÕES (CONEXÕES WHATSAPP) ---

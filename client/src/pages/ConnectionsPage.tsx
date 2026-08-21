@@ -1,13 +1,39 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, Smartphone, Loader2, LogOut, CheckCircle2, Copy, Pencil, Bot, PhoneIncoming, PhoneOutgoing, Target, QrCode, RefreshCw, KeyRound, ShieldCheck, User } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Smartphone,
+  Loader2,
+  LogOut,
+  CheckCircle2,
+  Copy,
+  Pencil,
+  Bot,
+  PhoneIncoming,
+  PhoneOutgoing,
+  Target,
+  QrCode,
+  RefreshCw,
+  KeyRound,
+  ShieldCheck,
+  User,
+  Settings,
+  Crown,
+  Star,
+  Building2,
+  Zap,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { useSessions, setActiveSession } from "@/stores/sessions";
-import { createSession, deleteSession, logoutSession, renameSession, pairSession, listSessions } from "@/services/sessions";
+import { useSessions, setActiveSession, refreshSessions } from "@/stores/sessions";
+import { createSession, deleteSession, logoutSession, renameSession, pairSession } from "@/services/sessions";
+import { useWorkspaceStore } from "@/stores/workspace";
+import { useNavigation } from "@/stores/navigation";
 import { listAgents, type Agent } from "@/services/agents";
 import { SessionPairing } from "@/components/domain/session/SessionPairing";
+import { WorkspaceSettingsModal } from "@/components/domain/workspace/WorkspaceSettingsModal";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { apiUrl, getToken, getUser } from "@/lib/auth";
 import {
@@ -83,11 +109,17 @@ const SessionAgentsSummary = ({ sid }: { sid: string }) => {
 export const ConnectionsPage = () => {
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
+  const { currentWorkspace, setDefaultSession, fetchWorkspaces } = useWorkspaceStore();
+  const { setActiveSection } = useNavigation();
   const currentUser = getUser();
   const isSuperAdmin = currentUser?.role === "appadmin";
 
+  // Modal de Configurações do Workspace
+  const [showWorkspaceSettings, setShowWorkspaceSettings] = useState(false);
+
   // Estados para criação de nova conexão
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
   const [newSessionName, setNewSessionName] = useState("WhatsApp");
   const [creating, setCreating] = useState(false);
 
@@ -107,10 +139,22 @@ export const ConnectionsPage = () => {
   // Estado para solicitação de QR code / reconexão
   const [pairingSessionId, setPairingSessionId] = useState<string | null>(null);
 
+  // Filtra conexões do workspace ativo (ou todas se super admin)
+  const currentWsId = currentWorkspace?.id || "default";
+  const workspaceSessions = sessions.filter((s) => {
+    if (isSuperAdmin && !currentWorkspace) return true;
+    return s.projectId === currentWsId || (currentWsId === "default" && (!s.projectId || s.projectId === "default"));
+  });
+
+  const maxConnections = currentWorkspace?.max_connections || 1;
+  const currentConnCount = workspaceSessions.length;
+  const isLimitReached = currentConnCount >= maxConnections;
+  const usagePercentage = Math.min(100, Math.round((currentConnCount / maxConnections) * 100));
+
   const refreshSessionsList = async () => {
     try {
-      const updated = await listSessions();
-      useSessions.setState({ sessions: updated });
+      await refreshSessions();
+      await fetchWorkspaces();
     } catch {
       // Falhas silenciosas
     }
@@ -162,7 +206,11 @@ export const ConnectionsPage = () => {
   };
 
   const handleOpenCreateModal = () => {
-    setNewSessionName(`WhatsApp ${sessions.length > 0 ? sessions.length + 1 : ""}`.trim());
+    if (isLimitReached) {
+      setShowLimitModal(true);
+      return;
+    }
+    setNewSessionName(`WhatsApp ${workspaceSessions.length > 0 ? workspaceSessions.length + 1 : ""}`.trim());
     setShowCreateModal(true);
   };
 
@@ -170,15 +218,29 @@ export const ConnectionsPage = () => {
     const name = newSessionName.trim() || "WhatsApp";
     setCreating(true);
     try {
-      const { id } = await createSession(name);
+      const res = await createSession(name, currentWsId);
+      const newId = (res as any)?.id || (res as any)?.session?.id || "";
       await refreshSessionsList();
-      setActiveSession(id);
+      if (newId) {
+        setActiveSession(newId);
+      }
       setShowCreateModal(false);
       toast.success("Nova conexão criada com sucesso!");
-    } catch (e) {
-      toast.error((e as Error).message);
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao criar sessão");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSetDefaultSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentWorkspace) return;
+    try {
+      await setDefaultSession(currentWorkspace.id, sessionId);
+      toast.success("Linha padrão atualizada com sucesso!");
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao definir linha padrão");
     }
   };
 
@@ -228,37 +290,125 @@ export const ConnectionsPage = () => {
     }
   };
 
+  const getPlanBadge = (plan?: string) => {
+    switch (plan) {
+      case "enterprise":
+        return { label: "Enterprise", color: "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20" };
+      case "expert":
+        return { label: "Expert", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20" };
+      case "pro":
+        return { label: "Pro", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20" };
+      case "basic":
+        return { label: "Basic", color: "bg-slate-500/15 text-slate-600 dark:text-slate-400 border-slate-500/20" };
+      default:
+        return { label: "Trial", color: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20" };
+    }
+  };
+
+  const planBadge = getPlanBadge(currentWorkspace?.plan);
+
   return (
-    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl border bg-card p-5 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold tracking-tight">Gerenciador de Conexões WhatsApp</h1>
-            {isSuperAdmin && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                SuperAdmin (Visão Global)
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in pb-12">
+      {/* Workspace Hub Banner & Header */}
+      <div className="rounded-2xl border bg-card p-5 shadow-xs space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/90 to-primary text-primary-foreground font-bold text-lg shadow-sm">
+              {currentWorkspace ? currentWorkspace.name.slice(0, 1).toUpperCase() : <Building2 className="h-6 w-6" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl font-bold tracking-tight text-foreground">
+                  {currentWorkspace ? currentWorkspace.name : "Gerenciador de Conexões WhatsApp"}
+                </h1>
+                <span
+                  className={cn(
+                    "inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border",
+                    planBadge.color,
+                  )}
+                >
+                  {planBadge.label}
+                </span>
+                {isSuperAdmin && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/25">
+                    <ShieldCheck className="h-3 w-3" /> SuperAdmin
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Conecte e gerencie seus números de WhatsApp para chamadas de voz e IA neste workspace.
+              </p>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowWorkspaceSettings(true)}
+              className="gap-1.5 text-xs font-semibold rounded-xl cursor-pointer"
+            >
+              <Settings className="h-3.5 w-3.5" />
+              <span>Configurações</span>
+            </Button>
+
+            <Button
+              size="sm"
+              onClick={() => setActiveSection("billing")}
+              className="gap-1.5 text-xs font-bold rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-xs cursor-pointer"
+            >
+              <Crown className="h-3.5 w-3.5" />
+              <span>Upgrade do Plano</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Cota do Plano & Barra de Limite */}
+        <div className="pt-3 border-t border-border/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-muted/20 p-3 rounded-xl">
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <Smartphone className="h-4 w-4 text-emerald-500 shrink-0" />
+            <div className="space-y-1 w-full sm:w-64">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-foreground">Capacidade de Conexões:</span>
+                <span className="font-mono font-bold text-foreground">
+                  {currentConnCount} / {maxConnections} Whats ({usagePercentage}%)
+                </span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-300",
+                    isLimitReached ? "bg-amber-500" : "bg-primary",
+                  )}
+                  style={{ width: `${usagePercentage}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {isLimitReached ? (
+              <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold text-[11px]">
+                <Zap className="h-3.5 w-3.5" /> Limite de conexões atingido no plano {planBadge.label}
+              </span>
+            ) : (
+              <span>
+                Você ainda pode conectar mais <strong>{maxConnections - currentConnCount}</strong> número(s).
               </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            {isSuperAdmin
-              ? "Exibindo todas as conexões e agentes de todos os usuários cadastrados na plataforma."
-              : "Conecte e gerencie seus números de WhatsApp para chamadas de voz e IA."}
-          </p>
         </div>
-
-        <Button onClick={handleOpenCreateModal} className="gap-2 rounded-xl shadow-xs">
-          <Plus className="h-4 w-4" />
-          <span>Nova Conexão</span>
-        </Button>
       </div>
 
       {/* Grid of Sessions */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-        {sessions.map((s) => {
+        {workspaceSessions.map((s) => {
           const isActive = s.id === activeId;
+          const isDefault = currentWorkspace?.default_session_id
+            ? currentWorkspace.default_session_id === s.id
+            : workspaceSessions[0]?.id === s.id;
+
           return (
             <div
               key={s.id}
@@ -292,7 +442,7 @@ export const ConnectionsPage = () => {
                       {s.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-bold text-base">{s.name}</h3>
                         <button
                           type="button"
@@ -312,6 +462,11 @@ export const ConnectionsPage = () => {
                         >
                           {s.paired ? "● Conectada" : "○ Desconectada"}
                         </span>
+                        {isDefault && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" /> Linha Padrão
+                          </span>
+                        )}
                         {isActive && (
                           <span className="rounded-md bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
                             Selecionada
@@ -331,7 +486,7 @@ export const ConnectionsPage = () => {
                             navigator.clipboard.writeText(s.id);
                             toast.success("SID copiado para a área de transferência!");
                           }}
-                          className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors"
+                          className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
                         >
                           <Copy className="h-3.5 w-3.5" />
                         </button>
@@ -351,7 +506,7 @@ export const ConnectionsPage = () => {
                                 toast.success("Chave de API da conexão copiada com sucesso!");
                               }
                             }}
-                            className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors"
+                            className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
                           >
                             <Copy className="h-3.5 w-3.5" />
                           </button>
@@ -363,7 +518,7 @@ export const ConnectionsPage = () => {
                               setRotateSession(s);
                               setCustomApiKey("");
                             }}
-                            className="text-muted-foreground hover:text-primary p-0.5 rounded hover:bg-muted transition-colors"
+                            className="text-muted-foreground hover:text-primary p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                           </button>
@@ -373,6 +528,17 @@ export const ConnectionsPage = () => {
                   </div>
 
                   <div className="flex items-center gap-1">
+                    {!isDefault && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-amber-500"
+                        title="Definir como Linha Padrão do Workspace"
+                        onClick={(e) => handleSetDefaultSession(s.id, e)}
+                      >
+                        <Star className="h-4 w-4" />
+                      </Button>
+                    )}
                     {!s.paired && (
                       <Button
                         variant="outline"
@@ -450,22 +616,93 @@ export const ConnectionsPage = () => {
           );
         })}
 
-        {sessions.length === 0 && (
-          <div className="col-span-full rounded-2xl border border-dashed bg-card/40 p-12 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <Smartphone className="h-6 w-6" />
+        {workspaceSessions.length > 0 && !isLimitReached && (
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            className="flex flex-col items-center justify-center min-h-[220px] rounded-2xl border-2 border-dashed border-border/80 bg-card/30 hover:bg-muted/40 hover:border-primary/50 p-6 text-center transition-all cursor-pointer group"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary group-hover:scale-110 transition-transform">
+              <Plus className="h-6 w-6" />
             </div>
-            <h3 className="mt-4 font-bold text-base">Nenhuma conexão cadastrada</h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-              Clique no botão abaixo para criar sua primeira conexão de WhatsApp.
+            <p className="font-bold text-sm text-foreground mt-3">Adicionar Linha WhatsApp</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Vaga disponível no plano ({currentConnCount + 1}/{maxConnections})
             </p>
-            <Button onClick={handleOpenCreateModal} className="mt-5 gap-2 rounded-xl">
-              <Plus className="h-4 w-4" />
-              <span>Criar Conexão</span>
-            </Button>
+          </button>
+        )}
+
+        {workspaceSessions.length === 0 && (
+          <div className="col-span-full rounded-2xl border border-dashed bg-card/40 p-12 text-center space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Smartphone className="h-7 w-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-bold text-base text-foreground">Nenhuma conexão cadastrada neste Workspace</h3>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                Seu plano <strong>{planBadge.label}</strong> permite conectar até <strong>{maxConnections}</strong> número(s) de WhatsApp. Conecte sua primeira linha para chamadas de voz e IA.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <Button onClick={handleOpenCreateModal} className="gap-2 rounded-xl font-semibold cursor-pointer">
+                <Plus className="h-4 w-4" />
+                <span>Criar Conexão</span>
+              </Button>
+              {isLimitReached && (
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveSection("billing")}
+                  className="gap-2 rounded-xl font-semibold text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10 cursor-pointer"
+                >
+                  <Crown className="h-4 w-4" />
+                  <span>Fazer Upgrade</span>
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* Modal de Limite de Plano Atingido */}
+      <Dialog open={showLimitModal} onOpenChange={setShowLimitModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 mb-2">
+              <Crown className="h-6 w-6" />
+            </div>
+            <DialogTitle className="text-center text-base">Limite de Conexões Atingido</DialogTitle>
+            <DialogDescription className="text-center text-xs">
+              Seu plano atual (<strong>{planBadge.label}</strong>) permite no máximo <strong>{maxConnections}</strong> conexão(ões) de WhatsApp no workspace.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-4 rounded-xl border bg-muted/20 space-y-2 text-xs">
+            <p className="font-semibold text-foreground">Benefícios do Upgrade de Plano:</p>
+            <ul className="space-y-1 text-muted-foreground text-[11px]">
+              <li>• Conexão de múltiplos números de WhatsApp</li>
+              <li>• Mais chamadas de voz simultâneas</li>
+              <li>• Mais agentes especialistas de IA</li>
+              <li>• Suporte prioritário e webhooks dedicados</li>
+            </ul>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => setShowLimitModal(false)}>
+              Fechar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setShowLimitModal(false);
+                setActiveSection("billing");
+              }}
+              className="gap-1.5 font-bold bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white cursor-pointer"
+            >
+              <Crown className="h-3.5 w-3.5" /> Fazer Upgrade Agora
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal para Criar Nova Conexão */}
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
@@ -473,7 +710,7 @@ export const ConnectionsPage = () => {
           <DialogHeader>
             <DialogTitle>Nova Conexão WhatsApp</DialogTitle>
             <DialogDescription>
-              Informe o nome de identificação para esta nova linha do WhatsApp (ex: Suporte, Vendas, Comercial).
+              Informe o nome de identificação para esta nova linha no workspace <strong>{currentWorkspace?.name}</strong> (ex: Suporte, Vendas, Comercial).
             </DialogDescription>
           </DialogHeader>
 
@@ -608,6 +845,13 @@ export const ConnectionsPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Configurações do Workspace */}
+      <WorkspaceSettingsModal
+        isOpen={showWorkspaceSettings}
+        onClose={() => setShowWorkspaceSettings(false)}
+        workspace={currentWorkspace}
+      />
     </div>
   );
 };

@@ -9,7 +9,7 @@ const sectionTitles: Record<string, string> = {
   dashboard: "Painel de Controle",
   agents: "Agentes IA & Voz",
   knowledge: "Base de Conhecimento (RAG)",
-  connections: "Conexões WhatsApp",
+  connections: "Conexões do Workspace",
   schedules: "Disparos & Agendamentos",
   webphone: "Central de Atendimento & Webphone",
   calls: "Histórico de Ligações",

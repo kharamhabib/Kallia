@@ -21,6 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
+import { useWorkspaceStore } from "@/stores/workspace";
+
 interface Invoice {
   id: string;
   date: string;
@@ -36,8 +38,9 @@ const mockInvoices: Invoice[] = [
 ];
 
 export const BillingPage = ({ sid: _sid }: { sid: string }) => {
+  const { currentWorkspace, updateWorkspace } = useWorkspaceStore();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
-  const [selectedPlan, setSelectedPlan] = useState<string>("pro");
+  const [selectedPlan, setSelectedPlan] = useState<string>(currentWorkspace?.plan || "pro");
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState<number>(100);
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "card">("pix");
@@ -53,9 +56,43 @@ export const BillingPage = ({ sid: _sid }: { sid: string }) => {
     }, 1200);
   };
 
-  const handleSelectPlan = (planId: string, planName: string) => {
+  const handleSelectPlan = async (planId: string, planName: string) => {
     setSelectedPlan(planId);
-    toast.success(`Plano ${planName} selecionado como preferencial.`);
+    if (currentWorkspace) {
+      let maxConn = 1;
+      let maxCalls = 1;
+      let maxAgents = 2;
+      if (planId === "starter" || planId === "basic") {
+        maxConn = 1;
+        maxCalls = 2;
+        maxAgents = 2;
+      } else if (planId === "pro") {
+        maxConn = 3;
+        maxCalls = 5;
+        maxAgents = 5;
+      } else if (planId === "expert") {
+        maxConn = 10;
+        maxCalls = 20;
+        maxAgents = 50;
+      } else if (planId === "enterprise") {
+        maxConn = 50;
+        maxCalls = 100;
+        maxAgents = 500;
+      }
+      try {
+        await updateWorkspace(currentWorkspace.id, {
+          plan: (planId === "starter" ? "basic" : planId) as any,
+          max_connections: maxConn,
+          max_concurrent_calls: maxCalls,
+          max_agents: maxAgents,
+        });
+        toast.success(`Plano do workspace atualizado para ${planName}!`);
+      } catch {
+        toast.success(`Plano ${planName} selecionado.`);
+      }
+    } else {
+      toast.success(`Plano ${planName} selecionado.`);
+    }
   };
 
   return (

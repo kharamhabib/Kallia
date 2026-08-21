@@ -204,18 +204,6 @@ func newSessionStore(ctx context.Context, db *sql.DB) (*sessionStore, error) {
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_lid ON contacts(session_id, lid)`)
 	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_contacts_workspace ON contacts(workspace_id)`)
 
-	// 11. Criar a tabela de recuperação de senha
-	_, err = db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS password_resets (
-		email      TEXT NOT NULL,
-		code       TEXT NOT NULL,
-		expires_at DATETIME NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`)
-	if err != nil {
-		return nil, fmt.Errorf("criar tabela password_resets: %w", err)
-	}
-	_, _ = db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(LOWER(email))`)
-
 	store := &sessionStore{db: db}
 	if err := store.bootstrapInitialAdmin(ctx); err != nil {
 		slog.Error("[Bootstrap] Falha ao executar bootstrap inicial", "err", err)
@@ -802,47 +790,6 @@ func (s *sessionStore) getUserByID(ctx context.Context, id string) (*userRow, er
 	r.WorkspaceID = wsID
 	r.ProjectID = wsID
 	return r, nil
-}
-
-// --- Métodos de Recuperação de Senha ---
-
-func (s *sessionStore) createPasswordReset(ctx context.Context, email, code string, expiresAt time.Time) error {
-	cleanEmail := strings.TrimSpace(strings.ToLower(email))
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE LOWER(email) = $1`, cleanEmail)
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO password_resets (email, code, expires_at)
-		VALUES ($1, $2, $3)
-	`, cleanEmail, code, expiresAt)
-	return err
-}
-
-func (s *sessionStore) verifyPasswordResetCode(ctx context.Context, email, code string) (bool, error) {
-	cleanEmail := strings.TrimSpace(strings.ToLower(email))
-	var count int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM password_resets
-		WHERE LOWER(email) = $1 AND code = $2 AND expires_at > CURRENT_TIMESTAMP
-	`, cleanEmail, strings.TrimSpace(code)).Scan(&count)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-func (s *sessionStore) updateUserPassword(ctx context.Context, email, newPasswordHash string) error {
-	cleanEmail := strings.TrimSpace(strings.ToLower(email))
-	res, err := s.db.ExecContext(ctx, `
-		UPDATE users SET password_hash = $1 WHERE LOWER(email) = $2
-	`, newPasswordHash, cleanEmail)
-	if err != nil {
-		return err
-	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("usuário não encontrado")
-	}
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM password_resets WHERE LOWER(email) = $1`, cleanEmail)
-	return nil
 }
 
 // --- CRUD Agentes ---

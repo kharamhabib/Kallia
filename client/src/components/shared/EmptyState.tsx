@@ -5,9 +5,10 @@ type Props = {
   icon?: React.ReactNode;
   title: string;
   description?: string;
+  action?: React.ReactNode;
 };
 
-export const EmptyState = ({ icon, title, description }: Props) => (
+export const EmptyState = ({ icon, title, description, action }: Props) => (
   <Card className="border-dashed border-primary/20 bg-muted/5 shadow-none animate-fade-in rounded-xl">
     <CardContent className="flex flex-col items-center justify-center gap-3.5 py-12 text-center">
       {icon && (
@@ -23,6 +24,7 @@ export const EmptyState = ({ icon, title, description }: Props) => (
           </p>
         )}
       </div>
+      {action && <div className="pt-2">{action}</div>}
     </CardContent>
   </Card>
 );

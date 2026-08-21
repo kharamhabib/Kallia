@@ -130,6 +130,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/workspaces/{wid}", s.handleDeleteWorkspace)
 	mux.HandleFunc("GET /api/workspaces/{wid}/connections", s.handleListWorkspaceConnections)
 	mux.HandleFunc("POST /api/workspaces/{wid}/connections", s.handleCreateWorkspaceConnection)
+	mux.HandleFunc("GET /api/workspaces/{wid}/members", s.handleListWorkspaceMembers)
+	mux.HandleFunc("POST /api/workspaces/{wid}/members", s.handleAddWorkspaceMember)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/members/{mid}", s.handleRemoveWorkspaceMember)
 
 	// Rotas de Autenticação do Usuário
 	mux.HandleFunc("GET /api/auth/me", s.handleMe)
@@ -194,7 +197,7 @@ func (s *server) routes() http.Handler {
 // para o widget do Chatwoot em domínio diverso), com aviso se houver API key.
 func withCORS(h http.Handler, log *slog.Logger) http.Handler {
 	allowed := parseCSVEnv("KALLIA_CORS_ORIGINS")
-	if len(allowed) == 0 && envStr("KALLIA_API_KEY", "") != "" {
+	if len(allowed) == 0 {
 		log.Warn("KALLIA_CORS_ORIGINS não definida — CORS aberto (*). Restrinja para os domínios do painel/Chatwoot em produção.")
 	}
 	allowedSet := map[string]bool{}
@@ -209,8 +212,8 @@ func withCORS(h http.Handler, log *slog.Logger) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Client-Id, X-API-Key")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Id, X-API-Key")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -1918,7 +1921,7 @@ func (s *server) handleCreateWorkspaceConnection(w http.ResponseWriter, r *http.
 	}
 
 	if currentConnCount >= maxConn {
-		writeJSON(w, http.StatusForbidden, map[string]string{
+		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": fmt.Sprintf("limite de conexões do plano atingido (%d/%d). Faça upgrade do seu plano para conectar mais WhatsApps.", currentConnCount, maxConn),
 		})
 		return
@@ -1933,7 +1936,7 @@ func (s *server) handleCreateWorkspaceConnection(w http.ResponseWriter, r *http.
 		name = fmt.Sprintf("WhatsApp %d", currentConnCount+1)
 	}
 
-	id, _, err := s.sessions.Create(name, wid)
+	id, apiKey, err := s.sessions.Create(name, wid)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -1941,10 +1944,124 @@ func (s *server) handleCreateWorkspaceConnection(w http.ResponseWriter, r *http.
 
 	sess, ok := s.sessions.Get(id)
 	if !ok {
-		writeJSON(w, http.StatusCreated, map[string]string{"id": id, "name": name})
+		writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": name, "apiKey": apiKey})
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, sess.info())
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":        id,
+		"name":      name,
+		"apiKey":    apiKey,
+		"projectId": wid,
+		"session":   sess.info(),
+	})
+}
+
+func (s *server) handleListWorkspaceMembers(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	members, err := pbClient.ListWorkspaceMembersPB(r.Context(), wid)
+	if err != nil {
+		s.log.Warn("erro ao listar membros do workspace", "wid", wid, "err", err)
+	}
+
+	type memberDTO struct {
+		ID        string    `json:"id"`
+		UserID    string    `json:"user_id"`
+		Name      string    `json:"name"`
+		Email     string    `json:"email"`
+		Role      string    `json:"role"`
+		CreatedAt time.Time `json:"created"`
+	}
+
+	var list []memberDTO
+	for _, m := range members {
+		email := ""
+		name := ""
+		if u, err := s.sessions.store.getUserByID(r.Context(), m.UserID); err == nil && u != nil {
+			email = u.Email
+			name = strings.Split(u.Email, "@")[0]
+		}
+		if email == "" && strings.Contains(m.UserID, "@") {
+			email = m.UserID
+		}
+		if name == "" && email != "" {
+			name = strings.Split(email, "@")[0]
+		}
+		list = append(list, memberDTO{
+			ID:        m.ID,
+			UserID:    m.UserID,
+			Name:      name,
+			Email:     email,
+			Role:      m.Role,
+			CreatedAt: m.CreatedAt,
+		})
+	}
+
+	// Se a lista estiver vazia e temos usuário logado no contexto, adiciona o usuário atual como Owner
+	if len(list) == 0 {
+		userID, _ := r.Context().Value(ctxKeyUserID).(string)
+		email := "admin@kallia.com"
+		if userID != "" {
+			if u, _ := s.sessions.store.getUserByID(r.Context(), userID); u != nil && u.Email != "" {
+				email = u.Email
+			}
+		}
+		name := strings.Split(email, "@")[0]
+		list = append(list, memberDTO{
+			ID:        "owner-current",
+			UserID:    userID,
+			Name:      name,
+			Email:     email,
+			Role:      "owner",
+			CreatedAt: time.Now(),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"members": list})
+}
+
+func (s *server) handleAddWorkspaceMember(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	var body struct {
+		Email string `json:"email"`
+		Role  string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Email) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "e-mail é obrigatório"})
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(body.Email))
+	role := strings.ToLower(strings.TrimSpace(body.Role))
+	if role != "admin" && role != "owner" {
+		role = "member"
+	}
+
+	targetUserID := email
+	if u, err := s.sessions.store.getUserByEmail(r.Context(), email); err == nil && u != nil {
+		targetUserID = u.ID
+	}
+
+	if err := pbClient.AddWorkspaceMemberPB(r.Context(), wid, targetUserID, role); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "membro adicionado"})
+}
+
+func (s *server) handleRemoveWorkspaceMember(w http.ResponseWriter, r *http.Request) {
+	mid := r.PathValue("mid")
+	if mid == "" || mid == "owner-current" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id do membro inválido"})
+		return
+	}
+
+	if err := pbClient.RemoveWorkspaceMemberPB(r.Context(), mid); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "membro removido"})
 }
 

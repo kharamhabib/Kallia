@@ -13,9 +13,9 @@ const baseHeaders = (): HeadersInit => {
   return headers;
 };
 
-// Em 401 ou 403 (chave/token expirado ou acesso negado ao projeto) limpa a auth e recarrega para o login.
+// Em 401 (token JWT expirado ou ausente) limpa a auth e recarrega para o login.
 const guard = (status: number) => {
-  if (status === 401 || status === 403) {
+  if (status === 401) {
     clearAuth();
     location.reload();
   }
@@ -28,11 +28,23 @@ const parseResponse = async <T>(r: Response): Promise<T> => {
   return JSON.parse(text) as T;
 };
 
+const parseError = async (r: Response, path: string): Promise<Error> => {
+  const text = await r.text().catch(() => "");
+  if (text) {
+    try {
+      const obj = JSON.parse(text);
+      if (obj.error) return new Error(obj.error);
+      if (obj.message) return new Error(obj.message);
+    } catch {}
+  }
+  return new Error(text || `Erro na requisição ${path} (${r.status})`);
+};
+
 export const apiGet = async <T>(path: string): Promise<T> => {
   const r = await fetch(apiUrl(path), { headers: baseHeaders() });
   if (!r.ok) {
     guard(r.status);
-    throw new Error(`${path} ${r.status}`);
+    throw await parseError(r, path);
   }
   return parseResponse<T>(r);
 };
@@ -41,8 +53,7 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(apiUrl(path), { method: "POST", headers: baseHeaders(), body: JSON.stringify(body) });
   if (!r.ok) {
     guard(r.status);
-    const text = await r.text().catch(() => "");
-    throw new Error(`${path} ${r.status} ${text}`);
+    throw await parseError(r, path);
   }
   return parseResponse<T>(r);
 };
@@ -51,7 +62,7 @@ export const apiDelete = async (path: string): Promise<void> => {
   const r = await fetch(apiUrl(path), { method: "DELETE", headers: baseHeaders() });
   if (!r.ok) {
     guard(r.status);
-    throw new Error(`${path} ${r.status}`);
+    throw await parseError(r, path);
   }
 };
 
@@ -59,8 +70,7 @@ export const apiPut = async <T>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(apiUrl(path), { method: "PUT", headers: baseHeaders(), body: JSON.stringify(body) });
   if (!r.ok) {
     guard(r.status);
-    const text = await r.text().catch(() => "");
-    throw new Error(`${path} ${r.status} ${text}`);
+    throw await parseError(r, path);
   }
   return parseResponse<T>(r);
 };
@@ -69,8 +79,7 @@ export const apiPatch = async <T>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(apiUrl(path), { method: "PATCH", headers: baseHeaders(), body: JSON.stringify(body) });
   if (!r.ok) {
     guard(r.status);
-    const text = await r.text().catch(() => "");
-    throw new Error(`${path} ${r.status} ${text}`);
+    throw await parseError(r, path);
   }
   return parseResponse<T>(r);
 };

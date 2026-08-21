@@ -19,15 +19,26 @@ const pickActive = (sessions: SessionInfo[], current: string | null): string | n
   return sessions[0]?.id ?? null;
 };
 
+export const refreshSessions = async (): Promise<SessionInfo[]> => {
+  try {
+    const sessions = await listSessions();
+    useSessions.setState((s) => ({
+      sessions,
+      activeId: pickActive(sessions, s.activeId),
+    }));
+    return sessions;
+  } catch {
+    return [];
+  }
+};
+
 let wired = false;
 export const ensureSessionsWired = (): void => {
   if (wired) return;
   wired = true;
   eventStream.connect(getClientId());
 
-  void listSessions()
-    .then((sessions) => useSessions.setState((s) => ({ sessions, activeId: pickActive(sessions, s.activeId) })))
-    .catch(() => {});
+  void refreshSessions();
 
   eventStream.on((ev: BrokerEvent) => {
     if (ev.type === "session-list") {
