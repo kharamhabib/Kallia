@@ -5,6 +5,8 @@ import {
   Plus,
   Check,
   Crown,
+  Smartphone,
+  ArrowRight,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { useNavigation } from "@/stores/navigation";
@@ -144,6 +146,7 @@ export const WorkspaceSelector: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setCurrentWorkspace(ws);
+                      setActiveSection("connections");
                       setIsOpen(false);
                     }}
                     className={cn(
@@ -186,6 +189,21 @@ export const WorkspaceSelector: React.FC = () => {
 
             {/* Ações Inferiores */}
             <div className="pt-1 border-t border-border/50 space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSection("connections");
+                  setIsOpen(false);
+                }}
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs text-foreground font-medium hover:bg-muted/70 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Smartphone className="h-3.5 w-3.5 text-primary" />
+                  <span>Conexões do Workspace</span>
+                </div>
+                <ArrowRight className="h-3 w-3 text-muted-foreground" />
+              </button>
+
               {canCreateMore ? (
                 !isCreating ? (
                   <button
