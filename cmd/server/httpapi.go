@@ -427,18 +427,24 @@ func (s *server) getAllSessionsMap(ctx context.Context) map[string]SessionInfo {
 	// 2. Obter todas as sessões do SQLite local
 	if localRows, err := s.sessions.store.listAll(ctx); err == nil {
 		for _, row := range localRows {
+			wsID := row.WorkspaceID
+			if wsID == "" {
+				wsID = row.ProjectID
+			}
 			if existing, exists := sessionMap[row.ID]; !exists {
 				sessionMap[row.ID] = SessionInfo{
-					ID:        row.ID,
-					Name:      row.Name,
-					State:     "disconnected",
-					JID:       row.JID,
-					ProjectID: row.ProjectID,
-					APIKey:    row.APIKey,
+					ID:          row.ID,
+					Name:        row.Name,
+					State:       "disconnected",
+					JID:         row.JID,
+					WorkspaceID: wsID,
+					ProjectID:   wsID,
+					APIKey:      row.APIKey,
 				}
 			} else {
-				if existing.ProjectID == "" || existing.ProjectID == "default" {
-					existing.ProjectID = row.ProjectID
+				if existing.WorkspaceID == "" || existing.WorkspaceID == "default" {
+					existing.WorkspaceID = wsID
+					existing.ProjectID = wsID
 					sessionMap[row.ID] = existing
 				}
 			}
@@ -448,22 +454,28 @@ func (s *server) getAllSessionsMap(ctx context.Context) map[string]SessionInfo {
 	// 3. Obter todas as sessões do PocketBase
 	if pbSessions, err := pbClient.ListSessionsPB(ctx); err == nil {
 		for _, pb := range pbSessions {
+			wsID := pb.WorkspaceID
+			if wsID == "" {
+				wsID = pb.ProjectID
+			}
 			existing, exists := sessionMap[pb.ID]
 			if !exists {
 				sessionMap[pb.ID] = SessionInfo{
-					ID:        pb.ID,
-					Name:      pb.Name,
-					State:     "disconnected",
-					JID:       pb.JID,
-					ProjectID: pb.ProjectID,
-					APIKey:    pb.APIKey,
+					ID:          pb.ID,
+					Name:        pb.Name,
+					State:       "disconnected",
+					JID:         pb.JID,
+					WorkspaceID: wsID,
+					ProjectID:   wsID,
+					APIKey:      pb.APIKey,
 				}
 			} else {
 				if existing.Name == "" {
 					existing.Name = pb.Name
 				}
-				if existing.ProjectID == "" || existing.ProjectID == "default" {
-					existing.ProjectID = pb.ProjectID
+				if existing.WorkspaceID == "" || existing.WorkspaceID == "default" {
+					existing.WorkspaceID = wsID
+					existing.ProjectID = wsID
 				}
 				sessionMap[pb.ID] = existing
 			}

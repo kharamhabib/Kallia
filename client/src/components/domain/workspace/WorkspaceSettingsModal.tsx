@@ -94,7 +94,9 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
 
   // Filtra as conexões que pertencem a este workspace
   const workspaceSessions = sessions.filter(
-    (s) => s.projectId === workspace.id || (workspace.id === "default" && !s.projectId),
+    (s) =>
+      (s.workspaceId || s.projectId) === workspace.id ||
+      (workspace.id === "default" && (!s.workspaceId || s.workspaceId === "default") && (!s.projectId || s.projectId === "default")),
   );
 
   const handleCopyId = () => {

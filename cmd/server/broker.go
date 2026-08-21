@@ -41,15 +41,16 @@ type AuthSnapshot struct {
 }
 
 type SessionInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	JID        string `json:"jid"`
-	State      string `json:"state"`
-	Paired     bool   `json:"paired"`
-	ProjectID  string `json:"projectId"`
-	APIKey     string `json:"apiKey"`
-	OwnerEmail string `json:"ownerEmail,omitempty"`
-	OwnerName  string `json:"ownerName,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	JID         string `json:"jid"`
+	State       string `json:"state"`
+	Paired      bool   `json:"paired"`
+	WorkspaceID string `json:"workspaceId"`
+	ProjectID   string `json:"projectId"` // alias retrocompatível
+	APIKey      string `json:"apiKey"`
+	OwnerEmail  string `json:"ownerEmail,omitempty"`
+	OwnerName   string `json:"ownerName,omitempty"`
 }
 
 type subscriber struct {

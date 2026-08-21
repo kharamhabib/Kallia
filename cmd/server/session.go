@@ -713,13 +713,14 @@ func (s *Session) info() SessionInfo {
 		jid = client.Store.ID.String()
 	}
 	return SessionInfo{
-		ID:        s.id,
-		Name:      s.name,
-		JID:       jid,
-		State:     a.State,
-		Paired:    a.Paired || jid != "",
-		ProjectID: s.projectID,
-		APIKey:    s.apiKey,
+		ID:          s.id,
+		Name:        s.name,
+		JID:         jid,
+		State:       a.State,
+		Paired:      a.Paired || jid != "",
+		WorkspaceID: s.projectID,
+		ProjectID:   s.projectID,
+		APIKey:      s.apiKey,
 	}
 }
 

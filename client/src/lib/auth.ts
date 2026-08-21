@@ -8,6 +8,7 @@ export interface AuthUser {
   id: string;
   email: string;
   role: "appadmin" | "creator" | "normal" | string;
+  workspaceId?: string;
   projectId?: string;
   name?: string;
   avatar?: string;
@@ -23,11 +24,13 @@ export const getToken = (): string =>
 export const getUser = (): AuthUser | null => {
   if (pb.authStore.record) {
     const r = pb.authStore.record;
+    const wsId = r.workspace_id || (r as any).workspaceId || r.project_id || (r as any).projectId || "";
     return {
       id: r.id,
       email: r.email || "",
       role: r.role || "creator",
-      projectId: r.project_id || (r as any).projectId || "",
+      workspaceId: wsId,
+      projectId: wsId,
       name: r.name || "",
       avatar: r.avatar || "",
       createdAt: r.created || "",

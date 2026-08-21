@@ -161,7 +161,7 @@ export const ConnectionsPage = () => {
       setWorkspaceSessions(data);
     } catch {
       setWorkspaceSessions(
-        sessions.filter((s) => s.projectId === currentWsId || (currentWsId === "default" && (!s.projectId || s.projectId === "default"))),
+        sessions.filter((s) => (s.workspaceId || s.projectId) === currentWsId || (currentWsId === "default" && (!s.workspaceId || s.workspaceId === "default") && (!s.projectId || s.projectId === "default"))),
       );
     }
   }, [currentWsId, sessions]);
@@ -443,9 +443,9 @@ export const ConnectionsPage = () => {
                   <div className="flex items-center justify-between pb-2 border-b border-border/40 text-[11px]">
                     <div className="flex items-center gap-1.5 text-muted-foreground">
                       <User className="h-3.5 w-3.5 text-primary" />
-                      <span>Tenant:</span>
+                      <span>Tenant / Workspace:</span>
                       <span className="font-semibold text-foreground">
-                        {s.ownerEmail || (s.projectId ? `Projeto: ${s.projectId}` : "Não atribuído")}
+                        {s.ownerEmail || (s.workspaceId || s.projectId ? `${s.workspaceId || s.projectId}` : "Não atribuído")}
                       </span>
                     </div>
                     {s.ownerName && s.ownerName !== s.ownerEmail && (

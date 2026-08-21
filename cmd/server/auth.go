@@ -564,12 +564,9 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 					}
 
 					if sid != "" && role != "appadmin" {
-						sessRow, err := s.sessions.store.getRawSession(r.Context(), sid)
-						if err == nil && sessRow != nil {
-							if sessRow.ProjectID != projectID {
-								writeJSON(w, http.StatusForbidden, map[string]string{"error": "você não tem acesso a esta conexão"})
-								return
-							}
+						if !s.userCanAccessSession(r.Context(), sid, userID, role, projectID) {
+							writeJSON(w, http.StatusForbidden, map[string]string{"error": "você não tem acesso a esta conexão"})
+							return
 						}
 					}
 
@@ -662,3 +659,44 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "não autorizado"})
 	})
 }
+
+func (s *server) userCanAccessSession(ctx context.Context, sid, userID, role, defaultProjectID string) bool {
+	if role == "appadmin" {
+		return true
+	}
+
+	// 1. Obter informações da sessão a partir do mapa unificado (Memória, SQLite ou PocketBase)
+	allMap := s.getAllSessionsMap(ctx)
+	info, exists := allMap[sid]
+
+	var sessionProjectID string
+	if exists {
+		sessionProjectID = info.ProjectID
+	} else if sessRow, err := s.sessions.store.getRawSession(ctx, sid); err == nil && sessRow != nil {
+		sessionProjectID = sessRow.ProjectID
+	}
+
+	// 2. Se a sessão for do projeto padrão ou sem projeto atribuído, permitir acesso
+	if sessionProjectID == "" || sessionProjectID == "default" {
+		return true
+	}
+
+	// 3. Se coincidir com o projectId do token JWT
+	if defaultProjectID != "" && sessionProjectID == defaultProjectID {
+		return true
+	}
+
+	// 4. Se pertencer a qualquer workspace em que o usuário seja membro ou dono
+	if userID != "" {
+		if workspaces, err := pbClient.ListWorkspacesForUserPB(ctx, userID); err == nil {
+			for _, ws := range workspaces {
+				if ws.ID == sessionProjectID {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+

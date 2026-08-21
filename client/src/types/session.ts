@@ -6,7 +6,8 @@ export type SessionInfo = {
   jid: string;
   state: SessionState;
   paired: boolean;
-  projectId?: string;
+  workspaceId?: string;
+  projectId?: string; // alias de compatibilidade
   apiKey?: string;
   ownerEmail?: string;
   ownerName?: string;
