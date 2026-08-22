@@ -276,6 +276,10 @@ func pgUpdateContact(db *sql.DB, contactID string, c PGContact) (*PGContact, err
 }
 
 func pgDeleteContact(db *sql.DB, contactID string) error {
+	_, _ = db.Exec(`UPDATE conversations SET contact_id = NULL WHERE contact_id = $1`, contactID)
+	_, _ = db.Exec(`UPDATE deals SET contact_id = NULL WHERE contact_id = $1`, contactID)
+	_, _ = db.Exec(`DELETE FROM contact_tags WHERE contact_id = $1`, contactID)
+
 	_, err := db.Exec(`DELETE FROM contacts WHERE id = $1`, contactID)
 	return err
 }

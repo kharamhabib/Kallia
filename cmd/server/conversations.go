@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -1043,37 +1044,44 @@ func (s *server) handleReactMessage(w http.ResponseWriter, r *http.Request) {
 	meta["reactions"] = reactionsList
 	newMetaJSON, _ := json.Marshal(meta)
 
-	_, err = db.Exec("UPDATE messages SET metadata = $1 WHERE id = $2", newMetaJSON, msgID)
+	_, err = db.Exec("UPDATE messages SET metadata = $1::jsonb WHERE id = $2", string(newMetaJSON), msgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Dispara reação via Whatsmeow
+	// Dispara reação via Whatsmeow em background seguro
 	if externalID != "" && contactPhone != "" {
-		var sess *Session
-		if sessionID != "" {
-			sess, _ = s.sessions.Get(sessionID)
-		}
-		if sess == nil || sess.getClient() == nil {
-			for _, info := range s.sessions.infos() {
-				if info.WorkspaceID == workspaceID && info.State == "open" {
-					sess, _ = s.sessions.Get(info.ID)
-					break
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.log.Error("recuperado de pânico ao reagir mensagem no WhatsApp", "r", r)
+				}
+			}()
+			var sess *Session
+			if sessionID != "" {
+				sess, _ = s.sessions.Get(sessionID)
+			}
+			if sess == nil || sess.getClient() == nil {
+				for _, info := range s.sessions.infos() {
+					if info.WorkspaceID == workspaceID && info.State == "open" {
+						sess, _ = s.sessions.Get(info.ID)
+						break
+					}
 				}
 			}
-		}
-		if sess != nil && sess.getClient() != nil {
-			chatJID, err := resolveRecipient(contactPhone)
-			if err == nil {
-				senderJID := chatJID
-				if sess.getClient().Store.ID != nil {
-					senderJID = sess.getClient().Store.ID.ToNonAD()
+			if sess != nil && sess.getClient() != nil {
+				chatJID, err := resolveRecipient(contactPhone)
+				if err == nil {
+					senderJID := chatJID
+					if sess.getClient().Store != nil && sess.getClient().Store.ID != nil {
+						senderJID = sess.getClient().Store.ID.ToNonAD()
+					}
+					waMsg := sess.getClient().BuildReaction(chatJID, senderJID, types.MessageID(externalID), body.Emoji)
+					_, _ = sess.getClient().SendMessage(context.Background(), chatJID, waMsg)
 				}
-				waMsg := sess.getClient().BuildReaction(chatJID, senderJID, externalID, body.Emoji)
-				_, _ = sess.getClient().SendMessage(r.Context(), chatJID, waMsg)
 			}
-		}
+		}()
 	}
 
 	// Broadcast no WebSocket
@@ -1131,33 +1139,40 @@ func (s *server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	meta["edited_at"] = time.Now().UTC().Format(time.RFC3339)
 	newMetaJSON, _ := json.Marshal(meta)
 
-	_, err = db.Exec("UPDATE messages SET content = $1, metadata = $2 WHERE id = $3", body.Content, newMetaJSON, msgID)
+	_, err = db.Exec("UPDATE messages SET content = $1, metadata = $2::jsonb WHERE id = $3", body.Content, string(newMetaJSON), msgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Se for enviada e tiver WhatsApp ativo, dispara BuildEdit
+	// Se for enviada e tiver WhatsApp ativo, dispara BuildEdit em background
 	if externalID != "" && senderType != "contact" && contactPhone != "" {
-		var sess *Session
-		if sessionID != "" {
-			sess, _ = s.sessions.Get(sessionID)
-		}
-		if sess == nil || sess.getClient() == nil {
-			for _, info := range s.sessions.infos() {
-				if info.WorkspaceID == workspaceID && info.State == "open" {
-					sess, _ = s.sessions.Get(info.ID)
-					break
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.log.Error("recuperado de pânico ao editar mensagem no WhatsApp", "r", r)
+				}
+			}()
+			var sess *Session
+			if sessionID != "" {
+				sess, _ = s.sessions.Get(sessionID)
+			}
+			if sess == nil || sess.getClient() == nil {
+				for _, info := range s.sessions.infos() {
+					if info.WorkspaceID == workspaceID && info.State == "open" {
+						sess, _ = s.sessions.Get(info.ID)
+						break
+					}
 				}
 			}
-		}
-		if sess != nil && sess.getClient() != nil {
-			chatJID, err := resolveRecipient(contactPhone)
-			if err == nil {
-				editMsg := sess.getClient().BuildEdit(chatJID, externalID, &waE2E.Message{Conversation: proto.String(body.Content)})
-				_, _ = sess.getClient().SendMessage(r.Context(), chatJID, editMsg)
+			if sess != nil && sess.getClient() != nil {
+				chatJID, err := resolveRecipient(contactPhone)
+				if err == nil {
+					editMsg := sess.getClient().BuildEdit(chatJID, types.MessageID(externalID), &waE2E.Message{Conversation: proto.String(body.Content)})
+					_, _ = sess.getClient().SendMessage(context.Background(), chatJID, editMsg)
+				}
 			}
-		}
+		}()
 	}
 
 	if s.hub != nil && workspaceID != "" {
@@ -1208,37 +1223,44 @@ func (s *server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	newMetaJSON, _ := json.Marshal(meta)
 
 	deletedText := "Esta mensagem foi apagada"
-	_, err = db.Exec("UPDATE messages SET content = $1, metadata = $2 WHERE id = $3", deletedText, newMetaJSON, msgID)
+	_, err = db.Exec("UPDATE messages SET content = $1, metadata = $2::jsonb WHERE id = $3", deletedText, string(newMetaJSON), msgID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 
-	// Dispara Revoke no WhatsApp
+	// Dispara Revoke no WhatsApp em background
 	if externalID != "" && senderType != "contact" && contactPhone != "" {
-		var sess *Session
-		if sessionID != "" {
-			sess, _ = s.sessions.Get(sessionID)
-		}
-		if sess == nil || sess.getClient() == nil {
-			for _, info := range s.sessions.infos() {
-				if info.WorkspaceID == workspaceID && info.State == "open" {
-					sess, _ = s.sessions.Get(info.ID)
-					break
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.log.Error("recuperado de pânico ao revogar mensagem no WhatsApp", "r", r)
+				}
+			}()
+			var sess *Session
+			if sessionID != "" {
+				sess, _ = s.sessions.Get(sessionID)
+			}
+			if sess == nil || sess.getClient() == nil {
+				for _, info := range s.sessions.infos() {
+					if info.WorkspaceID == workspaceID && info.State == "open" {
+						sess, _ = s.sessions.Get(info.ID)
+						break
+					}
 				}
 			}
-		}
-		if sess != nil && sess.getClient() != nil {
-			chatJID, err := resolveRecipient(contactPhone)
-			if err == nil {
-				senderJID := chatJID
-				if sess.getClient().Store.ID != nil {
-					senderJID = sess.getClient().Store.ID.ToNonAD()
+			if sess != nil && sess.getClient() != nil {
+				chatJID, err := resolveRecipient(contactPhone)
+				if err == nil {
+					senderJID := chatJID
+					if sess.getClient().Store != nil && sess.getClient().Store.ID != nil {
+						senderJID = sess.getClient().Store.ID.ToNonAD()
+					}
+					revokeMsg := sess.getClient().BuildRevoke(chatJID, senderJID, types.MessageID(externalID))
+					_, _ = sess.getClient().SendMessage(context.Background(), chatJID, revokeMsg)
 				}
-				revokeMsg := sess.getClient().BuildRevoke(chatJID, senderJID, externalID)
-				_, _ = sess.getClient().SendMessage(r.Context(), chatJID, revokeMsg)
 			}
-		}
+		}()
 	}
 
 	if s.hub != nil && workspaceID != "" {

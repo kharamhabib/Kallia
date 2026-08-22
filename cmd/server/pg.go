@@ -198,7 +198,7 @@ var pgMigrations = []string{
 		id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		workspace_id  TEXT NOT NULL,
 		inbox_id      UUID REFERENCES inboxes(id),
-		contact_id    UUID REFERENCES contacts(id),
+		contact_id    UUID REFERENCES contacts(id) ON DELETE SET NULL,
 		status        TEXT DEFAULT 'open',
 		priority      TEXT DEFAULT 'none',
 		assignee_id   TEXT,
@@ -282,7 +282,7 @@ var pgMigrations = []string{
 		workspace_id    TEXT NOT NULL,
 		pipeline_id     UUID REFERENCES pipelines(id),
 		stage_id        UUID REFERENCES pipeline_stages(id),
-		contact_id      UUID REFERENCES contacts(id),
+		contact_id      UUID REFERENCES contacts(id) ON DELETE SET NULL,
 		conversation_id UUID,
 		title           TEXT NOT NULL,
 		value_cents     BIGINT DEFAULT 0,
@@ -308,6 +308,12 @@ var pgMigrations = []string{
 		created_at     TIMESTAMPTZ DEFAULT now()
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_automations_ws ON automations(workspace_id, active)`,
+
+	// ── Migrações de constraints para exclusão segura ──────────────────
+	`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_contact_id_fkey,
+	 ADD CONSTRAINT conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL`,
+	`ALTER TABLE deals DROP CONSTRAINT IF EXISTS deals_contact_id_fkey,
+	 ADD CONSTRAINT deals_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL`,
 }
 
 // envPGURL lê a URL de conexão do PostgreSQL da env.
