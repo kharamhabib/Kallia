@@ -54,6 +54,12 @@ interface ConversationsState {
     conversationId: string,
     tagId: string,
   ) => Promise<void>;
+  startConversation: (
+    workspaceId: string,
+    phone: string,
+    name?: string,
+    message?: string,
+  ) => Promise<Conversation>;
   sendTypingSignal: (conversationId: string, isTyping: boolean) => void;
   connectWebSocket: (workspaceId: string) => void;
   disconnectWebSocket: () => void;
@@ -324,6 +330,31 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       }));
     } catch (err) {
       console.error("Erro ao desvincular tag:", err);
+    }
+  },
+
+  startConversation: async (workspaceId, phone, name, message) => {
+    try {
+      const conv = await apiPost<Conversation>(
+        `/api/workspaces/${workspaceId}/conversations/start`,
+        { phone, name, message },
+      );
+
+      set((state) => {
+        const exists = state.conversations.some((c) => c.id === conv.id);
+        const list = exists ? state.conversations : [conv, ...state.conversations];
+        return {
+          conversations: list,
+          activeConversationId: conv.id,
+          activeConversation: conv,
+        };
+      });
+
+      await get().fetchMessages(conv.id);
+      return conv;
+    } catch (err) {
+      console.error("Erro ao iniciar conversa:", err);
+      throw err;
     }
   },
 

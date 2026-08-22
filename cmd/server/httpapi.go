@@ -171,6 +171,7 @@ func (s *server) routes() http.Handler {
 	// ── Omnichannel: Inboxes & Conversas (PostgreSQL) ──────────────────
 	mux.HandleFunc("GET /api/workspaces/{wid}/inboxes", s.handleListInboxes)
 	mux.HandleFunc("GET /api/workspaces/{wid}/conversations", s.handleListConversations)
+	mux.HandleFunc("POST /api/workspaces/{wid}/conversations/start", s.handleStartConversation)
 	mux.HandleFunc("GET /api/conversations/{id}", s.handleGetConversation)
 	mux.HandleFunc("PATCH /api/conversations/{id}", s.handleUpdateConversation)
 	mux.HandleFunc("GET /api/conversations/{id}/messages", s.handleListMessages)

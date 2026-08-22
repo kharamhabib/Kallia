@@ -834,3 +834,84 @@ func (s *server) handleRemoveConversationTag(w http.ResponseWriter, r *http.Requ
 	}
 	writeJSON(w, http.StatusNoContent, nil)
 }
+
+func (s *server) handleStartConversation(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	db := s.pg.DB()
+	if db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "PostgreSQL não configurado"})
+		return
+	}
+
+	var body struct {
+		Phone     string `json:"phone"`
+		Name      string `json:"name"`
+		Message   string `json:"message"`
+		SessionID string `json:"session_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Phone == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "telefone obrigatório"})
+		return
+	}
+
+	// 1. Criar ou obter contato
+	contact, err := pgGetOrCreateContact(db, wid, body.Phone, body.Name)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// 2. Obter ou criar inbox WhatsApp
+	sessionID := body.SessionID
+	if sessionID == "" {
+		for _, info := range s.sessions.infos() {
+			if info.WorkspaceID == wid && info.State == "open" {
+				sessionID = info.ID
+				break
+			}
+		}
+	}
+
+	inbox, err := pgEnsureInbox(db, wid, "whatsapp", "WhatsApp", sessionID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// 3. Criar ou obter conversa
+	conv, err := pgGetOrCreateConversation(db, wid, inbox.ID, contact.ID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// 4. Se tiver mensagem inicial, dispara e salva
+	if body.Message != "" {
+		var externalID string
+		if sessionID != "" {
+			sess, _ := s.sessions.Get(sessionID)
+			if sess != nil && sess.getClient() != nil && sess.getClient().Store.ID != nil {
+				jid, err := resolveRecipient(body.Phone)
+				if err == nil {
+					resp, err := sess.getClient().SendMessage(r.Context(), jid, &waE2E.Message{Conversation: proto.String(body.Message)})
+					if err == nil {
+						externalID = string(resp.ID)
+					}
+				}
+			}
+		}
+
+		_, _ = pgCreateMessage(db, s.hub, Message{
+			ConversationID: conv.ID,
+			SenderType:     "agent",
+			Content:        body.Message,
+			ContentType:    "text",
+			ExternalID:     externalID,
+			Status:         "sent",
+		}, wid)
+	}
+
+	conv.Contact = contact
+	writeJSON(w, http.StatusCreated, conv)
+}
+

@@ -8,10 +8,20 @@ import {
   FileText,
   Lock,
   ChevronDown,
+  Plus,
+  MessageSquarePlus,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,6 +33,7 @@ import {
 import { useConversationsStore } from "@/stores/conversations";
 import { useWorkspaceStore } from "@/stores/workspace";
 import type { Conversation } from "@/types/omnichannel";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export const ConversationsList = () => {
@@ -34,6 +45,9 @@ export const ConversationsList = () => {
   const selectConversation = useConversationsStore(
     (s) => s.selectConversation,
   );
+  const startConversation = useConversationsStore(
+    (s) => s.startConversation,
+  );
   const filters = useConversationsStore((s) => s.filters);
   const setFilters = useConversationsStore((s) => s.setFilters);
   const fetchConversations = useConversationsStore(
@@ -43,6 +57,37 @@ export const ConversationsList = () => {
   const isLoading = useConversationsStore((s) => s.isLoadingConversations);
 
   const [searchInput, setSearchInput] = useState(filters.search);
+
+  // Modal Nova Conversa State
+  const [isNewConvOpen, setIsNewConvOpen] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newInitialMsg, setNewInitialMsg] = useState("");
+  const [isStarting, setIsStarting] = useState(false);
+
+  const handleStartNewConversation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentWorkspace?.id || !newPhone.trim()) return;
+
+    setIsStarting(true);
+    try {
+      await startConversation(
+        currentWorkspace.id,
+        newPhone.trim(),
+        newName.trim(),
+        newInitialMsg.trim(),
+      );
+      toast.success("Conversa iniciada com sucesso!");
+      setIsNewConvOpen(false);
+      setNewPhone("");
+      setNewName("");
+      setNewInitialMsg("");
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao iniciar conversa");
+    } finally {
+      setIsStarting(false);
+    }
+  };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,68 +130,79 @@ export const ConversationsList = () => {
             </Badge>
           </div>
 
-          {/* Filtros Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn(
-                  "h-8 gap-1 rounded-lg text-xs font-medium cursor-pointer",
-                  (filters.assignee !== "all" || filters.tagId || filters.channel !== "all") &&
-                    "border-primary text-primary font-bold bg-primary/5",
-                )}
-              >
-                <Filter className="h-3.5 w-3.5" />
-                <span>Filtros</span>
-                <ChevronDown className="h-3 w-3 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              <DropdownMenuLabel className="text-xs">Atribuição</DropdownMenuLabel>
-              <DropdownMenuItem
-                onClick={() => handleAssigneeFilter("all")}
-                className={cn("text-xs cursor-pointer", filters.assignee === "all" && "font-bold text-primary")}
-              >
-                Todas as conversas
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleAssigneeFilter("unassigned")}
-                className={cn("text-xs cursor-pointer", filters.assignee === "unassigned" && "font-bold text-primary")}
-              >
-                Não atribuídas
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleAssigneeFilter("me")}
-                className={cn("text-xs cursor-pointer", filters.assignee === "me" && "font-bold text-primary")}
-              >
-                Minhas conversas
-              </DropdownMenuItem>
+          <div className="flex items-center gap-1.5">
+            {/* Botão Nova Conversa */}
+            <Button
+              size="sm"
+              onClick={() => setIsNewConvOpen(true)}
+              className="h-8 gap-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-2xs"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>Nova Conversa</span>
+            </Button>
 
-              {tags.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-xs">Filtrar por Tag</DropdownMenuLabel>
-                  {tags.map((tag) => (
-                    <DropdownMenuItem
-                      key={tag.id}
-                      onClick={() => handleTagFilter(tag.id)}
-                      className={cn(
-                        "text-xs gap-2 cursor-pointer",
-                        filters.tagId === tag.id && "font-bold text-primary",
-                      )}
-                    >
-                      <div
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <span>{tag.name}</span>
-                    </DropdownMenuItem>
-                  ))}
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            {/* Filtros Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "h-8 gap-1 rounded-lg text-xs font-medium cursor-pointer",
+                    (filters.assignee !== "all" || filters.tagId || filters.channel !== "all") &&
+                      "border-primary text-primary font-bold bg-primary/5",
+                  )}
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  <ChevronDown className="h-3 w-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuLabel className="text-xs">Atribuição</DropdownMenuLabel>
+                <DropdownMenuItem
+                  onClick={() => handleAssigneeFilter("all")}
+                  className={cn("text-xs cursor-pointer", filters.assignee === "all" && "font-bold text-primary")}
+                >
+                  Todas as conversas
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleAssigneeFilter("unassigned")}
+                  className={cn("text-xs cursor-pointer", filters.assignee === "unassigned" && "font-bold text-primary")}
+                >
+                  Não atribuídas
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleAssigneeFilter("me")}
+                  className={cn("text-xs cursor-pointer", filters.assignee === "me" && "font-bold text-primary")}
+                >
+                  Minhas conversas
+                </DropdownMenuItem>
+
+                {tags.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="text-xs">Filtrar por Tag</DropdownMenuLabel>
+                    {tags.map((tag) => (
+                      <DropdownMenuItem
+                        key={tag.id}
+                        onClick={() => handleTagFilter(tag.id)}
+                        className={cn(
+                          "text-xs gap-2 cursor-pointer",
+                          filters.tagId === tag.id && "font-bold text-primary",
+                        )}
+                      >
+                        <div
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span>{tag.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
 
         {/* Input de Busca */}
@@ -293,6 +349,79 @@ export const ConversationsList = () => {
           })
         )}
       </div>
+
+      {/* Modal Iniciar Nova Conversa */}
+      <Dialog open={isNewConvOpen} onOpenChange={setIsNewConvOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-bold flex items-center gap-2">
+              <MessageSquarePlus className="h-4 w-4 text-emerald-500" />
+              <span>Iniciar Nova Conversa via WhatsApp</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleStartNewConversation} className="space-y-3.5 py-2 text-xs">
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">
+                Número do WhatsApp (com DDI e DDD) *
+              </label>
+              <Input
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="Ex: 5511999998888"
+                required
+                className="h-9 rounded-xl text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">
+                Nome do Contato (Opcional)
+              </label>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Ex: João da Silva"
+                className="h-9 rounded-xl text-xs"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-muted-foreground">
+                Mensagem Inicial (Opcional)
+              </label>
+              <Textarea
+                value={newInitialMsg}
+                onChange={(e) => setNewInitialMsg(e.target.value)}
+                placeholder="Digite a primeira mensagem para ser enviada automaticamente..."
+                rows={3}
+                className="text-xs rounded-xl"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsNewConvOpen(false)}
+                className="rounded-xl text-xs"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={isStarting || !newPhone.trim()}
+                className="gap-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>{isStarting ? "Iniciando..." : "Iniciar Conversa"}</span>
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
