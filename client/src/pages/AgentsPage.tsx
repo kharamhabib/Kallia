@@ -10,6 +10,9 @@ import {
   Heart,
   Star,
   Save,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneOutgoing,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +34,15 @@ import { useAIAgents } from "@/stores/ai";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { PromptEditorModal, PromptExpandButton, type PromptTag } from "@/components/shared/PromptEditorModal";
+import { PromptQuickBar } from "@/components/domain/agents/PromptQuickBar";
+import {
+  generateModularPrompt,
+  defaultHandbookConfig,
+  extractHandbookConfig,
+  detectActiveTemplateId,
+  detectCallDirection,
+  PROMPT_TEMPLATES,
+} from "@/lib/promptTemplates";
 
 import { AISettingsPane } from "@/components/domain/settings/AISettingsPane";
 import { ToolsSettingsPane } from "@/components/domain/settings/ToolsSettingsPane";
@@ -49,56 +61,7 @@ const defaultConfig: AIConfig = {
   geminiApiKey: "",
   voiceName: "Puck",
   languageCode: "pt-BR",
-  systemInstruction: `## 1. Papel & Identidade
-Você é a assistente virtual de voz do [session_name].
-Sua função é atuar como uma secretária executiva inteligente, gerenciando chamadas telefônicas de entrada e saída via WhatsApp.
-**Regra de Ouro da Transparência:** Nos primeiros segundos da conversa, informe ao interlocutor que você é uma assistente virtual de inteligência artificial. Nunca simule ser humana.
-
-Hoje é [today]. Você está conversando com [contact_name] (número: [phone]). Esta é uma chamada de [direction].
-[custom_fields]
-
----
-
-## 2. Gatilhos & Ações (Triggers & Actions)
-
-### 📥 Chamadas Recebidas (Inbound)
-* **Gatilho**: Ao atender a ligação.
-  * **Ação**: Cumprimente de forma simpática e informe sua identidade de IA.
-  * *Exemplo*: "Olá, [contact_name]! Tudo bem? Aqui é a assistente virtual do [session_name]. No momento ele não pode atender, como posso te ajudar?"
-* **Gatilho**: Se o cliente quiser deixar um recado.
-  * **Ação**: Colete o assunto principal e se há algum prazo/urgência de retorno.
-* **Gatilho**: Após registrar o recado ou responder à solicitação.
-  * **Ação**: Confirme a ação e pergunte: "Há mais alguma coisa em que eu possa te ajudar agora?"
-
-### 📤 Chamadas Efetuadas (Outbound)
-* **Gatilho**: Ao ser atendida pelo interlocutor.
-  * **Ação**: Confirme se fala com a pessoa certa e apresente o motivo.
-  * *Exemplo*: "Olá, falo com [contact_name]? Aqui é a assistente virtual do [session_name], estou te ligando a pedido dele, tudo bem?"
-* **Gatilho**: Após transmitir o recado ou realizar a tarefa.
-  * **Ação**: Pergunte: "Ficou alguma dúvida ou posso te ajudar com algo mais?"
-
----
-
-## 3. Pré-falas & Latência (Audio Preambles)
-* **Antes de Executar Ferramentas ou Buscas Longas**: Emita uma pré-fala curta e natural para que o cliente saiba que você está processando a informação e não haja silêncio constrangedor na ligação.
-  * *Exemplos*: "Só um instante enquanto consulto isso para você...", "Estou enviando a mensagem no seu WhatsApp agora mesmo..."
-* **Exceção de Pré-fala**: Se o áudio do usuário for incompreensível ou cortado, NÃO use pré-fala e NÃO chame ferramentas; solicite esclarecimento diretamente.
-
----
-
-## 4. Guardrails & Fronteiras de Uso de Ferramentas
-* **Confirmação Prévia**: Antes de realizar agendamentos (\`schedule_call\`) ou chamados (\`open_ticket\`), confirme os dados com o cliente.
-* **Envio de Mensagens (\`send_message\`)**: Utilize para enviar textos por escrito no WhatsApp. Após executar, confirme verbalmente o envio e pergunte se ele precisa de algo mais.
-* **REGRA ABSOLUTA ANTI-DESLIGAMENTO**: JAMAIS se despeça ou execute a ferramenta \`hangup\` automaticamente após usar ferramentas (\`send_message\`, \`web_search\`, \`x_search\`, \`schedule_call\`, \`open_ticket\`).
-* **Critério para Encerramento (\`hangup\`)**: A ferramenta \`hangup\` só deve ser acionada se o cliente responder expressamente que NÃO precisa de mais nada e se despedir.
-
----
-
-## 5. Diretrizes de Sintonia e Ruído (TTS/STT)
-* **Formato Conversacional Telefônico**: Respostas curtas de no máximo 2 a 3 frases por turno. Evite monólogos longos.
-* **Proibição de Leitura Técnica**: NUNCA leia URLs (\`http/https\`), chaves PIX longas ou códigos de barras por voz. Avise que enviou esses dados por escrito no WhatsApp.
-* **Tratamento de Áudio Incompreensível ou Ruído**: Se o áudio do cliente estiver cortado, com ruído ou confuso, pergunte educadamente sem adivinhar:
-  * "Desculpe, a ligação falhou um pouco e não entendi. Você pode repetir, por favor?"`,
+  systemInstruction: generateModularPrompt(defaultHandbookConfig),
   serverSideAI: false,
   autoAnswer: false,
   autoAnswerDelay: 0,
@@ -402,46 +365,88 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
             </h3>
 
             {/* CARD 1: AGENTE PRINCIPAL (FIXO NO TOPO) */}
-            <div
-              onClick={() => setSelectedId("master")}
-              className={cn(
-                "rounded-2xl border p-4 transition-all cursor-pointer relative overflow-hidden space-y-3",
-                selectedId === "master"
-                  ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-md"
-                  : "border-border bg-card hover:border-primary/40 hover:shadow-xs",
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold shadow-xs">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-extrabold text-sm truncate text-foreground">Agente Principal</h4>
-                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500 shrink-0" />
-                    </div>
-                    <p className="text-[11px] text-muted-foreground truncate">Atendimento Receptivo Master</p>
-                  </div>
-                </div>
+            {(() => {
+              const masterPrompt = aiConfig?.systemInstruction || "";
+              const handbook = extractHandbookConfig(masterPrompt);
+              const activeTplId = detectActiveTemplateId(masterPrompt);
+              const activeTpl = PROMPT_TEMPLATES.find((t) => t.id === activeTplId) || PROMPT_TEMPLATES[0];
+              const direction = detectCallDirection(masterPrompt);
+              const agentName = handbook.useAgentName && handbook.agentName ? handbook.agentName : null;
 
-                <Badge
+              return (
+                <div
+                  onClick={() => setSelectedId("master")}
                   className={cn(
-                    "text-[10px] font-bold border shrink-0",
-                    enabled
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                      : "bg-muted text-muted-foreground",
+                    "rounded-2xl border p-4 transition-all cursor-pointer relative overflow-hidden space-y-3",
+                    selectedId === "master"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/30 shadow-md"
+                      : "border-border bg-card hover:border-primary/40 hover:shadow-xs",
                   )}
                 >
-                  {enabled ? "IA Ativa" : "Sem Key"}
-                </Badge>
-              </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-indigo-600 text-primary-foreground font-bold shadow-xs text-xs">
+                        {agentName ? agentName.charAt(0).toUpperCase() : <Sparkles className="h-4 w-4" />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="font-extrabold text-sm truncate text-foreground">
+                            {agentName ? agentName : "Agente Principal"}
+                          </h4>
+                          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500 shrink-0" />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {agentName ? "Agente Principal Master" : "Atendimento Receptivo Master"}
+                        </p>
+                      </div>
+                    </div>
 
-              <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/40 font-mono">
-                <span>Voz: <strong className="text-foreground">{aiConfig?.voiceName || "Puck"}</strong></span>
-                <span>Tools: <strong className="text-foreground">{aiConfig?.predefinedTools?.length || 0} ativas</strong></span>
-              </div>
-            </div>
+                    <Badge
+                      className={cn(
+                        "text-[10px] font-bold border shrink-0",
+                        enabled
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                          : "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {enabled ? "IA Ativa" : "Sem Key"}
+                    </Badge>
+                  </div>
+
+                  {/* BADGES: MODELO & SENTIDO */}
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <div className="flex items-center gap-1 rounded-md bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary">
+                      <Bot className="h-2.5 w-2.5" />
+                      <span>{activeTpl.name}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 rounded-md bg-muted/60 border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {direction === "both" ? (
+                        <>
+                          <PhoneCall className="h-2.5 w-2.5 text-primary" />
+                          <span>In & Outbound</span>
+                        </>
+                      ) : direction === "inbound_only" ? (
+                        <>
+                          <PhoneIncoming className="h-2.5 w-2.5 text-emerald-500" />
+                          <span>Só Inbound</span>
+                        </>
+                      ) : (
+                        <>
+                          <PhoneOutgoing className="h-2.5 w-2.5 text-indigo-500" />
+                          <span>Só Outbound</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border/40 font-mono">
+                    <span>Voz: <strong className="text-foreground">{aiConfig?.voiceName || "Puck"}</strong></span>
+                    <span>Tools: <strong className="text-foreground">{aiConfig?.predefinedTools?.length || 0} ativas</strong></span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* DIVIDER */}
             <div className="flex items-center gap-2 py-1">
@@ -591,29 +596,22 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
                     )}
 
                     {masterTab === "instructions" && (
-                      <div className="space-y-5 animate-fade-in">
-                        {/* Editor de Prompt Principal */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                                Instruções do Sistema (System Prompt Master)
-                              </Label>
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                Define a identidade, regras operacionais e tom de voz da IA ao atender ligações.
-                              </p>
-                            </div>
-                            <PromptExpandButton onClick={() => setShowPromptModal(true)} />
-                          </div>
+                      <div className="space-y-3.5 animate-fade-in">
+                        {/* Barra Unificada de Ações & Diretrizes */}
+                        <PromptQuickBar
+                          prompt={aiConfig.systemInstruction}
+                          onChangePrompt={(newPrompt) => setAiConfig({ ...aiConfig, systemInstruction: newPrompt })}
+                          onExpand={() => setShowPromptModal(true)}
+                        />
 
-                          <textarea
-                            rows={14}
-                            value={aiConfig.systemInstruction}
-                            onChange={(e) => setAiConfig({ ...aiConfig, systemInstruction: e.target.value })}
-                            className="w-full rounded-xl border border-border/70 bg-card p-4 font-mono text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary leading-relaxed custom-scrollbar shadow-2xs"
-                            placeholder="Digite as instruções da IA..."
-                          />
-                        </div>
+                        {/* Editor de Prompt Principal */}
+                        <textarea
+                          rows={14}
+                          value={aiConfig.systemInstruction}
+                          onChange={(e) => setAiConfig({ ...aiConfig, systemInstruction: e.target.value })}
+                          className="w-full rounded-xl border border-border/70 bg-card p-4 font-mono text-xs text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary leading-relaxed custom-scrollbar shadow-2xs"
+                          placeholder="Digite as instruções da IA..."
+                        />
 
                         {/* Tags Dinâmicas Disponíveis */}
                         <div className="rounded-xl bg-muted/40 p-4 border border-border/60 space-y-2">

@@ -211,6 +211,12 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if wsErr == nil && newWS != nil {
 		wsID = newWS.ID
 		_ = pbClient.AddWorkspaceMemberPB(r.Context(), newWS.ID, pbUserID, "owner")
+
+		// Inicializar o Agente Principal com o Prompt Padrão de Secretária Pessoal
+		defCfg := defaultAIConfig()
+		if cfgBytes, err := json.Marshal(defCfg); err == nil {
+			_ = pbClient.UpsertMasterAgentPB(r.Context(), newWS.ID, "Agente Principal", "Agente de Atendimento Principal", string(cfgBytes), true, true)
+		}
 	}
 
 	// 3. Cache local do usuário

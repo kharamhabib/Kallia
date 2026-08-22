@@ -2116,6 +2116,10 @@ func (s *server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 			if userID != "" {
 				_ = pbClient.AddWorkspaceMemberPB(r.Context(), newWS.ID, userID, "owner")
 			}
+			defCfg := defaultAIConfig()
+			if cfgBytes, err := json.Marshal(defCfg); err == nil {
+				_ = pbClient.UpsertMasterAgentPB(r.Context(), newWS.ID, "Agente Principal", "Agente de Atendimento Principal", string(cfgBytes), true, true)
+			}
 			list = append(list, *newWS)
 		} else {
 			// Fallback temporário caso PocketBase esteja indisponível
@@ -2200,6 +2204,12 @@ func (s *server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 
 	if userID != "" {
 		_ = pbClient.AddWorkspaceMemberPB(r.Context(), ws.ID, userID, "owner")
+	}
+
+	// Inicializar o Agente Principal com o Prompt Padrão de Secretária Pessoal
+	defCfg := defaultAIConfig()
+	if cfgBytes, err := json.Marshal(defCfg); err == nil {
+		_ = pbClient.UpsertMasterAgentPB(r.Context(), ws.ID, "Agente Principal", "Agente de Atendimento Principal", string(cfgBytes), true, true)
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{"workspace": ws})
