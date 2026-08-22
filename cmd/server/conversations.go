@@ -428,13 +428,21 @@ func pgCreateMessage(db *sql.DB, hub *RealtimeHub, msg Message, workspaceID stri
 
 // ── Ingestão de Mensagens do WhatsApp para PostgreSQL ───────────────────
 
-func pgIngestWhatsAppMessage(db *sql.DB, hub *RealtimeHub, workspaceID, sessionID, remotePhone, contactName, text, mediaURL, contentType string, isFromMe bool, externalID string) error {
+func pgIngestWhatsAppMessage(db *sql.DB, hub *RealtimeHub, workspaceID, sessionID, remotePhone, contactName, avatarURL, email, company, notes, text, mediaURL, contentType string, isFromMe bool, externalID string) error {
 	if db == nil || workspaceID == "" {
 		return nil
 	}
 
-	// 1. Obter ou criar contato
-	contact, err := pgGetOrCreateContact(db, workspaceID, remotePhone, contactName)
+	customAttrs := map[string]interface{}{}
+	if company != "" {
+		customAttrs["company"] = company
+	}
+	if notes != "" {
+		customAttrs["notes"] = notes
+	}
+
+	// 1. Obter ou criar contato com enriquecimento de foto e dados
+	contact, err := pgGetOrCreateContact(db, workspaceID, remotePhone, contactName, avatarURL, email, customAttrs)
 	if err != nil {
 		return fmt.Errorf("contato: %w", err)
 	}
@@ -518,6 +526,45 @@ func (s *server) handleListConversations(w http.ResponseWriter, r *http.Request)
 	if convs == nil {
 		convs = []Conversation{}
 	}
+
+	// Background enrichment para contatos de conversas sem foto de perfil
+	go func() {
+		defer func() { _ = recover() }()
+		for _, c := range convs {
+			if c.Contact != nil && (c.Contact.AvatarURL == "" || c.Contact.Name == "" || c.Contact.Name == c.Contact.Phone) {
+				phone := c.Contact.Phone
+				for _, sess := range s.sessions.list() {
+					if sess.info().WorkspaceID == wid && sess.info().State == "open" {
+						info := sess.enrichContactInfo(context.Background(), phone)
+						if info.AvatarURL != "" || (info.Name != "" && info.Name != phone) {
+							customAttrs := map[string]interface{}{}
+							if info.Company != "" {
+								customAttrs["company"] = info.Company
+							}
+							if info.Notes != "" {
+								customAttrs["notes"] = info.Notes
+							}
+							if info.Username != "" {
+								customAttrs["username"] = info.Username
+							}
+							customJSON, _ := json.Marshal(customAttrs)
+							_, _ = db.Exec(
+								`UPDATE contacts
+								 SET avatar_url = COALESCE(NULLIF($1, ''), avatar_url),
+								     name = CASE WHEN name = '' OR name IS NULL OR name = phone THEN COALESCE(NULLIF($2, ''), name) ELSE name END,
+								     email = COALESCE(NULLIF($3, ''), email),
+								     custom_attrs = contacts.custom_attrs || $4::jsonb,
+								     updated_at = now()
+								 WHERE workspace_id = $5 AND phone = $6`,
+								info.AvatarURL, info.Name, info.Email, string(customJSON), wid, normalizePhone(phone),
+							)
+						}
+						break
+					}
+				}
+			}
+		}
+	}()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"items": convs,
@@ -927,14 +974,7 @@ func (s *server) handleStartConversation(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 1. Criar ou obter contato
-	contact, err := pgGetOrCreateContact(db, wid, body.Phone, body.Name)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-
-	// 2. Obter ou criar inbox WhatsApp
+	// 1. Obter ou criar inbox WhatsApp
 	sessionID := body.SessionID
 	if sessionID == "" {
 		for _, info := range s.sessions.infos() {
@@ -943,6 +983,38 @@ func (s *server) handleStartConversation(w http.ResponseWriter, r *http.Request)
 				break
 			}
 		}
+	}
+
+	var avatarURL, email string
+	var customAttrs map[string]interface{}
+	if sessionID != "" {
+		if sess, _ := s.sessions.Get(sessionID); sess != nil {
+			info := sess.enrichContactInfo(r.Context(), body.Phone)
+			if info.Name != "" && body.Name == "" {
+				body.Name = info.Name
+			}
+			avatarURL = info.AvatarURL
+			email = info.Email
+			if info.Company != "" || info.Notes != "" || info.Username != "" {
+				customAttrs = map[string]interface{}{}
+				if info.Company != "" {
+					customAttrs["company"] = info.Company
+				}
+				if info.Notes != "" {
+					customAttrs["notes"] = info.Notes
+				}
+				if info.Username != "" {
+					customAttrs["username"] = info.Username
+				}
+			}
+		}
+	}
+
+	// 2. Criar ou obter contato enriquecido
+	contact, err := pgGetOrCreateContact(db, wid, body.Phone, body.Name, avatarURL, email, customAttrs)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
 	}
 
 	inbox, err := pgEnsureInbox(db, wid, "whatsapp", "WhatsApp", sessionID)

@@ -716,6 +716,12 @@ func (s *Session) handleEvent(rawEvt any) {
 			"timestamp": evt.Timestamp.UnixMilli(),
 		})
 		go s.pgPushReceipt(evt)
+	case *events.ChatPresence:
+		s.dispatchWebhook("chat_presence", map[string]any{
+			"chat": evt.Chat.String(), "sender": evt.Sender.String(),
+			"state": string(evt.State), "media": string(evt.Media),
+		})
+		go s.pgPushIncomingPresence(evt)
 	case *events.CallOffer:
 		s.onIncomingOffer(ctx, evt)
 	case *events.CallAccept:
@@ -1373,18 +1379,9 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 	}
 
 	contactName := evt.Info.PushName
-	if contactName == "" {
-		if cli := s.getClient(); cli != nil && cli.Store != nil && cli.Store.Contacts != nil {
-			if c, err := cli.Store.Contacts.GetContact(context.Background(), targetJID.ToNonAD()); err == nil && c.Found {
-				if c.FullName != "" {
-					contactName = c.FullName
-				} else if c.BusinessName != "" {
-					contactName = c.BusinessName
-				} else if c.PushName != "" {
-					contactName = c.PushName
-				}
-			}
-		}
+	enrichment := s.enrichContactInfo(context.Background(), sender)
+	if enrichment.Name != "" {
+		contactName = enrichment.Name
 	}
 	if contactName == "" {
 		contactName = sender
@@ -1456,6 +1453,10 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 		s.id,
 		sender,
 		contactName,
+		enrichment.AvatarURL,
+		enrichment.Email,
+		enrichment.Company,
+		enrichment.Notes,
 		text,
 		mediaURL,
 		contentType,
@@ -1484,5 +1485,71 @@ func (s *Session) pgPushReceipt(evt *events.Receipt) {
 	}
 
 	_ = pgUpdateMessageReceiptStatus(s.mgr.PG.DB(), s.mgr.Hub, wid, evt.MessageIDs, status)
+}
+
+func (s *Session) pgPushIncomingPresence(evt *events.ChatPresence) {
+	if s.mgr == nil || s.mgr.PG == nil || s.mgr.PG.DB() == nil {
+		return
+	}
+	wid := s.info().WorkspaceID
+	if wid == "" {
+		return
+	}
+
+	targetJID := evt.Chat
+	if targetJID.User == "" {
+		targetJID = evt.Sender
+	}
+
+	sender := ""
+	if targetJID.Server == types.DefaultUserServer && len(targetJID.User) <= 13 {
+		sender = targetJID.User
+	} else {
+		sender = s.realPhone(targetJID)
+	}
+	if sender == "" || len(sender) > 13 {
+		if realChat := s.realPhone(evt.Chat); realChat != "" && len(realChat) <= 13 {
+			sender = realChat
+		}
+	}
+	if sender == "" {
+		sender = targetJID.User
+	}
+	if sender == "" {
+		return
+	}
+
+	cleanPhone := strings.TrimPrefix(sender, "+")
+
+	var convID string
+	err := s.mgr.PG.DB().QueryRow(
+		`SELECT c.id
+		 FROM conversations c
+		 JOIN contacts ct ON ct.id = c.contact_id
+		 WHERE c.workspace_id = $1 AND (ct.phone = $2 OR ct.phone = $3 OR ct.phone LIKE $4)
+		 ORDER BY c.last_msg_at DESC
+		 LIMIT 1`,
+		wid, cleanPhone, "+"+cleanPhone, "%"+cleanPhone,
+	).Scan(&convID)
+	if err != nil || convID == "" {
+		return
+	}
+
+	isTyping := evt.State == types.ChatPresenceComposing
+	media := "text"
+	if evt.Media == types.ChatPresenceMediaAudio {
+		media = "audio"
+	}
+
+	if s.mgr.Hub != nil {
+		eventJSON, _ := json.Marshal(map[string]interface{}{
+			"type":            "typing",
+			"conversation_id": convID,
+			"sender_id":       "contact",
+			"is_typing":       isTyping,
+			"media":           media,
+		})
+		s.mgr.Hub.Broadcast(wid, eventJSON)
+	}
 }
 

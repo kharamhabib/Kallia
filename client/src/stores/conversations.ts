@@ -21,7 +21,7 @@ interface ConversationsState {
   isLoadingMessages: boolean;
   isSendingMessage: boolean;
   filters: ConversationFilters;
-  typingMap: Record<string, boolean>; // convId -> isTyping
+  typingMap: Record<string, boolean | { isTyping: boolean; media?: string }>; // convId -> isTyping or status
   wsConnected: boolean;
 
   // Actions
@@ -84,6 +84,7 @@ interface ConversationsState {
 
 let activeWS: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const typingTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
 
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversations: [],
@@ -508,6 +509,15 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
             const msg: Message = data.message;
             const { activeConversationId } = get();
 
+            // Limpa typing indicator da conversa ao chegar nova mensagem
+            if (typingTimeouts[msg.conversation_id]) {
+              clearTimeout(typingTimeouts[msg.conversation_id]);
+              delete typingTimeouts[msg.conversation_id];
+            }
+            set((state) => ({
+              typingMap: { ...state.typingMap, [msg.conversation_id]: false },
+            }));
+
             // Adiciona na timeline ativa se pertencer a ela
             if (activeConversationId === msg.conversation_id) {
               set((state) => {
@@ -566,11 +576,30 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
             }));
           } else if (data.type === "typing") {
             const convId = data.conversation_id;
-            const isTyping = data.is_typing;
+            const isTyping = Boolean(data.is_typing);
             const media = data.media || "text";
+
+            if (typingTimeouts[convId]) {
+              clearTimeout(typingTimeouts[convId]);
+              delete typingTimeouts[convId];
+            }
+
             set((state) => ({
-              typingMap: { ...state.typingMap, [convId]: isTyping ? { isTyping: true, media } : false },
+              typingMap: {
+                ...state.typingMap,
+                [convId]: isTyping ? { isTyping: true, media } : false,
+              },
             }));
+
+            // Se estiver digitando, agenda limpeza automática em 7s de inatividade
+            if (isTyping) {
+              typingTimeouts[convId] = setTimeout(() => {
+                set((state) => ({
+                  typingMap: { ...state.typingMap, [convId]: false },
+                }));
+                delete typingTimeouts[convId];
+              }, 7000);
+            }
           } else if (data.type === "conversation:updated") {
             // Revalida a conversa
             get().fetchConversations(workspaceId);

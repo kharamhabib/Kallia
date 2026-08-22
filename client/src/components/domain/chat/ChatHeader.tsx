@@ -57,7 +57,15 @@ export const ChatHeader = ({ onToggleDrawer, isDrawerOpen }: ChatHeaderProps) =>
   if (!activeConversation) return null;
 
   const contact = activeConversation.contact;
-  const isTyping = Boolean(typingMap[activeConversation.id]);
+  const typingState = typingMap[activeConversation.id];
+  const isTyping = Boolean(
+    typingState &&
+      (typeof typingState === "boolean" ? typingState : (typingState as any)?.isTyping),
+  );
+  const typingMedia =
+    typeof typingState === "object" && typingState !== null && "media" in typingState
+      ? (typingState as any).media
+      : "text";
   const isResolved = activeConversation.status === "resolved";
 
   const handleToggleStatus = async () => {
@@ -130,7 +138,7 @@ export const ChatHeader = ({ onToggleDrawer, isDrawerOpen }: ChatHeaderProps) =>
           <p className="truncate text-[11px] sm:text-xs text-muted-foreground flex items-center gap-1">
             {isTyping ? (
               <span className="text-emerald-600 dark:text-emerald-400 font-semibold animate-pulse">
-                digitando...
+                {typingMedia === "audio" ? "gravando áudio..." : "digitando..."}
               </span>
             ) : (
               <span className="font-mono">{contact?.phone || ""}</span>

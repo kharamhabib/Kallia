@@ -54,6 +54,7 @@ export const ConversationsList = () => {
     (s) => s.fetchConversations,
   );
   const tags = useConversationsStore((s) => s.tags);
+  const typingMap = useConversationsStore((s) => s.typingMap);
   const isLoading = useConversationsStore((s) => s.isLoadingConversations);
 
   const [searchInput, setSearchInput] = useState(filters.search);
@@ -262,6 +263,15 @@ export const ConversationsList = () => {
             const isActive = conv.id === activeConversationId;
             const contact = conv.contact;
             const lastMsg = conv.last_message;
+            const convTyping = typingMap[conv.id];
+            const isConvTyping = Boolean(
+              convTyping &&
+                (typeof convTyping === "boolean" ? convTyping : (convTyping as any).isTyping),
+            );
+            const convTypingMedia =
+              typeof convTyping === "object" && convTyping !== null && "media" in convTyping
+                ? (convTyping as any).media
+                : "text";
 
             return (
               <div
@@ -310,9 +320,15 @@ export const ConversationsList = () => {
                     </span>
                   </div>
 
-                  {/* Prévia da Mensagem */}
+                  {/* Prévia da Mensagem ou Indicador de Digitação */}
                   <p className="truncate text-[11px] text-muted-foreground flex items-center gap-1">
-                    {renderMessagePreview(lastMsg)}
+                    {isConvTyping ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold animate-pulse">
+                        {convTypingMedia === "audio" ? "gravando áudio..." : "digitando..."}
+                      </span>
+                    ) : (
+                      renderMessagePreview(lastMsg)
+                    )}
                   </p>
 
                   {/* Badges de Tags e Status de IA */}

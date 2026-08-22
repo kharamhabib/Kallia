@@ -9,9 +9,14 @@ export const getCRMContacts = (sid?: string | null, search?: string, wid?: strin
     ? `/api/sessions/${sid}/crm-contacts${query}`
     : `/api/contacts${query}`;
   return apiGet<any>(url).then((res) => {
-    if (Array.isArray(res)) return res;
-    if (res && Array.isArray(res.items)) return res.items;
-    return [];
+    const list = Array.isArray(res) ? res : res && Array.isArray(res.items) ? res.items : [];
+    return list.map((item: any) => ({
+      ...item,
+      avatarUrl: item.avatarUrl || item.avatar_url || item.pictureUrl || "",
+      company: item.company || item.custom_attrs?.company || "",
+      notes: item.notes || item.custom_attrs?.notes || "",
+      username: item.username || item.custom_attrs?.username || "",
+    }));
   });
 };
 

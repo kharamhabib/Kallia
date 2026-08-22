@@ -13,18 +13,22 @@ import (
 
 // PGContact representa um contato unificado cross-canal no PostgreSQL.
 type PGContact struct {
-	ID           string                 `json:"id"`
-	WorkspaceID  string                 `json:"workspace_id,omitempty"`
-	Name         string                 `json:"name"`
-	Phone        string                 `json:"phone"`
-	Email        string                 `json:"email"`
-	InstagramID  string                 `json:"instagram_id"`
-	TelegramID   string                 `json:"telegram_id"`
-	AvatarURL    string                 `json:"avatar_url"`
-	CustomAttrs  map[string]interface{} `json:"custom_attrs"`
-	Tags         []Tag                  `json:"tags,omitempty"`
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
+	ID          string                 `json:"id"`
+	WorkspaceID string                 `json:"workspace_id,omitempty"`
+	Name        string                 `json:"name"`
+	Phone       string                 `json:"phone"`
+	Email       string                 `json:"email"`
+	InstagramID string                 `json:"instagram_id,omitempty"`
+	TelegramID  string                 `json:"telegram_id,omitempty"`
+	AvatarURL   string                 `json:"avatar_url"`
+	AvatarUrl   string                 `json:"avatarUrl,omitempty"`
+	Company     string                 `json:"company,omitempty"`
+	Notes       string                 `json:"notes,omitempty"`
+	Username    string                 `json:"username,omitempty"`
+	CustomAttrs map[string]interface{} `json:"custom_attrs"`
+	Tags        []Tag                  `json:"tags,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	UpdatedAt   time.Time              `json:"updated_at"`
 }
 
 // ── CRUD de Contatos no PostgreSQL ─────────────────────────────────────
@@ -98,6 +102,16 @@ func pgListContacts(db *sql.DB, workspaceID string, search string, tagID string,
 		if c.CustomAttrs == nil {
 			c.CustomAttrs = make(map[string]interface{})
 		}
+		c.AvatarUrl = c.AvatarURL
+		if company, ok := c.CustomAttrs["company"].(string); ok {
+			c.Company = company
+		}
+		if notes, ok := c.CustomAttrs["notes"].(string); ok {
+			c.Notes = notes
+		}
+		if username, ok := c.CustomAttrs["username"].(string); ok {
+			c.Username = username
+		}
 		contacts = append(contacts, c)
 	}
 
@@ -157,26 +171,37 @@ func pgBatchGetContactTags(db *sql.DB, contactIDs []string) (map[string][]Tag, e
 	return result, nil
 }
 
-func pgGetOrCreateContact(db *sql.DB, workspaceID, phone, name string) (*PGContact, error) {
+func pgGetOrCreateContact(db *sql.DB, workspaceID, phone, name, avatarURL, email string, customAttrs map[string]interface{}) (*PGContact, error) {
 	phone = normalizePhone(phone)
 	if phone == "" {
 		return nil, errBadRequest("telefone inválido")
 	}
 
+	if customAttrs == nil {
+		customAttrs = make(map[string]interface{})
+	}
+	customJSON, _ := json.Marshal(customAttrs)
+	if len(customJSON) == 0 {
+		customJSON = []byte("{}")
+	}
+
 	var c PGContact
 	var customAttrsJSON []byte
 	query := `
-		INSERT INTO contacts (workspace_id, phone, name, updated_at)
-		VALUES ($1, $2, $3, now())
+		INSERT INTO contacts (workspace_id, phone, name, email, avatar_url, custom_attrs, updated_at)
+		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), $6::jsonb, now())
 		ON CONFLICT (workspace_id, phone) WHERE phone IS NOT NULL AND phone != ''
 		DO UPDATE SET
-			name = CASE WHEN contacts.name = '' OR contacts.name IS NULL OR contacts.name = contacts.phone THEN EXCLUDED.name ELSE contacts.name END,
+			name = CASE WHEN contacts.name = '' OR contacts.name IS NULL OR contacts.name = contacts.phone THEN COALESCE(NULLIF(EXCLUDED.name, ''), contacts.name) ELSE contacts.name END,
+			avatar_url = COALESCE(NULLIF(EXCLUDED.avatar_url, ''), contacts.avatar_url),
+			email = COALESCE(NULLIF(EXCLUDED.email, ''), contacts.email),
+			custom_attrs = contacts.custom_attrs || EXCLUDED.custom_attrs,
 			updated_at = now()
 		RETURNING id, workspace_id, COALESCE(name, ''), phone, COALESCE(email, ''),
 		          COALESCE(instagram_id, ''), COALESCE(telegram_id, ''), COALESCE(avatar_url, ''),
 		          custom_attrs, created_at, updated_at
 	`
-	err := db.QueryRow(query, workspaceID, phone, name).Scan(
+	err := db.QueryRow(query, workspaceID, phone, name, email, avatarURL, string(customJSON)).Scan(
 		&c.ID, &c.WorkspaceID, &c.Name, &c.Phone, &c.Email,
 		&c.InstagramID, &c.TelegramID, &c.AvatarURL,
 		&customAttrsJSON, &c.CreatedAt, &c.UpdatedAt,
@@ -189,6 +214,16 @@ func pgGetOrCreateContact(db *sql.DB, workspaceID, phone, name string) (*PGConta
 	}
 	if c.CustomAttrs == nil {
 		c.CustomAttrs = make(map[string]interface{})
+	}
+	c.AvatarUrl = c.AvatarURL
+	if company, ok := c.CustomAttrs["company"].(string); ok {
+		c.Company = company
+	}
+	if notes, ok := c.CustomAttrs["notes"].(string); ok {
+		c.Notes = notes
+	}
+	if username, ok := c.CustomAttrs["username"].(string); ok {
+		c.Username = username
 	}
 	return &c, nil
 }
@@ -369,6 +404,45 @@ func (s *server) handleListWorkspaceContactsPG(w http.ResponseWriter, r *http.Re
 	if contacts == nil {
 		contacts = []PGContact{}
 	}
+
+	// Background enrichment para contatos do CRM sem foto de perfil ou com nome de telefone
+	go func() {
+		defer func() { _ = recover() }()
+		for _, c := range contacts {
+			if c.AvatarURL == "" || c.Name == "" || c.Name == c.Phone {
+				phone := c.Phone
+				for _, sess := range s.sessions.list() {
+					if sess.info().WorkspaceID == wid && sess.info().State == "open" {
+						info := sess.enrichContactInfo(context.Background(), phone)
+						if info.AvatarURL != "" || (info.Name != "" && info.Name != phone) {
+							customAttrs := map[string]interface{}{}
+							if info.Company != "" {
+								customAttrs["company"] = info.Company
+							}
+							if info.Notes != "" {
+								customAttrs["notes"] = info.Notes
+							}
+							if info.Username != "" {
+								customAttrs["username"] = info.Username
+							}
+							customJSON, _ := json.Marshal(customAttrs)
+							_, _ = db.Exec(
+								`UPDATE contacts
+								 SET avatar_url = COALESCE(NULLIF($1, ''), avatar_url),
+								     name = CASE WHEN name = '' OR name IS NULL OR name = phone THEN COALESCE(NULLIF($2, ''), name) ELSE name END,
+								     email = COALESCE(NULLIF($3, ''), email),
+								     custom_attrs = contacts.custom_attrs || $4::jsonb,
+								     updated_at = now()
+								 WHERE workspace_id = $5 AND phone = $6`,
+								info.AvatarURL, info.Name, info.Email, string(customJSON), wid, normalizePhone(phone),
+							)
+						}
+						break
+					}
+				}
+			}
+		}
+	}()
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"items": contacts,
