@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, PhoneCall, KeyRound, Mail, Building, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Loader2, PhoneCall, KeyRound, Mail, Building, ShieldCheck, ArrowLeft, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +12,11 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetCode, setResetCode] = useState("");
   const [projectName, setProjectName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,6 +63,19 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
 
     const cleanEmail = email.trim().toLowerCase();
 
+    if (mode === "register") {
+      if (password.length < 6) {
+        setErr("A senha deve conter no mínimo 6 caracteres.");
+        setBusy(false);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setErr("As senhas não coincidem. Por favor, confira a digitação.");
+        setBusy(false);
+        return;
+      }
+    }
+
     try {
       if (mode === "register") {
         const r = await fetch(`${base}/api/auth/register`, {
@@ -75,7 +92,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
           }
           return;
         }
-        setSuccessMsg("Conta criada com sucesso! Entrando...");
+        setSuccessMsg("Conta criada com sucesso! Entrando no seu projeto...");
       }
 
       const loginRes = await fetch(`${base}/api/auth/login`, {
@@ -278,6 +295,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                       onClick={() => {
                         setMode("forgot_request");
                         resetMessages();
+                        setConfirmPassword("");
                       }}
                       className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
                     >
@@ -285,19 +303,66 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                     </button>
                   )}
                 </div>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (err) setErr("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleLoginOrRegister();
-                  }}
-                  placeholder="••••••••"
-                  className="bg-slate-900/60 border-slate-800 focus-visible:ring-indigo-500 text-slate-100 placeholder:text-slate-600"
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (err) setErr("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleLoginOrRegister();
+                    }}
+                    placeholder="••••••••"
+                    className="bg-slate-900/60 border-slate-800 focus-visible:ring-indigo-500 text-slate-100 placeholder:text-slate-600 pr-10"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none p-1 rounded transition-colors"
+                    title={showPassword ? "Ocultar senha" : "Ver senha"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4 text-slate-400" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Confirm Password Field (Register Only) */}
+            {mode === "register" && (
+              <div className="space-y-1.5 animate-fade-in">
+                <Label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+                  <KeyRound className="h-3.5 w-3.5" /> Confirmar Senha
+                </Label>
+                <div className="relative">
+                  <Input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      if (err) setErr("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleLoginOrRegister();
+                    }}
+                    placeholder="••••••••"
+                    className="bg-slate-900/60 border-slate-800 focus-visible:ring-indigo-500 text-slate-100 placeholder:text-slate-600 pr-10"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none p-1 rounded transition-colors"
+                    title={showConfirmPassword ? "Ocultar senha" : "Ver senha"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4 text-slate-400" />}
+                  </button>
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-[11px] text-amber-400 font-medium">As senhas não coincidem</p>
+                )}
               </div>
             )}
 
@@ -320,16 +385,27 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                   <Label className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
                     <KeyRound className="h-3.5 w-3.5" /> Nova Senha
                   </Label>
-                  <Input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleResetPassword();
-                    }}
-                    placeholder="Mínimo 6 caracteres"
-                    className="bg-slate-900/60 border-slate-800 focus-visible:ring-indigo-500 text-slate-100 placeholder:text-slate-600"
-                  />
+                  <div className="relative">
+                    <Input
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleResetPassword();
+                      }}
+                      placeholder="Mínimo 6 caracteres"
+                      className="bg-slate-900/60 border-slate-800 focus-visible:ring-indigo-500 text-slate-100 placeholder:text-slate-600 pr-10"
+                    />
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none p-1 rounded transition-colors"
+                      title={showNewPassword ? "Ocultar senha" : "Ver senha"}
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4 text-slate-400" />}
+                    </button>
+                  </div>
                 </div>
               </>
             )}
@@ -346,7 +422,12 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
             {(mode === "login" || mode === "register") && (
               <Button
                 className="w-full h-10 text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white"
-                disabled={busy || !email.trim() || !password.trim() || (mode === "register" && !projectName.trim())}
+                disabled={
+                  busy ||
+                  !email.trim() ||
+                  !password.trim() ||
+                  (mode === "register" && (!projectName.trim() || !confirmPassword.trim() || password !== confirmPassword))
+                }
                 onClick={handleLoginOrRegister}
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -385,6 +466,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                 onClick={() => {
                   setMode("login");
                   resetMessages();
+                  setConfirmPassword("");
                 }}
                 className="text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors flex items-center justify-center gap-1 mx-auto"
               >
@@ -396,6 +478,7 @@ export const LoginScreen = ({ onSuccess }: { onSuccess: () => void }) => {
                 onClick={() => {
                   setMode(mode === "register" ? "login" : "register");
                   resetMessages();
+                  setConfirmPassword("");
                 }}
                 className="text-xs font-medium text-indigo-400 hover:text-indigo-300 transition-colors"
               >

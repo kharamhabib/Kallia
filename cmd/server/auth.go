@@ -205,11 +205,19 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Cache local do usuário
-	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	_ = s.sessions.store.createUser(r.Context(), pbUserID, email, string(hashed), "creator", "")
+	// 2. Criar o primeiro Workspace do usuário com o Nome do Projeto / Empresa informado
+	newWS, wsErr := pbClient.CreateWorkspacePB(r.Context(), projName, "trial", "active", 1, 1, 2)
+	var wsID string
+	if wsErr == nil && newWS != nil {
+		wsID = newWS.ID
+		_ = pbClient.AddWorkspaceMemberPB(r.Context(), newWS.ID, pbUserID, "owner")
+	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"status": "sucesso", "userId": pbUserID})
+	// 3. Cache local do usuário
+	hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	_ = s.sessions.store.createUser(r.Context(), pbUserID, email, string(hashed), "creator", wsID)
+
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "sucesso", "userId": pbUserID, "workspaceId": wsID})
 }
 
 // registerInPocketBase cria o registro do usuário na collection 'users' do PocketBase
@@ -275,8 +283,13 @@ func (s *server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Garantir que cada usuário possua seu próprio workspace
+	// Garantir que cada usuário possua seu próprio workspace real
 	projectID := pbProjectID
+	if projectID == "" || projectID == "default" || strings.HasPrefix(projectID, "ws_") {
+		if wsList, err := pbClient.ListWorkspacesForUserPB(r.Context(), pbUserID); err == nil && len(wsList) > 0 {
+			projectID = wsList[0].ID
+		}
+	}
 	if projectID == "" || projectID == "default" {
 		projectID = "ws_" + pbUserID
 	}
