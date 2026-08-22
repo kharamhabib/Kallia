@@ -81,7 +81,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
 * **Gatilho**: Se o cliente desejar falar com um consultor ou especialista.
   * **Ação**: Verifique o tema e efetue a transferência (\`TransferTo\`) ou registre o interesse para retorno comercial urgente.
 * **Gatilho**: Ao finalizar um tópico.
-  * **Ação**: Pergunte: "Posso te ajudar com mais alguma informação sobre a [session_name]?"`,
+  * **Ação**: Pergunte: "Posso te ajudar com mais alguma informação sobre o(a) [session_name]?"`,
     outboundTriggers: `* **Gatilho**: Ao ser atendida pelo interlocutor.
   * **Ação**: Apresente a empresa e o motivo do contato.
   * *Exemplo*: "[outbound_greeting]"
@@ -126,39 +126,39 @@ export function getPresetGreeting(
   if (templateCategory === "personal") {
     if (transparencyMode === "announce_early") {
       return name
-        ? `Olá, [contact_name]! Tudo bem? Aqui é a ${name}, assistente virtual do [session_name]. No momento ele não pode atender, como posso te ajudar?`
-        : `Olá, [contact_name]! Tudo bem? Aqui é a assistente virtual do [session_name]. No momento ele não pode atender, como posso te ajudar?`;
+        ? `Olá, [contact_name]! Tudo bem? Aqui é a ${name}, assistente virtual do(a) [session_name]. No momento ele(a) não pode atender, como posso te ajudar?`
+        : `Olá, [contact_name]! Tudo bem? Aqui é a assistente virtual do(a) [session_name]. No momento ele(a) não pode atender, como posso te ajudar?`;
     } else {
       // Natural / Discreta
       return name
-        ? `Olá, [contact_name]! Tudo bem? Aqui é a ${name}, assistente do [session_name]. No momento ele não pode atender, como posso te ajudar?`
-        : `Olá, [contact_name]! Tudo bem? Falo em nome do [session_name]. No momento ele não pode atender, como posso te ajudar?`;
+        ? `Olá, [contact_name]! Tudo bem? Aqui é a ${name}, assistente do(a) [session_name]. No momento ele(a) não pode atender, como posso te ajudar?`
+        : `Olá, [contact_name]! Tudo bem? Falo em nome do(a) [session_name]. No momento ele(a) não pode atender, como posso te ajudar?`;
     }
   }
 
   if (templateCategory === "company") {
     if (transparencyMode === "announce_early") {
       return name
-        ? `Olá, [contact_name]! Seja muito bem-vindo à [session_name]. Aqui é a ${name}, assistente virtual Como posso ajudar você hoje?`
-        : `Olá, [contact_name]! Seja muito bem-vindo à [session_name]. Aqui é a assistente virtual. Como posso ajudar você hoje?`;
+        ? `Olá, [contact_name]! Seja muito bem-vindo(a) ao(à) [session_name]. Aqui é a ${name}, assistente virtual. Como posso ajudar você hoje?`
+        : `Olá, [contact_name]! Seja muito bem-vindo(a) ao(à) [session_name]. Aqui é a assistente virtual. Como posso ajudar você hoje?`;
     } else {
       // Natural / Discreta
       return name
-        ? `Olá, [contact_name]! Seja muito bem-vindo à [session_name]. Aqui é a ${name}, da equipe de atendimento. Como posso ajudar você hoje?`
-        : `Olá, [contact_name]! Seja muito bem-vindo à [session_name]. Como posso ajudar você hoje?`;
+        ? `Olá, [contact_name]! Seja muito bem-vindo(a) ao(à) [session_name]. Aqui é a ${name}, da equipe de atendimento. Como posso ajudar você hoje?`
+        : `Olá, [contact_name]! Seja muito bem-vindo(a) ao(à) [session_name]. Como posso ajudar você hoje?`;
     }
   }
 
   // Support
   if (transparencyMode === "announce_early") {
     return name
-      ? `Olá, [contact_name]! Você está na central da [session_name]. Aqui é a ${name}, assistente virtual. Qual é o motivo do seu contato hoje?`
-      : `Olá, [contact_name]! Você está na central da [session_name]. Aqui é a assistente virtual. Qual é o motivo do seu contato hoje?`;
+      ? `Olá, [contact_name]! Você está na central de atendimento do(a) [session_name]. Aqui é a ${name}, assistente virtual. Qual é o motivo do seu contato hoje?`
+      : `Olá, [contact_name]! Você está na central de atendimento do(a) [session_name]. Aqui é a assistente virtual. Qual é o motivo do seu contato hoje?`;
   } else {
     // Natural / Discreta
     return name
-      ? `Olá, [contact_name]! Você está na central de atendimento da [session_name]. Aqui é a ${name}, como posso te ajudar hoje?`
-      : `Olá, [contact_name]! Você está na central de atendimento da [session_name]. Qual é o motivo do seu contato hoje?`;
+      ? `Olá, [contact_name]! Você está na central de atendimento do(a) [session_name]. Aqui é a ${name}, como posso te ajudar hoje?`
+      : `Olá, [contact_name]! Você está na central de atendimento do(a) [session_name]. Qual é o motivo do seu contato hoje?`;
   }
 }
 
@@ -176,36 +176,36 @@ export function getPresetOutboundGreeting(
   if (templateCategory === "personal") {
     if (transparencyMode === "announce_early") {
       return name
-        ? `Olá, falo com [contact_name]? Aqui é a ${name}, assistente virtual do [session_name], estou te ligando a pedido dele, tudo bem?`
-        : `Olá, falo com [contact_name]? Aqui é a assistente virtual do [session_name], estou te ligando a pedido dele, tudo bem?`;
+        ? `Olá, falo com [contact_name]? Aqui é a ${name}, assistente virtual do(a) [session_name], estou te ligando a pedido dele(a), tudo bem?`
+        : `Olá, falo com [contact_name]? Aqui é a assistente virtual do(a) [session_name], estou te ligando a pedido dele(a), tudo bem?`;
     } else {
       return name
-        ? `Olá, falo com [contact_name]? Aqui é a ${name}, assistente do [session_name], estou te ligando a pedido dele, tudo bem?`
-        : `Olá, falo com [contact_name]? Falo em nome do [session_name], estou te ligando a pedido dele, tudo bem?`;
+        ? `Olá, falo com [contact_name]? Aqui é a ${name}, assistente do(a) [session_name], estou te ligando a pedido dele(a), tudo bem?`
+        : `Olá, falo com [contact_name]? Falo em nome do(a) [session_name], estou te ligando a pedido dele(a), tudo bem?`;
     }
   }
 
   if (templateCategory === "company") {
     if (transparencyMode === "announce_early") {
       return name
-        ? `Olá, [contact_name]! Aqui é a ${name}, assistente virtual da [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`
-        : `Olá, [contact_name]! Aqui é da equipe da [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`;
+        ? `Olá, [contact_name]! Aqui é a ${name}, assistente virtual do(a) [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`
+        : `Olá, [contact_name]! Aqui é da equipe do(a) [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`;
     } else {
       return name
-        ? `Olá, [contact_name]! Aqui é a ${name}, da [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`
-        : `Olá, [contact_name]! Aqui é da [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`;
+        ? `Olá, [contact_name]! Aqui é a ${name}, do(a) [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`
+        : `Olá, [contact_name]! Aqui é do(a) [session_name]. Estou entrando em contato para dar seguimento à sua solicitação, tudo bem?`;
     }
   }
 
   // Support
   if (transparencyMode === "announce_early") {
     return name
-      ? `Olá, falo com [contact_name]? Aqui é a ${name}, assistente virtual da [session_name] referente ao seu chamado, tudo bem?`
-      : `Olá, falo com [contact_name]? Aqui é da central da [session_name] referente ao seu chamado, tudo bem?`;
+      ? `Olá, falo com [contact_name]? Aqui é a ${name}, assistente virtual do(a) [session_name] referente ao seu chamado, tudo bem?`
+      : `Olá, falo com [contact_name]? Aqui é da central do(a) [session_name] referente ao seu chamado, tudo bem?`;
   } else {
     return name
-      ? `Olá, falo com [contact_name]? Aqui é a ${name}, da central da [session_name] referente ao seu chamado, tudo bem?`
-      : `Olá, falo com [contact_name]? Aqui é da central de atendimento da [session_name] referente ao seu agendamento, tudo bem?`;
+      ? `Olá, falo com [contact_name]? Aqui é a ${name}, da central do(a) [session_name] referente ao seu chamado, tudo bem?`
+      : `Olá, falo com [contact_name]? Aqui é da central de atendimento do(a) [session_name] referente ao seu agendamento, tudo bem?`;
   }
 }
 
@@ -216,7 +216,7 @@ export const defaultHandbookConfig: AgentHandbookConfig = {
   templateId: "personal_secretary",
   callDirection: "both",
   timeAwareGreeting: true,
-  customGreeting: "Olá, [contact_name]! Tudo bem? Aqui é a Kallia, assistente do [session_name]. No momento ele não pode atender, como posso te ajudar?",
+  customGreeting: "Olá, [contact_name]! Tudo bem? Aqui é a Kallia, assistente do(a) [session_name]. No momento ele(a) não pode atender, como posso te ajudar?",
   defaultToneStyle: "conversational",
   naturalFillerWords: true,
   highEmpathy: true,
@@ -253,21 +253,21 @@ export function generateModularPrompt(config: AgentHandbookConfig): string {
 
   if (useName) {
     if (config.transparencyMode === "announce_early") {
-      identityLine = `Você é a ${agentName}, assistente virtual de inteligência artificial do [session_name].`;
+      identityLine = `Você é a ${agentName}, assistente virtual do(a) [session_name].`;
       transparencyText = `**Regra de Transparência:** Nos primeiros segundos da conversa, apresente-se como ${agentName}, assistente virtual. Nunca simule ser humana.`;
     } else {
       // Natural / Discreta
-      identityLine = `Você é a ${agentName}, assistente de voz do [session_name].`;
-      transparencyText = `**Regra de Transparência:** Conduza a conversa com naturalidade apresentando-se como ${agentName}, assistente ou falando em nome do [session_name], sem anunciar proativamente que é uma inteligência artificial. No entanto, se o interlocutor perguntar diretamente se você é uma IA ou um robô, NUNCA minta ou negue: confirme imediatamente com cordialidade que é uma assistente virtual de inteligência artificial.`;
+      identityLine = `Você é a ${agentName}, assistente de voz do(a) [session_name].`;
+      transparencyText = `**Regra de Transparência:** Conduza a conversa com naturalidade apresentando-se como ${agentName}, assistente ou falando em nome do(a) [session_name], sem anunciar proativamente que é uma inteligência artificial. No entanto, se o interlocutor perguntar diretamente se você é uma IA ou um robô, NUNCA minta ou negue: confirme imediatamente com cordialidade que é uma assistente virtual de inteligência artificial.`;
     }
   } else {
     if (config.transparencyMode === "announce_early") {
-      identityLine = `Você é a assistente virtual do [session_name].`;
+      identityLine = `Você é a assistente virtual do(a) [session_name].`;
       transparencyText = `**Regra de Transparência:** Nos primeiros segundos da conversa, informe ao interlocutor que você é uma assistente virtual. Nunca simule ser humana.`;
     } else {
       // Natural / Discreta
-      identityLine = `Você é a assistente de atendimento do [session_name].`;
-      transparencyText = `**Regra de Transparência:** Conduza a conversa com naturalidade falando em nome do [session_name], sem anunciar proativamente que é uma inteligência artificial. No entanto, se o interlocutor perguntar diretamente se você é uma IA ou um robô, NUNCA minta ou negue: confirme imediatamente com cordialidade que é uma assistente virtual de inteligência artificial.`;
+      identityLine = `Você é a assistente de atendimento do(a) [session_name].`;
+      transparencyText = `**Regra de Transparência:** Conduza a conversa com naturalidade falando em nome do(a) [session_name], sem anunciar proativamente que é uma inteligência artificial. No entanto, se o interlocutor perguntar diretamente se você é uma IA ou um robô, NUNCA minta ou negue: confirme imediatamente com cordialidade que é uma assistente virtual de inteligência artificial.`;
     }
   }
 
@@ -398,6 +398,7 @@ ${tuningRules.join("\n")}`;
 ${identityLine}
 ${tpl.roleIdentity}
 ${transparencyText}
+* **Concordância Gramatical com [session_name]**: Ajuste automaticamente a concordância de artigos e pronomes ("do/da", "ao/à", "dele/dela") de acordo com o gênero e sonoridade do nome ou empresa em [session_name] (ex: se for homem use "do João / ao João / dele", se for mulher use "da Maria / à Maria / dela", se for empresa use "da [empresa] / à [empresa] / dela").
 
 Hoje é [today]. Você está conversando com [contact_name] (número: [phone]). Esta é uma chamada de [direction].
 
@@ -445,13 +446,13 @@ export function extractAgentName(prompt: string): { useAgentName: boolean; name:
  */
 export function detectActiveTemplateId(prompt: string): string {
   if (!prompt) return "personal_secretary";
-  if (prompt.includes("secretária executiva inteligente") || prompt.includes("No momento ele não pode atender")) {
+  if (prompt.includes("secretária executiva inteligente") || prompt.includes("No momento ele")) {
     return "personal_secretary";
   }
   if (prompt.includes("atendente virtual comercial") || prompt.includes("Seja muito bem-vindo") || prompt.includes("corporativo de excelência")) {
     return "commercial_company";
   }
-  if (prompt.includes("suporte e recepção") || prompt.includes("central de atendimento da") || prompt.includes("triagem ágil de chamadas")) {
+  if (prompt.includes("suporte e recepção") || prompt.includes("central de atendimento") || prompt.includes("triagem ágil de chamadas")) {
     return "customer_support";
   }
   return "personal_secretary";
@@ -509,7 +510,7 @@ export function extractHandbookConfig(prompt: string): AgentHandbookConfig {
   const hasNato = p.includes("Alfabeto Fonético") || p.includes("NATO") || p.includes("Soletração");
   const hasNorm = p.includes("Normalização de Fala") || p.includes("números, datas");
   const hasSmart = p.includes("Correspondência Inteligente") || p.includes("variantes fonéticas");
-  const hasAnnounceEarly = p.includes("Nos primeiros segundos da conversa, informe") || p.includes("apresente-se como") && p.includes("assistente virtual de inteligência artificial");
+  const hasAnnounceEarly = p.includes("Nos primeiros segundos da conversa, informe") || (p.includes("apresente-se como") && p.includes("assistente virtual"));
   const hasScope = p.includes("Limites de Escopo") || p.includes("Atenha-se rigorosamente");
 
   return {
