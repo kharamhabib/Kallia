@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { DashboardPage } from "@/pages/DashboardPage";
+import { ConversationsPage } from "@/pages/ConversationsPage";
 import { ConnectionsPage } from "@/pages/ConnectionsPage";
 import { CallsPage } from "@/pages/CallsPage";
 import { WebphonePage } from "@/pages/WebphonePage";
@@ -72,7 +73,9 @@ export const App = () => {
   return (
     <TooltipProvider delayDuration={200}>
       <AppShell>
-        {activeSection === "connections" ? (
+        {activeSection === "conversations" ? (
+          <ConversationsPage />
+        ) : activeSection === "connections" ? (
           <ConnectionsPage />
         ) : activeSection === "profile" ? (
           <ProfilePage />

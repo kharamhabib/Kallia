@@ -91,7 +91,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv, err := newServer(ctx, *storageDir, *redisURL, *staticDir, *maxCalls, log)
+	srv, err := newServer(ctx, *storageDir, *redisURL, envPGURL(), *staticDir, *maxCalls, log)
 	if err != nil {
 		log.Error("startup failed", "err", err)
 		os.Exit(1)

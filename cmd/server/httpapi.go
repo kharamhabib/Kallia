@@ -140,10 +140,12 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/workspaces/{wid}/ai-config", s.handleGetWorkspaceAIConfig)
 	mux.HandleFunc("POST /api/workspaces/{wid}/ai-config", s.handleSetWorkspaceAIConfig)
 	mux.HandleFunc("PUT /api/workspaces/{wid}/ai-config", s.handleSetWorkspaceAIConfig)
-	mux.HandleFunc("GET /api/workspaces/{wid}/contacts", s.handleListWorkspaceCRMContacts)
-	mux.HandleFunc("POST /api/workspaces/{wid}/contacts", s.handleCreateWorkspaceCRMContact)
-	mux.HandleFunc("PUT /api/workspaces/{wid}/contacts/{id}", s.handleUpdateWorkspaceCRMContact)
-	mux.HandleFunc("DELETE /api/workspaces/{wid}/contacts/{id}", s.handleDeleteWorkspaceCRMContact)
+	// ── Contatos Unificados (PostgreSQL com fallback) ───────────────────
+	mux.HandleFunc("GET /api/workspaces/{wid}/contacts", s.handleListWorkspaceContactsPG)
+	mux.HandleFunc("POST /api/workspaces/{wid}/contacts", s.handleCreateWorkspaceContactPG)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/contacts/{id}", s.handleUpdateWorkspaceContactPG)
+	mux.HandleFunc("PATCH /api/workspaces/{wid}/contacts/{id}", s.handleUpdateWorkspaceContactPG)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/contacts/{id}", s.handleDeleteWorkspaceContactPG)
 	mux.HandleFunc("GET /api/workspaces/{wid}/history", s.handleWorkspaceHistory)
 	mux.HandleFunc("GET /api/workspaces/{wid}/ai-providers", s.handleListAIProviders)
 	mux.HandleFunc("PUT /api/workspaces/{wid}/ai-providers/{provider}", s.handleUpdateAIProvider)
@@ -162,6 +164,31 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/admin/users/{uid}/role", s.handleAdminUpdateUserRole)
 	mux.HandleFunc("GET /api/admin/workspaces", s.handleAdminListWorkspaces)
 	mux.HandleFunc("PATCH /api/admin/workspaces/{wid}", s.handleAdminUpdateWorkspace)
+
+	// ── Omnichannel: Tempo Real (WebSocket) ─────────────────────────────
+	mux.HandleFunc("GET /api/workspaces/{wid}/ws", s.handleWorkspaceWS)
+
+	// ── Omnichannel: Inboxes & Conversas (PostgreSQL) ──────────────────
+	mux.HandleFunc("GET /api/workspaces/{wid}/inboxes", s.handleListInboxes)
+	mux.HandleFunc("GET /api/workspaces/{wid}/conversations", s.handleListConversations)
+	mux.HandleFunc("GET /api/conversations/{id}", s.handleGetConversation)
+	mux.HandleFunc("PATCH /api/conversations/{id}", s.handleUpdateConversation)
+	mux.HandleFunc("GET /api/conversations/{id}/messages", s.handleListMessages)
+	mux.HandleFunc("POST /api/conversations/{id}/messages", s.handleSendMessage)
+	mux.HandleFunc("POST /api/conversations/{id}/tags", s.handleAddConversationTag)
+	mux.HandleFunc("DELETE /api/conversations/{id}/tags/{tagId}", s.handleRemoveConversationTag)
+
+	// ── Omnichannel: Tags (PostgreSQL) ─────────────────────────────────
+	mux.HandleFunc("GET /api/workspaces/{wid}/tags", s.handleListTags)
+	mux.HandleFunc("POST /api/workspaces/{wid}/tags", s.handleCreateTag)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/tags/{id}", s.handleUpdateTag)
+	mux.HandleFunc("PATCH /api/workspaces/{wid}/tags/{id}", s.handleUpdateTag)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/tags/{id}", s.handleDeleteTag)
+
+	// Tags em contatos (PostgreSQL)
+	mux.HandleFunc("GET /api/contacts/{id}/tags", s.handleListContactTags)
+	mux.HandleFunc("POST /api/contacts/{id}/tags", s.handleAddContactTag)
+	mux.HandleFunc("DELETE /api/contacts/{id}/tags/{tagId}", s.handleRemoveContactTag)
 
 
 	// Rotas Públicas de Documentação de API (Swagger / OpenAPI)

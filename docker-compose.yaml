@@ -23,11 +23,13 @@ services:
       - KALLIA_LOG_LEVEL=${KALLIA_LOG_LEVEL:-info}
       - KALLIA_CORS_ORIGINS=${KALLIA_CORS_ORIGINS:-*}
       - KALLIA_STORAGE_DIR=/app/storage
+      - KALLIA_PG_URL=postgres://${POSTGRES_USER:-kallia}:${POSTGRES_PASSWORD:-kallia_secure_2026}@postgres:5432/${POSTGRES_DB:-kallia}?sslmode=disable
     volumes:
       - ./storage:/app/storage
     depends_on:
       - pocketbase
       - redis
+      - postgres
 
   pocketbase:
     image: ghcr.io/muchobien/pocketbase:latest
@@ -55,3 +57,15 @@ services:
     volumes:
       - ./storage/redis_data:/data
     command: ["redis-server", "--appendonly", "yes"]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    expose:
+      - 5432
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-kallia}
+      - POSTGRES_USER=${POSTGRES_USER:-kallia}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-kallia_secure_2026}
+    volumes:
+      - ./storage/pg_data:/var/lib/postgresql/data

@@ -53,6 +53,7 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
     {
       category: "OPERAÇÃO",
       items: [
+        { id: "conversations", label: "Conversas (Chat)", icon: MessageSquare },
         { id: "connections", label: "Conexões do Workspace", icon: Smartphone },
         { id: "webphone", label: "Webphone & Ligações", icon: PhoneCall },
         { id: "schedules", label: "Disparos & Agenda", icon: Calendar },

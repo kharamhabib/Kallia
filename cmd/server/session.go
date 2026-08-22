@@ -705,6 +705,7 @@ func (s *Session) handleEvent(rawEvt any) {
 		}
 		s.dispatchWebhook("message", summarizeMessage(evt))
 		go s.chatwootPushIncoming(evt)
+		go s.pgPushIncoming(evt)
 	case *events.Receipt:
 		if !evt.Timestamp.IsZero() && time.Since(evt.Timestamp) > 1*time.Hour {
 			break
@@ -1246,3 +1247,66 @@ func (s *Session) enrichContactInfo(ctx context.Context, peerStr string) Contact
 
 	return res
 }
+
+func (s *Session) pgPushIncoming(evt *events.Message) {
+	if s.mgr.PG == nil || s.mgr.PG.DB() == nil {
+		return
+	}
+	wid := s.getWorkspaceID()
+	if wid == "" {
+		return
+	}
+
+	sender := evt.Info.Sender.User
+	if sender == "" {
+		sender = evt.Info.Chat.User
+	}
+	if sender == "" {
+		return
+	}
+
+	contactName := evt.Info.PushName
+	if contactName == "" {
+		contactName = sender
+	}
+
+	text := evt.Message.GetConversation()
+	if text == "" && evt.Message.ExtendedTextMessage != nil {
+		text = evt.Message.ExtendedTextMessage.GetText()
+	}
+
+	contentType := "text"
+	if evt.Message.ImageMessage != nil {
+		contentType = "image"
+		if text == "" {
+			text = evt.Message.ImageMessage.GetCaption()
+		}
+	} else if evt.Message.AudioMessage != nil {
+		contentType = "audio"
+	} else if evt.Message.VideoMessage != nil {
+		contentType = "video"
+		if text == "" {
+			text = evt.Message.VideoMessage.GetCaption()
+		}
+	} else if evt.Message.DocumentMessage != nil {
+		contentType = "document"
+		if text == "" {
+			text = evt.Message.DocumentMessage.GetFileName()
+		}
+	}
+
+	_ = pgIngestWhatsAppMessage(
+		s.mgr.PG.DB(),
+		s.mgr.Hub,
+		wid,
+		s.id,
+		sender,
+		contactName,
+		text,
+		"",
+		contentType,
+		evt.Info.IsFromMe,
+		string(evt.Info.ID),
+	)
+}
+

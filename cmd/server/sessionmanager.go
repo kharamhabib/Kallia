@@ -27,6 +27,8 @@ type SessionManager struct {
 	maxCalls int
 	Scheduler *AIScheduler
 	Queue     *QueueManager
+	PG        *pgPool
+	Hub       *RealtimeHub
 	nps       *NPSEngine
 	followup  *FollowupEngine
 

@@ -7,6 +7,7 @@ import { useNavigation } from "@/stores/navigation";
 
 const sectionTitles: Record<string, string> = {
   dashboard: "Painel de Controle",
+  conversations: "Central de Conversas & Chat",
   agents: "Agentes IA & Voz",
   knowledge: "Base de Conhecimento (RAG)",
   connections: "Conexões do Workspace",
