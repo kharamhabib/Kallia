@@ -1112,12 +1112,16 @@ func (a *ServerAIAgent) executePostCallActions(transcript []TranscriptLine) {
 	// Salva a transcrição no banco de dados principal (PocketBase SSOT + SQLite)
 	if a.sess.mgr != nil && a.sess.mgr.store != nil {
 		goSafe(a.log, func() {
-			_ = pbClient.UpdateCallTranscriptPB(context.Background(), a.callID, transcript)
+			if pbErr := pbClient.UpdateCallTranscriptPB(context.Background(), a.callID, transcript); pbErr != nil {
+				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no PocketBase", "err", pbErr)
+			} else {
+				a.log.Info("[ServerAIAgent] Transcrição salva no PocketBase com sucesso")
+			}
 			err := a.sess.mgr.store.saveTranscript(context.Background(), a.sess.id, a.callID, transcript)
 			if err != nil {
-				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no banco", "err", err)
+				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no SQLite", "err", err)
 			} else {
-				a.log.Info("[ServerAIAgent] Transcrição salva no banco com sucesso")
+				a.log.Info("[ServerAIAgent] Transcrição salva no SQLite com sucesso")
 			}
 		})
 	}

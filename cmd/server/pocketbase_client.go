@@ -1155,26 +1155,30 @@ func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, s
 		workspaceID = "default"
 	}
 
-	var parsedTranscript any
-	if transcriptJSON != "" {
-		_ = json.Unmarshal([]byte(transcriptJSON), &parsedTranscript)
-	}
-	if parsedTranscript == nil {
-		parsedTranscript = []any{}
+	data := map[string]any{
+		"workspace_id": workspaceID,
+		"session_id":   sessionID,
+		"call_id":      callID,
+		"peer":         peer,
+		"direction":    direction,
+		"started_at":   startedAt,
+		"agent_id":     agentID,
 	}
 
-	data := map[string]any{
-		"workspace_id":  workspaceID,
-		"session_id":    sessionID,
-		"call_id":       callID,
-		"peer":          peer,
-		"direction":     direction,
-		"started_at":    startedAt,
-		"ended_at":      endedAt,
-		"summary":       summary,
-		"recording_url": recordingURL,
-		"transcript":    parsedTranscript,
-		"agent_id":      agentID,
+	if endedAt > 0 {
+		data["ended_at"] = endedAt
+	}
+	if summary != "" {
+		data["summary"] = summary
+	}
+	if recordingURL != "" {
+		data["recording_url"] = recordingURL
+	}
+	if transcriptJSON != "" {
+		var parsed any
+		if err := json.Unmarshal([]byte(transcriptJSON), &parsed); err == nil && parsed != nil {
+			data["transcript"] = parsed
+		}
 	}
 
 	// 1. Tentar localizar por call_id para fazer PATCH
@@ -1196,6 +1200,9 @@ func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, s
 	}
 
 	// 2. Se não existir, criar novo registro
+	if _, ok := data["transcript"]; !ok {
+		data["transcript"] = []any{}
+	}
 	createResp, createErr := c.doAdminRequest(ctx, "POST", "/api/collections/call_history/records", data)
 	if createErr != nil {
 		return createErr
@@ -1205,80 +1212,103 @@ func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, s
 }
 
 func (c *PocketBaseClient) UpdateCallSummaryPB(ctx context.Context, callID, summary string) error {
+	if summary == "" {
+		return nil
+	}
 	filter := fmt.Sprintf(`call_id="%s"`, callID)
 	searchURL := fmt.Sprintf("/api/collections/call_history/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
 	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
-	if err != nil || resp == nil {
-		return err
+	if err == nil && resp != nil {
+		defer resp.Body.Close()
+		var pbRes PBListResponse[struct {
+			ID string `json:"id"`
+		}]
+		if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
+			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
+				"summary": summary,
+			})
+			if patchErr == nil && patchResp != nil {
+				defer patchResp.Body.Close()
+				return nil
+			}
+		}
 	}
-	defer resp.Body.Close()
 
-	var pbRes PBListResponse[struct {
-		ID string `json:"id"`
-	}]
-	if json.NewDecoder(resp.Body).Decode(&pbRes) != nil || len(pbRes.Items) == 0 {
-		return nil
-	}
-
-	patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
-		"summary": summary,
+	// Se ainda não existir registro, cria um inicial com summary
+	createResp, createErr := c.doAdminRequest(ctx, "POST", "/api/collections/call_history/records", map[string]any{
+		"call_id":      callID,
+		"summary":      summary,
+		"direction":    "inbound",
+		"started_at":   time.Now().UnixMilli(),
+		"workspace_id": "default",
 	})
-	if patchErr != nil {
-		return patchErr
+	if createErr != nil {
+		return createErr
 	}
-	defer patchResp.Body.Close()
+	defer createResp.Body.Close()
 	return nil
 }
 
 func (c *PocketBaseClient) UpdateCallRecordingURLPB(ctx context.Context, callID, recordingURL string) error {
+	if recordingURL == "" {
+		return nil
+	}
 	filter := fmt.Sprintf(`call_id="%s"`, callID)
 	searchURL := fmt.Sprintf("/api/collections/call_history/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
 	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
-	if err != nil || resp == nil {
-		return err
+	if err == nil && resp != nil {
+		defer resp.Body.Close()
+		var pbRes PBListResponse[struct {
+			ID string `json:"id"`
+		}]
+		if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
+			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
+				"recording_url": recordingURL,
+			})
+			if patchErr == nil && patchResp != nil {
+				defer patchResp.Body.Close()
+				return nil
+			}
+		}
 	}
-	defer resp.Body.Close()
-
-	var pbRes PBListResponse[struct {
-		ID string `json:"id"`
-	}]
-	if json.NewDecoder(resp.Body).Decode(&pbRes) != nil || len(pbRes.Items) == 0 {
-		return nil
-	}
-
-	patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
-		"recording_url": recordingURL,
-	})
-	if patchErr != nil {
-		return patchErr
-	}
-	defer patchResp.Body.Close()
 	return nil
 }
 
 func (c *PocketBaseClient) UpdateCallTranscriptPB(ctx context.Context, callID string, transcript any) error {
+	if transcript == nil {
+		return nil
+	}
 	filter := fmt.Sprintf(`call_id="%s"`, callID)
 	searchURL := fmt.Sprintf("/api/collections/call_history/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
 	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
-	if err != nil || resp == nil {
-		return err
+	if err == nil && resp != nil {
+		defer resp.Body.Close()
+		var pbRes PBListResponse[struct {
+			ID string `json:"id"`
+		}]
+		if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
+			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
+				"transcript": transcript,
+			})
+			if patchErr == nil && patchResp != nil {
+				defer patchResp.Body.Close()
+				return nil
+			}
+		}
 	}
-	defer resp.Body.Close()
 
-	var pbRes PBListResponse[struct {
-		ID string `json:"id"`
-	}]
-	if json.NewDecoder(resp.Body).Decode(&pbRes) != nil || len(pbRes.Items) == 0 {
-		return nil
-	}
-
-	patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
-		"transcript": transcript,
+	// Se ainda não existir registro, cria um inicial com transcript
+	createResp, createErr := c.doAdminRequest(ctx, "POST", "/api/collections/call_history/records", map[string]any{
+		"call_id":      callID,
+		"transcript":   transcript,
+		"direction":    "inbound",
+		"started_at":   time.Now().UnixMilli(),
+		"workspace_id": "default",
 	})
-	if patchErr != nil {
-		return patchErr
+	if createErr != nil {
+		return createErr
 	}
-	defer patchResp.Body.Close()
+	defer createResp.Body.Close()
 	return nil
 }
 
@@ -1512,16 +1542,37 @@ func (c *PocketBaseClient) GetCallTranscriptPB(ctx context.Context, callID strin
 		return nil, nil
 	}
 
-	b, err := json.Marshal(pbRes.Items[0].Transcript)
+	raw := pbRes.Items[0].Transcript
+
+	// Caso 1: String JSON
+	if s, ok := raw.(string); ok && s != "" && s != "[]" && s != "null" {
+		var lines []TranscriptLine
+		if err := json.Unmarshal([]byte(s), &lines); err == nil && len(lines) > 0 {
+			return lines, nil
+		}
+	}
+
+	// Caso 2: Array / Objeto nativo
+	b, err := json.Marshal(raw)
 	if err != nil {
 		return nil, err
 	}
 
 	var lines []TranscriptLine
-	if err := json.Unmarshal(b, &lines); err != nil {
-		return nil, err
+	if err := json.Unmarshal(b, &lines); err == nil && len(lines) > 0 {
+		return lines, nil
 	}
-	return lines, nil
+
+	// Caso 3: String escapada
+	var strVal string
+	if err := json.Unmarshal(b, &strVal); err == nil && strVal != "" {
+		var lines2 []TranscriptLine
+		if err := json.Unmarshal([]byte(strVal), &lines2); err == nil {
+			return lines2, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // --- PROVEDORES DE IA (AI_PROVIDERS) ---
@@ -1772,3 +1823,69 @@ func (c *PocketBaseClient) DeleteContactPB(ctx context.Context, id string) error
 	defer resp.Body.Close()
 	return nil
 }
+
+func (c *PocketBaseClient) GetContactByPhonePB(ctx context.Context, workspaceID, phoneOrJID string) (*ContactRecord, error) {
+	clean := normalizePhone(phoneOrJID)
+	rawJid := phoneOrJID
+	if clean == "" && rawJid == "" {
+		return nil, nil
+	}
+
+	var filter string
+	if clean != "" && rawJid != "" && clean != rawJid {
+		if workspaceID != "" && workspaceID != "default" {
+			filter = fmt.Sprintf(`workspace_id="%s" && (phone="%s" || lid="%s" || jid="%s" || phone="%s")`, workspaceID, clean, rawJid, rawJid, rawJid)
+		} else {
+			filter = fmt.Sprintf(`phone="%s" || lid="%s" || jid="%s" || phone="%s"`, clean, rawJid, rawJid, rawJid)
+		}
+	} else {
+		target := clean
+		if target == "" {
+			target = rawJid
+		}
+		if workspaceID != "" && workspaceID != "default" {
+			filter = fmt.Sprintf(`workspace_id="%s" && (phone="%s" || lid="%s" || jid="%s")`, workspaceID, target, target, target)
+		} else {
+			filter = fmt.Sprintf(`phone="%s" || lid="%s" || jid="%s"`, target, target, target)
+		}
+	}
+
+	searchURL := fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
+	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
+	if err != nil || resp == nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil
+	}
+
+	var res PBListResponse[struct {
+		ID        string `json:"id"`
+		Phone     string `json:"phone"`
+		Name      string `json:"name"`
+		Email     string `json:"email"`
+		Company   string `json:"company"`
+		Notes     string `json:"notes"`
+		AvatarURL string `json:"avatar_url"`
+		LID       string `json:"lid"`
+		JID       string `json:"jid"`
+	}]
+	if json.NewDecoder(resp.Body).Decode(&res) != nil || len(res.Items) == 0 {
+		return nil, nil
+	}
+
+	item := res.Items[0]
+	return &ContactRecord{
+		Phone:     item.Phone,
+		Name:      item.Name,
+		Email:     item.Email,
+		Company:   item.Company,
+		Notes:     item.Notes,
+		AvatarURL: item.AvatarURL,
+		LID:       item.LID,
+		JID:       item.JID,
+	}, nil
+}
+

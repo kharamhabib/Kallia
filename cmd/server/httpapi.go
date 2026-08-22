@@ -1184,6 +1184,12 @@ func (s *server) resolveContactName(ctx context.Context, sess *Session, peerStr 
 	phone = origJid.User
 	name = ""
 
+	wsID := ""
+	if sess != nil {
+		wsID = sess.projectID
+	}
+
+	// 1. Tentar SQLite local
 	if sess != nil && s.sessions != nil && s.sessions.store != nil {
 		if c, err := s.sessions.store.getContactByPhone(ctx, sess.id, peerStr); err == nil && c != nil {
 			if c.Phone != "" {
@@ -1195,45 +1201,51 @@ func (s *server) resolveContactName(ctx context.Context, sess *Session, peerStr 
 		}
 	}
 
-	cli := sess.getClient()
-	if cli == nil || cli.Store == nil {
-		return phone, name
-	}
-
-	jidsToTry := []types.JID{origJid}
-
-	if (origJid.Server == types.HiddenUserServer || len(origJid.User) > 13) && cli.Store.LIDs != nil {
-		lidJID := origJid
-		if lidJID.Server != types.HiddenUserServer {
-			lidJID = types.NewJID(origJid.User, types.HiddenUserServer)
+	// 2. Tentar PocketBase (SSOT)
+	if pbC, err := pbClient.GetContactByPhonePB(ctx, wsID, peerStr); err == nil && pbC != nil {
+		if pbC.Phone != "" {
+			phone = pbC.Phone
 		}
-		if pn, err := cli.Store.LIDs.GetPNForLID(ctx, lidJID); err == nil && !pn.IsEmpty() {
-			phone = pn.User
-			jidsToTry = append([]types.JID{pn}, jidsToTry...)
-		}
-	} else if origJid.Server == types.DefaultUserServer && cli.Store.LIDs != nil {
-		if lid, err := cli.Store.LIDs.GetLIDForPN(ctx, origJid); err == nil && !lid.IsEmpty() {
-			jidsToTry = append(jidsToTry, lid)
+		if pbC.Name != "" && pbC.Name != pbC.Phone {
+			return phone, pbC.Name
 		}
 	}
 
-	if cli.Store.Contacts != nil {
-		for _, jid := range jidsToTry {
-			if contact, err := cli.Store.Contacts.GetContact(ctx, jid); err == nil && contact.Found {
-				if contact.FullName != "" {
-					name = contact.FullName
-					break
-				} else if contact.BusinessName != "" {
-					name = contact.BusinessName
-					break
-				} else if contact.FirstName != "" {
-					name = contact.FirstName
-					break
-				} else if contact.PushName != "" {
-					name = contact.PushName
-					break
+	// 3. Tentar Whatsmeow Store & GetUserInfo
+	if sess != nil {
+		info := sess.enrichContactInfo(ctx, peerStr)
+		if info.Phone != "" {
+			phone = info.Phone
+		}
+		if info.Name != "" && info.Name != info.Phone {
+			name = info.Name
+			// Auto-sync assíncrono para PocketBase e SQLite
+			goSafe(s.log, func() {
+				_ = pbClient.UpsertContactPB(context.Background(), wsID, sess.id, ContactRecord{
+					Phone:     phone,
+					Name:      name,
+					AvatarURL: info.AvatarURL,
+					LID:       info.LID,
+					JID:       info.JID,
+					Company:   info.Company,
+					Email:     info.Email,
+					Notes:     info.Notes,
+				})
+				if s.sessions != nil && s.sessions.store != nil {
+					_, _ = s.sessions.store.upsertContact(context.Background(), ContactRecord{
+						SessionID: sess.id,
+						Phone:     phone,
+						Name:      name,
+						AvatarURL: info.AvatarURL,
+						LID:       info.LID,
+						JID:       info.JID,
+						Company:   info.Company,
+						Email:     info.Email,
+						Notes:     info.Notes,
+					})
 				}
-			}
+			})
+			return phone, name
 		}
 	}
 

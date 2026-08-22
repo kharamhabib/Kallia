@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -700,10 +701,18 @@ func (p *pgHistoryPersister) SaveCall(rec CallRecord) {
 			endedAt = *rec.EndedAt
 		}
 
-		// 1. Persistir no PocketBase (SSOT)
-		_ = pbClient.SaveCallHistoryPB(ctx, rec.WorkspaceID, rec.SessionID, rec.CallID, rec.Peer, rec.Direction, startedAt, endedAt, rec.Summary, rec.RecordingURL, "", rec.AgentID)
+		// 1. Tenta carregar transcrição do SQLite caso já tenha sido gravada
+		var transcriptJSON string
+		if lines, err := p.store.getTranscript(ctx, rec.SessionID, rec.CallID); err == nil && len(lines) > 0 {
+			if b, e := json.Marshal(lines); e == nil {
+				transcriptJSON = string(b)
+			}
+		}
 
-		// 2. Persistir no SQLite local (cache)
+		// 2. Persistir no PocketBase (SSOT)
+		_ = pbClient.SaveCallHistoryPB(ctx, rec.WorkspaceID, rec.SessionID, rec.CallID, rec.Peer, rec.Direction, startedAt, endedAt, rec.Summary, rec.RecordingURL, transcriptJSON, rec.AgentID)
+
+		// 3. Persistir no SQLite local (cache)
 		if err := p.store.saveCallHistory(ctx, rec); err != nil {
 			p.log.Error("falha ao persistir histórico da chamada no SQLite", "callId", rec.CallID, "err", err)
 		}
