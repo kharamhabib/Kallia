@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -713,6 +714,41 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	mediaURL := body.MediaURL
+	if body.Base64 != "" {
+		if data, err := fetchMedia(body.Base64, ""); err == nil && len(data) > 0 {
+			ext := "bin"
+			switch body.ContentType {
+			case "image":
+				ext = "jpg"
+			case "audio":
+				ext = "ogg"
+				if strings.Contains(body.Mimetype, "webm") {
+					ext = "webm"
+				} else if strings.Contains(body.Mimetype, "mp4") {
+					ext = "mp4"
+				}
+			case "video":
+				ext = "mp4"
+			case "document":
+				ext = "pdf"
+				if body.FileName != "" {
+					if e := filepath.Ext(body.FileName); e != "" {
+						ext = strings.TrimPrefix(e, ".")
+					}
+				}
+			}
+			storageRoot := "./storage"
+			if s.sessions != nil && s.sessions.db != nil && s.sessions.db.storageDir != "" {
+				storageRoot = s.sessions.db.storageDir
+			}
+			msgID := fmt.Sprintf("out_%d", time.Now().UnixNano())
+			if url, serr := SaveIncomingMedia(storageRoot, workspaceID, msgID, ext, data); serr == nil {
+				mediaURL = url
+			}
+		}
+	}
+
 	metadata := map[string]interface{}{}
 	if body.FileName != "" {
 		metadata["file_name"] = body.FileName
@@ -728,7 +764,7 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		SenderID:       body.SenderID,
 		Content:        body.Content,
 		ContentType:    body.ContentType,
-		MediaURL:       body.MediaURL,
+		MediaURL:       mediaURL,
 		ExternalID:     externalID,
 		Status:         "sent",
 		Metadata:       metadata,

@@ -536,8 +536,9 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// 2. Rotas públicas da API liberadas (auth, health, swagger, docs, webhooks)
+		// 2. Rotas públicas da API liberadas (auth, media, health, swagger, docs, webhooks)
 		if strings.HasPrefix(path, "/api/auth/") ||
+			strings.HasPrefix(path, "/api/media/") ||
 			path == "/api/health" ||
 			path == "/api/version" ||
 			path == "/api/config" ||
@@ -553,7 +554,7 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// 1. Tentar autenticar via Bearer Token (JWT de usuário)
+		// 3. Tentar autenticar via Bearer Token (JWT de usuário)
 		authHeader := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {
 			parts := strings.SplitN(authHeader, " ", 2)
@@ -600,8 +601,12 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 			}
 		}
 
-		// 4. Fallback: JWT também pode ser passado via query param ?apiKey= (para <audio> e <video> elements)
-		if qToken := r.URL.Query().Get("apiKey"); qToken != "" && len(qToken) > 60 {
+		// 4. Fallback: JWT também pode ser passado via query param ?token= ou ?apiKey= (para WebSockets /ws, <audio> e <video>)
+		qToken := r.URL.Query().Get("token")
+		if qToken == "" {
+			qToken = r.URL.Query().Get("apiKey")
+		}
+		if qToken != "" && len(qToken) > 60 {
 			parts := strings.Split(qToken, ".")
 			if len(parts) == 3 {
 				claims, err := parseToken(qToken)
