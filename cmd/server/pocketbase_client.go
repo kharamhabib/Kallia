@@ -1663,6 +1663,11 @@ func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q strin
 			sessOrWs = item.SessionID
 		}
 
+		tagsStr := jsonFieldToString(item.Tags)
+		if tagsStr == "[]" || tagsStr == `[""]` || tagsStr == "null" || tagsStr == `["null"]` {
+			tagsStr = ""
+		}
+
 		list = append(list, ContactRecord{
 			ID:        int64(idx + 1),
 			SessionID: sessOrWs,
@@ -1672,7 +1677,7 @@ func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q strin
 			Email:     item.Email,
 			Company:   item.Company,
 			Notes:     item.Notes,
-			Tags:      jsonFieldToString(item.Tags),
+			Tags:      tagsStr,
 			AvatarURL: item.AvatarURL,
 			LID:       item.LID,
 			JID:       item.JID,
@@ -1684,8 +1689,23 @@ func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q strin
 
 func (c *PocketBaseClient) UpsertContactPB(ctx context.Context, wsID, sessionID string, rec ContactRecord) error {
 	var tagsObj any = []string{}
-	if rec.Tags != "" {
-		_ = json.Unmarshal([]byte(rec.Tags), &tagsObj)
+	cleanTags := strings.TrimSpace(rec.Tags)
+	if cleanTags != "" && cleanTags != "[]" && cleanTags != `[""]` && cleanTags != "null" {
+		if strings.HasPrefix(cleanTags, "[") && strings.HasSuffix(cleanTags, "]") {
+			_ = json.Unmarshal([]byte(cleanTags), &tagsObj)
+		} else {
+			parts := strings.Split(cleanTags, ",")
+			var tagList []string
+			for _, p := range parts {
+				pClean := strings.TrimSpace(p)
+				if pClean != "" && pClean != "[]" {
+					tagList = append(tagList, pClean)
+				}
+			}
+			if len(tagList) > 0 {
+				tagsObj = tagList
+			}
+		}
 	}
 
 	if wsID == "" {

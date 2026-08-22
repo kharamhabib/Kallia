@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
+import { getUser } from "@/lib/auth";
 
 export interface WorkspaceMember {
   id: string;
@@ -67,7 +68,16 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           set({ workspaces: list });
 
           const current = get().currentWorkspace;
-          if (!current || !list.some((w: Workspace) => w.id === current.id)) {
+          const user = getUser();
+          const isSuperAdmin = user?.role === "appadmin" || user?.role === "superadmin";
+
+          // Se for superadmin e estiver administrando um workspace, preserva a seleção
+          if (isSuperAdmin && current?.id) {
+            const updated = list.find((w: Workspace) => w.id === current.id);
+            if (updated) {
+              set({ currentWorkspace: updated });
+            }
+          } else if (!current || !list.some((w: Workspace) => w.id === current.id)) {
             if (list.length > 0) {
               set({ currentWorkspace: list[0] });
             } else {
@@ -92,7 +102,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setCurrentWorkspace: (workspace) => {
         if (typeof workspace === "string") {
           const found = get().workspaces.find((w: Workspace) => w.id === workspace);
-          if (found) set({ currentWorkspace: found });
+          if (found) {
+            set({ currentWorkspace: found });
+          } else {
+            set({ currentWorkspace: { id: workspace, name: workspace, plan: "trial", plan_status: "active" } });
+          }
         } else {
           set({ currentWorkspace: workspace });
         }

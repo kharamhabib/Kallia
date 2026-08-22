@@ -59,6 +59,10 @@ type ServerAIAgent struct {
 	inboundQueue []float32
 	inboundMu    sync.Mutex
 	inboundStop  chan struct{}
+
+	// Histórico acumulado de transcrição da chamada (persistente mesmo após fechar provedor)
+	transcriptLines []TranscriptLine
+	transcriptMu    sync.Mutex
 }
 
 // NewServerAIAgent cria e acopla um agente de IA ao CallManager.
@@ -94,11 +98,12 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 			}
 		}
 		if len(toolRules) > 0 {
-			config.SystemInstruction += "\n\n### REGRAS OBRIGATÓRIAS DE MANUTENÇÃO DA CHAMADA APÓS O USO DE FERRAMENTAS:\n" +
-				"1. REGRA ABSOLUTA: JAMAIS se despeça ou execute a ferramenta `hangup` automaticamente logo após executar qualquer ferramenta (como `send_message`, `web_search`, `x_search`, `schedule_call` ou `open_ticket`).\n" +
-				"2. FLUXO OBRIGATÓRIO APÓS FERRAMENTAS: Assim que qualquer ferramenta for executada, informe verbalmente a confirmação para o cliente e PERGUNTE SEMPRE: \"Há mais alguma coisa em que eu possa te ajudar?\".\n" +
-				"3. USO DA FERRAMENTA HANGUP: A ferramenta `hangup` deve ser chamada APENAS E EXCLUSIVAMENTE quando o cliente responder que NÃO precisa de mais nada e se despedir expressamente.\n" +
-				"4. PARÂMETROS TÉCNICOS: Extraia os argumentos naturalmente da fala do usuário sem soletrar termos de código ou nomes de parâmetros.\n\n" +
+			config.SystemInstruction += "\n\n### REGRAS OBRIGATÓRIAS DE FINALIZAÇÃO, DESPEDIDA E MANUTENÇÃO DA CHAMADA:\n" +
+				"1. OBRIGAÇÃO DE DESPEDIDA POR VOZ (FERRAMENTA HANGUP): Você NUNCA deve chamar a ferramenta `hangup` silenciosamente ou sem falar. Antes de executar `hangup`, você DEVE SEMPRE falar em voz alta uma despedida completa, calorosa e educada (ex: \"Muito obrigado pelo contato! Qualquer dúvida estamos à disposição. Tenha um excelente dia, tchau tchau!\"). Fale primeiro a despedida e somente então chame a ferramenta `hangup`.\n" +
+				"2. REGRA ABSOLUTA: JAMAIS se despeça ou execute a ferramenta `hangup` automaticamente logo após executar ferramentas intermediárias (como `send_message`, `web_search`, `x_search`, `schedule_call` ou `open_ticket`).\n" +
+				"3. FLUXO OBRIGATÓRIO APÓS FERRAMENTAS: Assim que qualquer ferramenta for executada, informe verbalmente a confirmação para o cliente e PERGUNTE SEMPRE: \"Há mais alguma coisa em que eu possa te ajudar?\".\n" +
+				"4. USO DA FERRAMENTA HANGUP: A ferramenta `hangup` deve ser chamada APENAS E EXCLUSIVAMENTE quando o cliente responder que NÃO precisa de mais nada, agradecer no encerramento ou se despedir expressamente.\n" +
+				"5. PARÂMETROS TÉCNICOS: Extraia os argumentos naturalmente da fala do usuário sem soletrar termos de código ou nomes de parâmetros.\n\n" +
 				strings.Join(toolRules, "\n")
 		}
 	} else if config.EnableGrokWebSearch || config.EnableGrokXSearch {
@@ -306,6 +311,18 @@ func (a *ServerAIAgent) connectGrok(ctx context.Context) error {
 			}
 			a.log.Info("[ServerAI] transcrição", "origem", prefix, "texto", text)
 
+			a.transcriptMu.Lock()
+			if len(a.transcriptLines) > 0 && a.transcriptLines[len(a.transcriptLines)-1].Speaker == speaker {
+				a.transcriptLines[len(a.transcriptLines)-1].Text += " " + text
+			} else {
+				a.transcriptLines = append(a.transcriptLines, TranscriptLine{
+					Speaker: speaker,
+					Text:    text,
+					At:      time.Now().UnixMilli(),
+				})
+			}
+			a.transcriptMu.Unlock()
+
 			a.sess.mgr.broker.broadcast(map[string]any{
 				"type":      "ai-transcript",
 				"sessionId": a.sess.id,
@@ -355,6 +372,18 @@ func (a *ServerAIAgent) connectGemini(ctx context.Context) error {
 				prefix = "📝 IA disse:"
 			}
 			a.log.Info("[ServerAI] transcrição", "origem", prefix, "texto", text)
+
+			a.transcriptMu.Lock()
+			if len(a.transcriptLines) > 0 && a.transcriptLines[len(a.transcriptLines)-1].Speaker == speaker {
+				a.transcriptLines[len(a.transcriptLines)-1].Text += " " + text
+			} else {
+				a.transcriptLines = append(a.transcriptLines, TranscriptLine{
+					Speaker: speaker,
+					Text:    text,
+					At:      time.Now().UnixMilli(),
+				})
+			}
+			a.transcriptMu.Unlock()
 
 			a.sess.mgr.broker.broadcast(map[string]any{
 				"type":      "ai-transcript",
@@ -583,10 +612,13 @@ func (a *ServerAIAgent) Detach() {
 	// Limpa callback de áudio
 	a.cm.SetOnPeerAudio(nil)
 
+	// Captura a transcrição antes de fechar o provedor
+	transcript := a.getTranscriptLines()
+
 	a.closeCurrentProvider()
 
 	// Post-call actions em background
-	go a.executePostCallActions()
+	go a.executePostCallActions(transcript)
 }
 
 // handleToolCall processa tool calls do Gemini.
@@ -616,9 +648,11 @@ func (a *ServerAIAgent) handleToolCall(ctx context.Context, name string, args ma
 
 	case "hangup":
 		a.log.Info("[ServerAIAgent] Tool hangup disparada")
-		// Aguarda ativamente o fim do áudio na fila antes de desligar
+		// Aguarda ativamente o término da fala/áudio da despedida antes de encerrar
 		goSafe(a.log, func() {
+			time.Sleep(1200 * time.Millisecond)
 			a.waitForAudioFinish(context.Background())
+			time.Sleep(400 * time.Millisecond)
 			a.Detach()
 			a.sess.terminateCall(a.callID, core.EndCallReasonUserEnded)
 			a.sess.removeCall(a.callID)
@@ -998,6 +1032,15 @@ func (a *ServerAIAgent) sendTextToAI(text string) {
 }
 
 func (a *ServerAIAgent) getTranscriptLines() []TranscriptLine {
+	a.transcriptMu.Lock()
+	if len(a.transcriptLines) > 0 {
+		out := make([]TranscriptLine, len(a.transcriptLines))
+		copy(out, a.transcriptLines)
+		a.transcriptMu.Unlock()
+		return out
+	}
+	a.transcriptMu.Unlock()
+
 	if a.grok != nil {
 		return a.grok.Transcript()
 	}
@@ -1057,8 +1100,10 @@ func (a *ServerAIAgent) toolCustomWebhook(ctx context.Context, name string, args
 }
 
 // executePostCallActions gera o resumo e executa ações pós-chamada.
-func (a *ServerAIAgent) executePostCallActions() {
-	transcript := a.getTranscriptLines()
+func (a *ServerAIAgent) executePostCallActions(transcript []TranscriptLine) {
+	if len(transcript) == 0 {
+		transcript = a.getTranscriptLines()
+	}
 	if len(transcript) == 0 {
 		a.log.Info("[ServerAIAgent] Sem transcrição para processar pós-chamada")
 		return
@@ -1149,8 +1194,13 @@ Não crie introduções ou conclusões. Resuma diretamente nos tópicos acima.
 Transcrição:
 %s`, contactInfo, formattedDate, dir, transcriptText)
 
-	// Chama a API REST do Gemini para gerar o resumo
-	geminiURL := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=%s", config.GeminiAPIKey)
+	// Chama a API REST do Gemini com lista resiliente de modelos
+	modelList := []string{"gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-3.6-flash"}
+	if config.ModelName != "" && !strings.Contains(config.ModelName, "live") {
+		modelList = append([]string{config.ModelName}, modelList...)
+	}
+
+	var summary string
 	body := map[string]any{
 		"contents": []map[string]any{{
 			"parts": []map[string]any{{"text": prompt}},
@@ -1158,22 +1208,30 @@ Transcrição:
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	resp, err := geminiRestClient.Post(geminiURL, "application/json", bytes.NewBuffer(jsonBody))
-	if err != nil {
-		a.log.Error("[ServerAIAgent] Erro ao gerar resumo", "err", err)
-		return
+	for _, model := range modelList {
+		geminiURL := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, config.GeminiAPIKey)
+		resp, err := geminiRestClient.Post(geminiURL, "application/json", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			continue
+		}
+		var data map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&data); err == nil {
+			resp.Body.Close()
+			summary = extractSummaryText(data)
+			if summary != "" {
+				break
+			}
+		} else {
+			resp.Body.Close()
+		}
 	}
-	defer resp.Body.Close()
 
-	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		a.log.Error("[ServerAIAgent] Erro ao decodificar resumo", "err", err)
-		return
-	}
-
-	summary := extractSummaryText(data)
 	if summary == "" {
-		a.log.Warn("[ServerAIAgent] Resumo vazio")
+		a.log.Warn("[ServerAIAgent] Resumo vazio após tentar modelos Gemini")
 		return
 	}
 

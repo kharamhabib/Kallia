@@ -513,7 +513,7 @@ func (g *GrokLiveClient) buildGrokTools() []map[string]any {
 				tools = append(tools, map[string]any{
 					"type":        "function",
 					"name":        "hangup",
-					"description": "Termina a chamada de voz imediatamente e desliga o telefone do cliente.",
+					"description": "Desliga a chamada telefônica. REGRA MANDATÓRIA: Você DEVE falar em voz alta uma despedida educada, calorosa e completa (ex: 'Muito obrigado pelo contato, foi um prazer te atender! Tenha um ótimo dia, tchau tchau!') ANTES de invocar esta ferramenta. NUNCA chame hangup silenciosamente.",
 					"parameters": map[string]any{
 						"type":       "object",
 						"properties": map[string]any{},

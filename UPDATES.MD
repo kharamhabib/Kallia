@@ -66,6 +66,14 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Tags Diferenciadas no Card**: Exibição visual de tags `👑 Criador` vs `👥 Convidado` em cada workspace na aba "Meus Workspaces".
   - **Painel Admin Global**: Aba exclusiva para Superadmins renomeada para **"Painel Admin Global"**, incluindo a nova coluna **"Criador / Proprietário"** com avatar, nome e e-mail do criador de cada workspace na tabela global.
   - Endpoints de backend em [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go) protegidos por RBAC (`/api/admin/overview`, `/api/admin/users`, `/api/admin/users/{uid}/role`, `/api/admin/workspaces`, `/api/admin/workspaces/{wid}`).
+- [x] **Acesso e Administração de Workspaces Globais por Superadmins (21/08/2026)**:
+  - No **Painel Admin Global** ([`ProfilePage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/ProfilePage.tsx)), o Superadmin agora pode clicar diretamente em qualquer linha de workspace ou no botão **"Acessar"** para visualizar e gerenciar o workspace de terceiros exatamente como o proprietário.
+  - Atualização do store [`workspace.ts`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/stores/workspace.ts) para preservar a seleção do workspace administrado pelo Superadmin sem ser sobreposto por requisições locais.
+  - Redirecionamento automático para a tela de conexões e notificação toast de confirmação do modo de administração ativa.
+- [x] **Correção de Despedida Obrigatória por Voz (`hangup`) e Envio de Resumo/Transcrição Pós-Chamada (21/08/2026)**:
+  - **Despedida Obrigatória**: Atualizada a declaração da tool `hangup` e o system prompt em [`ai_agent.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/ai_agent.go), [`gemini_live.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/gemini_live.go), [`grok_live.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/grok_live.go) e [`aiconfig.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/aiconfig.go) tornando mandatório que a IA fale em voz alta uma despedida completa antes de invocar `hangup`.
+  - **Buffer de Drenagem de Áudio**: Adicionado delay de segurança no encerramento da chamada para garantir que o áudio de despedida seja totalmente transmitido ao WhatsApp antes da finalização da sessão.
+  - **Persistência de Transcrição e Resumo**: Corrigida condição de corrida onde `closeCurrentProvider()` zerava o provedor antes da captura das linhas de transcrição em `Detach()`. Agora o `ServerAIAgent` acumula `transcriptLines` em tempo real e entrega para geração do resumo e salvamento no banco/envio via WhatsApp.
 
 ---
 

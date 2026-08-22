@@ -52,6 +52,36 @@ interface ContactsPageProps {
   sid?: string | null;
 }
 
+const parseTags = (rawTags?: string | string[]): string[] => {
+  if (!rawTags) return [];
+  if (Array.isArray(rawTags)) {
+    return rawTags
+      .map((t) => String(t).trim().replace(/^\[|\]$/g, "").replace(/^["']|["']$/g, "").trim())
+      .filter((t) => t.length > 0 && t !== "[]" && t !== `""` && t !== `''`);
+  }
+  const str = String(rawTags).trim();
+  if (!str || str === "[]" || str === `[""]` || str === "null" || str === `['']` || str === `["null"]`) {
+    return [];
+  }
+  if (str.startsWith("[") && str.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((t) => String(t).trim().replace(/^["']|["']$/g, "").trim())
+          .filter((t) => t.length > 0 && t !== "[]" && t !== `""` && t !== `''`);
+      }
+    } catch {
+      // fallback to regular split
+    }
+  }
+  const cleaned = str.replace(/^\[|\]$/g, "");
+  return cleaned
+    .split(",")
+    .map((t) => t.trim().replace(/^["']|["']$/g, "").trim())
+    .filter((t) => t.length > 0 && t !== "[]" && t !== `""` && t !== `''`);
+};
+
 export const ContactsPage = ({ sid }: ContactsPageProps) => {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -168,7 +198,9 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
   const stats = useMemo(() => {
     const total = contacts.length;
     const withCompany = contacts.filter((c) => (c?.company || "").trim() !== "").length;
-    const withNotes = contacts.filter((c) => (c?.notes || "").trim() !== "").length;
+    const withNotes = contacts.filter(
+      (c) => (c?.notes || "").trim() !== "" || parseTags(c?.tags).length > 0,
+    ).length;
     return { total, withCompany, withNotes };
   }, [contacts]);
 
@@ -298,7 +330,8 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
           {contacts.map((c) => {
             const displayName = c.name || "Contato WhatsApp";
             const initials = getInitials(c.name || "W");
-            const isBiz = (c.tags || "").includes("WhatsApp Business") || !!c.company;
+            const parsedTags = parseTags(c.tags);
+            const isBiz = parsedTags.includes("WhatsApp Business") || !!c.company;
             const syncTime = c.enrichedAt || c.updatedAt;
 
             return (
@@ -385,11 +418,9 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                   )}
 
                   {/* Tags */}
-                  {c.tags && (
+                  {parsedTags.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1">
-                      {c.tags.split(",").map((t, idx) => {
-                        const tagText = t.trim();
-                        if (!tagText) return null;
+                      {parsedTags.map((tagText, idx) => {
                         const isBizTag = tagText === "WhatsApp Business";
                         return (
                           <Badge
@@ -668,7 +699,7 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                         {getInitials(selectedContact.name || "W")}
                       </div>
                     )}
-                    {((selectedContact.tags || "").includes("WhatsApp Business") || !!selectedContact.company) && (
+                    {((parseTags(selectedContact.tags).includes("WhatsApp Business")) || !!selectedContact.company) && (
                       <div className="absolute -bottom-0.5 -right-0.5 h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center ring-2 ring-background text-[10px]" title="WhatsApp Business">
                         <Sparkles className="h-3 w-3" />
                       </div>
@@ -753,10 +784,12 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                       <Tag className="h-3.5 w-3.5 text-primary/70" /> Tags
                     </span>
                     <div className="flex flex-wrap gap-1 justify-end">
-                      {selectedContact.tags ? (
-                        selectedContact.tags.split(",").map((t, idx) => {
-                          const tagText = t.trim();
-                          if (!tagText) return null;
+                      {(() => {
+                        const parsedSheetTags = parseTags(selectedContact.tags);
+                        if (parsedSheetTags.length === 0) {
+                          return <span className="text-muted-foreground">—</span>;
+                        }
+                        return parsedSheetTags.map((tagText, idx) => {
                           const isBizTag = tagText === "WhatsApp Business";
                           return (
                             <Badge
@@ -772,10 +805,8 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
                               {tagText}
                             </Badge>
                           );
-                        })
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                        });
+                      })()}
                     </div>
                   </div>
 

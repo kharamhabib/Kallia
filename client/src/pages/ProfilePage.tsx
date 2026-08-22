@@ -192,6 +192,21 @@ export const ProfilePage = () => {
     }
   };
 
+  const handleSuperadminEnterWorkspace = (ws: AdminWorkspace) => {
+    setCurrentWorkspace({
+      id: ws.id,
+      name: ws.name,
+      plan: ws.plan as any,
+      plan_status: ws.plan_status as any,
+      max_connections: ws.max_connections,
+      max_concurrent_calls: ws.max_concurrent_calls,
+      max_agents: ws.max_agents,
+      connections_count: ws.connections_count,
+    });
+    toast.success(`Modo Superadmin: Visualizando e administrando o workspace "${ws.name}"`);
+    setActiveSection("connections");
+  };
+
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "Data não disponível";
     try {
@@ -997,10 +1012,14 @@ export const ProfilePage = () => {
                   </thead>
                   <tbody className="divide-y">
                     {filteredWorkspaces.map((ws) => (
-                      <tr key={ws.id} className="hover:bg-muted/30 transition-colors">
+                      <tr
+                        key={ws.id}
+                        onClick={() => handleSuperadminEnterWorkspace(ws)}
+                        className="hover:bg-muted/50 transition-colors cursor-pointer group"
+                      >
                         <td className="py-3 font-semibold text-foreground flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-primary" />
-                          <span>{ws.name}</span>
+                          <Building2 className="h-4 w-4 text-primary group-hover:scale-110 transition-transform" />
+                          <span className="group-hover:text-primary transition-colors">{ws.name}</span>
                         </td>
                         <td className="py-3">
                           <div className="flex items-center gap-2">
@@ -1037,17 +1056,30 @@ export const ProfilePage = () => {
                           </Badge>
                         </td>
                         <td className="py-3 text-right">
-                          <select
-                            value={ws.plan}
-                            onChange={(e) => handlePlanChange(ws, e.target.value)}
-                            className="text-xs bg-muted/60 border rounded-lg px-2 py-1 font-semibold cursor-pointer outline-none uppercase"
-                          >
-                            <option value="trial">Trial</option>
-                            <option value="basic">Basic</option>
-                            <option value="pro">Pro</option>
-                            <option value="expert">Expert</option>
-                            <option value="enterprise">Enterprise</option>
-                          </select>
+                          <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleSuperadminEnterWorkspace(ws)}
+                              className="gap-1.5 rounded-xl text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 cursor-pointer shadow-2xs"
+                              title="Visualizar e administrar este workspace no modo Superadmin"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>Acessar</span>
+                            </Button>
+                            <select
+                              value={ws.plan}
+                              onChange={(e) => handlePlanChange(ws, e.target.value)}
+                              className="text-xs bg-muted/60 border rounded-lg px-2 py-1 font-semibold cursor-pointer outline-none uppercase"
+                              title="Alterar plano do workspace"
+                            >
+                              <option value="trial">Trial</option>
+                              <option value="basic">Basic</option>
+                              <option value="pro">Pro</option>
+                              <option value="expert">Expert</option>
+                              <option value="enterprise">Enterprise</option>
+                            </select>
+                          </div>
                         </td>
                       </tr>
                     ))}
