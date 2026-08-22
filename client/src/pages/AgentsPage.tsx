@@ -28,6 +28,7 @@ import { getAIConfig, setAIConfig } from "@/services/ai";
 import { getAIProviders, type AIProviderConfig } from "@/services/aiProviders";
 import type { AIConfig } from "@/types/ai";
 import { useAIAgents } from "@/stores/ai";
+import { useWorkspaceStore } from "@/stores/workspace";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 import { PromptEditorModal, PromptExpandButton, type PromptTag } from "@/components/shared/PromptEditorModal";
 
@@ -133,7 +134,10 @@ Hoje é [today]. Você está conversando com [contact_name] (número: [phone]). 
 
 type MasterSubTab = "voice" | "instructions" | "tools" | "post_call";
 
-export const AgentsPage = ({ sid }: { sid: string }) => {
+export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }) => {
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wid = propWid || currentWorkspace?.id;
+
   // State: "master" ou ID do especialista (string)
   const [selectedId, setSelectedId] = useState<string>("master");
   const [masterTab, setMasterTab] = useState<MasterSubTab>("voice");
@@ -171,12 +175,12 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
   }, [agents]);
 
   const loadData = useCallback(async () => {
-    if (!sid) return;
+    if (!sid && !wid) return;
     setLoading(true);
     try {
       const [resAgents, resConfig, resProviders] = await Promise.all([
-        listAgents(sid).catch(() => []),
-        getAIConfig(sid).catch(() => null),
+        listAgents(sid, wid).catch(() => []),
+        sid ? getAIConfig(sid).catch(() => null) : null,
         getAIProviders().catch(() => ({ providers: [] })),
       ]);
       const providersList = resProviders.providers || [];
@@ -256,6 +260,10 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
   // Salva Agente Principal
   const handleSaveMaster = async () => {
     if (!aiConfig) return;
+    if (!sid) {
+      toast.error("Nenhuma conexão de WhatsApp ativa selecionada.");
+      return;
+    }
     setSaveBusy(true);
     try {
       await setAIConfig(sid, aiConfig);
@@ -294,7 +302,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
           voiceName: specForm.voiceName,
           systemInstruction: specForm.systemInstruction.trim(),
         },
-      });
+      }, wid);
       toast.success(`Agente Especialista "${specForm.name}" salvo com sucesso!`);
       await loadData();
     } catch (e) {
@@ -324,7 +332,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
           voiceName: defaultVoice,
           systemInstruction: "Você é um agente especialista em atendimento.",
         },
-      });
+      }, wid);
       toast.success("Novo Agente Especialista criado!");
       await loadData();
       setSelectedId(newAgent.id);
@@ -340,7 +348,7 @@ export const AgentsPage = ({ sid }: { sid: string }) => {
     if (!deletingAgent) return;
     setSaveBusy(true);
     try {
-      await deleteAgent(sid, deletingAgent.id);
+      await deleteAgent(sid, deletingAgent.id, wid);
       toast.success(`Agente "${deletingAgent.name}" excluído.`);
       setDeletingAgent(null);
       setSelectedId("master");

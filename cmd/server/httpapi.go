@@ -133,6 +133,10 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/workspaces/{wid}/members", s.handleListWorkspaceMembers)
 	mux.HandleFunc("POST /api/workspaces/{wid}/members", s.handleAddWorkspaceMember)
 	mux.HandleFunc("DELETE /api/workspaces/{wid}/members/{mid}", s.handleRemoveWorkspaceMember)
+	mux.HandleFunc("GET /api/workspaces/{wid}/agents", s.handleListWorkspaceAgents)
+	mux.HandleFunc("POST /api/workspaces/{wid}/agents", s.handleCreateWorkspaceAgent)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/agents/{agentId}", s.handleUpdateAgent)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/agents/{agentId}", s.handleDeleteAgent)
 
 	// Rotas de Autenticação do Usuário
 	mux.HandleFunc("GET /api/auth/me", s.handleMe)

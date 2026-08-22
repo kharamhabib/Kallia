@@ -6,16 +6,10 @@ import (
 	"strings"
 )
 
-func (s *server) handleListAgents(w http.ResponseWriter, r *http.Request) {
-	sid := r.PathValue("sid")
-	sess := s.sessionByID(w, sid)
-	if sess == nil {
-		return
-	}
-
-	wsID := sess.projectID
+func (s *server) listAgentsForWorkspace(w http.ResponseWriter, r *http.Request, wsID string) {
 	if wsID == "" {
-		wsID = "default"
+		writeJSON(w, http.StatusOK, map[string]any{"agents": []agentRow{}})
+		return
 	}
 
 	includeAll := r.URL.Query().Get("all") == "true"
@@ -56,17 +50,27 @@ func (s *server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"agents": pbAgents})
 }
 
-func (s *server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
-	if !s.checkWritePermission(w, r) {
-		return
-	}
+func (s *server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	sid := r.PathValue("sid")
 	sess := s.sessionByID(w, sid)
 	if sess == nil {
 		return
 	}
 
-	wsID := sess.projectID
+	wsID := r.URL.Query().Get("workspace_id")
+	if wsID == "" {
+		wsID = sess.getWorkspaceID()
+	}
+
+	s.listAgentsForWorkspace(w, r, wsID)
+}
+
+func (s *server) handleListWorkspaceAgents(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	s.listAgentsForWorkspace(w, r, wid)
+}
+
+func (s *server) createAgentForWorkspace(w http.ResponseWriter, r *http.Request, wsID string) {
 	if wsID == "" {
 		wsID = "default"
 	}
@@ -105,13 +109,34 @@ func (s *server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"id": agentID})
 }
 
-func (s *server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 	if !s.checkWritePermission(w, r) {
 		return
 	}
 	sid := r.PathValue("sid")
 	sess := s.sessionByID(w, sid)
 	if sess == nil {
+		return
+	}
+
+	wsID := r.URL.Query().Get("workspace_id")
+	if wsID == "" {
+		wsID = sess.getWorkspaceID()
+	}
+
+	s.createAgentForWorkspace(w, r, wsID)
+}
+
+func (s *server) handleCreateWorkspaceAgent(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	wid := r.PathValue("wid")
+	s.createAgentForWorkspace(w, r, wid)
+}
+
+func (s *server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
 		return
 	}
 	agentID := r.PathValue("agentId")
@@ -147,11 +172,6 @@ func (s *server) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 	if !s.checkWritePermission(w, r) {
-		return
-	}
-	sid := r.PathValue("sid")
-	sess := s.sessionByID(w, sid)
-	if sess == nil {
 		return
 	}
 	agentID := r.PathValue("agentId")
@@ -201,8 +221,8 @@ func (s *server) handleSetActiveAgent(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	if agent == nil || agent.SessionID != sid {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "agente não encontrado nesta sessão"})
+	if agent == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "agente não encontrado"})
 		return
 	}
 

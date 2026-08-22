@@ -118,7 +118,11 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 	// Injetar a lista de especialistas disponíveis para transferência se houver
 	ctxTimeout, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	agents, err := sess.mgr.store.listAgents(ctxTimeout, sess.id)
+	wsID := sess.getWorkspaceID()
+	agents, err := pbClient.ListAgentsPB(ctxTimeout, wsID)
+	if err != nil || len(agents) == 0 {
+		agents, err = sess.mgr.store.listAgents(ctxTimeout, wsID)
+	}
 	if err == nil && len(agents) > 0 {
 		var agentHelp []string
 		for _, ag := range agents {
@@ -230,7 +234,11 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 
 	// Injeção automática dos Agentes Especialistas selecionados na conexão
 	if config.EnableSpecialistTransfer {
-		agents, err := sess.mgr.store.listAgents(context.Background(), sess.id)
+		wsID := sess.getWorkspaceID()
+		agents, err := pbClient.ListAgentsPB(context.Background(), wsID)
+		if err != nil || len(agents) == 0 {
+			agents, err = sess.mgr.store.listAgents(context.Background(), wsID)
+		}
 		if err == nil && len(agents) > 0 {
 			var specHelp []string
 			for _, ag := range agents {
@@ -731,9 +739,10 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	agents, err := pbClient.ListAgentsPB(ctx, a.sess.id)
+	wsID := a.sess.getWorkspaceID()
+	agents, err := pbClient.ListAgentsPB(ctx, wsID)
 	if err != nil || len(agents) == 0 {
-		agents, err = a.sess.mgr.store.listAgents(ctx, a.sess.id)
+		agents, err = a.sess.mgr.store.listAgents(ctx, wsID)
 		if err != nil {
 			return fmt.Errorf("listar agentes: %w", err)
 		}

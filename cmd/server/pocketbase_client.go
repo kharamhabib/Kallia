@@ -1010,11 +1010,11 @@ func (c *PocketBaseClient) DeleteSessionPB(ctx context.Context, id string) error
 // --- AGENTES ESPECIALISTAS (AGENTS) ---
 
 func (c *PocketBaseClient) ListAgentsPB(ctx context.Context, targetID string) ([]agentRow, error) {
-	reqPath := "/api/collections/agents/records?perPage=500&sort=-created"
-	if targetID != "" && targetID != "default" {
-		filter := fmt.Sprintf(`workspace_id="%s"`, targetID)
-		reqPath = fmt.Sprintf("/api/collections/agents/records?filter=(%s)&perPage=200&sort=-created", url.QueryEscape(filter))
+	if targetID == "" {
+		return []agentRow{}, nil
 	}
+	filter := fmt.Sprintf(`workspace_id="%s"`, targetID)
+	reqPath := fmt.Sprintf("/api/collections/agents/records?filter=(%s)&perPage=200&sort=-created", url.QueryEscape(filter))
 
 	resp, err := c.doAdminRequest(ctx, "GET", reqPath, nil)
 	if err != nil {

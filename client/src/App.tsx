@@ -25,6 +25,7 @@ import { ensureSessionsWired, useSessions } from "@/stores/sessions";
 import { ensureCallsWired } from "@/stores/calls";
 import { useNavigation } from "@/stores/navigation";
 import { useTheme } from "@/stores/theme";
+import { useWorkspaceStore } from "@/stores/workspace";
 import { useAICallHandler } from "@/hooks/useAICallHandler";
 import { useAICallScheduler } from "@/hooks/useAICallScheduler";
 
@@ -45,6 +46,7 @@ const DevAgentation = (): React.ReactElement | null => {
 export const App = () => {
   const sessions = useSessions((s) => s.sessions);
   const activeId = useSessions((s) => s.activeId);
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
   const { activeSection, setActiveSection } = useNavigation();
   const theme = useTheme((s) => s.theme);
 
@@ -87,7 +89,7 @@ export const App = () => {
             {activeSection === "webphone" && <WebphonePage sid={active.id} />}
             {activeSection === "calls" && <CallsPage sid={active.id} />}
             {activeSection === "schedules" && <SchedulesTab sid={active.id} />}
-            {activeSection === "agents" && <AgentsPage sid={active.id} />}
+            {activeSection === "agents" && <AgentsPage sid={active.id} wid={currentWorkspace?.id} />}
             {activeSection === "settings" && <SettingsTab sid={active.id} />}
             {activeSection === "knowledge" && <KnowledgeBasePage sid={active.id} />}
             {activeSection === "chat_history" && <CallsPage sid={active.id} />}

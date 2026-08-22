@@ -7,6 +7,7 @@ import type { AIConfig } from "@/types/ai";
 import { Switch } from "@/components/ui/Switch";
 import { listAgents, type Agent } from "@/services/agents";
 import { getAIProviders, type AIProviderConfig } from "@/services/aiProviders";
+import { useWorkspaceStore } from "@/stores/workspace";
 
 interface AISettingsPaneProps {
   config: AIConfig;
@@ -16,6 +17,9 @@ interface AISettingsPaneProps {
 }
 
 export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPaneProps) => {
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wid = currentWorkspace?.id;
+
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentToAdd, setSelectedAgentToAdd] = useState<string>("");
   const [aiProviders, setAiProviders] = useState<AIProviderConfig[]>([]);
@@ -31,8 +35,8 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
       .catch(() => {})
       .finally(() => setLoadingProviders(false));
 
-    if (sid) {
-      listAgents(sid)
+    if (sid || wid) {
+      listAgents(sid, wid)
         .then((res) => {
           setAgents(res);
           if (config.allowedSpecialistIds === undefined) {
@@ -42,7 +46,7 @@ export const AISettingsPane = ({ config, onChange, enabled, sid }: AISettingsPan
         })
         .catch(() => {});
     }
-  }, [sid]);
+  }, [sid, wid]);
 
   // Provedores efetivamente configurados com API key ativa no banco
   const activeProviders = aiProviders.filter((p) => p.enabled && p.hasKey);

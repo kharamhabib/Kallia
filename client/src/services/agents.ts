@@ -73,20 +73,31 @@ const toPayload = (data: AgentUpsert): AgentPayload => ({
   outbound: data.outbound ?? (data.role === "outbound" || data.role === "both"),
 });
 
-export const listAgents = async (sessionId: string): Promise<Agent[]> => {
-  const r = await apiGet<{ agents: any[] }>(`/api/sessions/${sessionId}/agents`);
+export const listAgents = async (sessionId?: string, workspaceId?: string): Promise<Agent[]> => {
+  const url = workspaceId
+    ? `/api/workspaces/${workspaceId}/agents`
+    : sessionId
+    ? `/api/sessions/${sessionId}/agents`
+    : "/api/agents";
+  const r = await apiGet<{ agents: any[] }>(url);
   return (r.agents ?? []).map(mapAgent);
 };
 
-export const createAgent = async (sessionId: string, data: AgentUpsert): Promise<Agent> => {
-  const r = await apiPost<{ id: string }>(`/api/sessions/${sessionId}/agents`, toPayload(data));
+export const createAgent = async (sessionId: string | undefined, data: AgentUpsert, workspaceId?: string): Promise<Agent> => {
+  const url = workspaceId
+    ? `/api/workspaces/${workspaceId}/agents`
+    : `/api/sessions/${sessionId}/agents`;
+  const r = await apiPost<{ id: string }>(url, toPayload(data));
   // Refetch to get the full row
-  const agents = await listAgents(sessionId);
+  const agents = await listAgents(sessionId, workspaceId);
   return agents.find((a) => a.id === r.id) ?? ({ id: r.id, ...data, inbound: false, outbound: false, isActive: false } as any);
 };
 
-export const updateAgent = async (sessionId: string, agentId: string, data: Partial<AgentUpsert>): Promise<void> => {
-  await apiPut<{ status: string }>(`/api/sessions/${sessionId}/agents/${agentId}`, {
+export const updateAgent = async (sessionId: string | undefined, agentId: string, data: Partial<AgentUpsert>, workspaceId?: string): Promise<void> => {
+  const url = workspaceId
+    ? `/api/workspaces/${workspaceId}/agents/${agentId}`
+    : `/api/sessions/${sessionId}/agents/${agentId}`;
+  await apiPut<{ status: string }>(url, {
     name: data.name ?? "",
     description: data.description ?? "",
     aiConfig: JSON.stringify(data.aiConfig ?? {}),
@@ -95,18 +106,25 @@ export const updateAgent = async (sessionId: string, agentId: string, data: Part
   });
 };
 
-export const deleteAgent = (sessionId: string, agentId: string) =>
-  apiDelete(`/api/sessions/${sessionId}/agents/${agentId}`);
+export const deleteAgent = (sessionId: string | undefined, agentId: string, workspaceId?: string) => {
+  const url = workspaceId
+    ? `/api/workspaces/${workspaceId}/agents/${agentId}`
+    : `/api/sessions/${sessionId}/agents/${agentId}`;
+  return apiDelete(url);
+};
 
 export const activateAgent = (sessionId: string, agentId: string, direction: "inbound" | "outbound") =>
   apiPost<{ status: string }>(`/api/sessions/${sessionId}/agents/${agentId}/set-active`, { direction });
 
-export const deactivateAgent = async (sessionId: string, agentId: string, direction: "inbound" | "outbound"): Promise<void> => {
+export const deactivateAgent = async (sessionId: string, agentId: string, direction: "inbound" | "outbound", workspaceId?: string): Promise<void> => {
   // Get current agent state and clear the direction
-  const agents = await listAgents(sessionId);
+  const agents = await listAgents(sessionId, workspaceId);
   const agent = agents.find((a) => a.id === agentId);
   if (!agent) return;
-  await apiPut<{ status: string }>(`/api/sessions/${sessionId}/agents/${agentId}`, {
+  const url = workspaceId
+    ? `/api/workspaces/${workspaceId}/agents/${agentId}`
+    : `/api/sessions/${sessionId}/agents/${agentId}`;
+  await apiPut<{ status: string }>(url, {
     name: agent.name,
     description: agent.description,
     aiConfig: JSON.stringify(agent.aiConfig),
