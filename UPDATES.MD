@@ -211,24 +211,34 @@ Este documento registra as implementações recentes concluídas e as melhorias 
     - *Modo Avisar no Início*: Informa proativamente *"Aqui é a Sofia, assistente virtual de inteligência artificial do [session_name]"*.
     - Os presets rápidos (*Pessoal*, *Empresa*, *Suporte*) adaptam suas frases de abertura e encerramento em tempo real com base no nome e modo de transparência selecionados.
   - **Toolbar Superior Dinâmico (`PromptQuickBar.tsx`)**: Exibe o avatar/iniciais do nome quando ativo ou ícone genérico de bot com o título *Assistente de Atendimento*, além do badge em tempo real do modo de transparência ativo (`Natural / Discreta` vs `Avisar IA`).
+- [x] **Fase 4: Agente Autônomo de Resposta de Chat (RAG + Humanização Avançada) (22/08/2026)**:
+  - **Motor de Debounce & Agrupador de Fila por Conversa (`chat_debounce.go`)**:
+    - Agrupamento inteligente de mensagens picadas do cliente em janela de debounce de 3 segundos, evitando respostas duplicadas ou fragmentadas.
+    - Cancelamento dinâmico e gracioso de respostas em processamento caso o cliente envie novas mensagens enquanto a IA está gerando, reagrupando o histórico completo.
+    - Interrupção instantânea e transbordo transparente quando um atendente humano intervém na conversa.
+  - **Simulação de Digitação Natural & Divisão em Balões Anti-Textão (`chat_ai_engine.go`)**:
+    - Fatiamento semântico de respostas longas em múltiplos balões curtos e naturais (1 a 4 balões configuráveis).
+    - Status de digitação no WhatsApp (`SendChatPresence "composing"`) e WebSocket (`typing`) com delay proporcional ao tamanho da frase e pausas entre balões.
+  - **Transcrição Multimodal de Áudio com Gemini**:
+    - Áudios recebidos no WhatsApp são transcritos automaticamente via Gemini Multimodal (`audio/ogg`, `audio/mp4`, `audio/webm`), atualizando o histórico da conversa e timeline em tempo real.
+    - Suporte a modos de resposta em texto, espelhamento de formato do cliente ou síntese de áudio.
+  - **Motor RAG Semântico com PostgreSQL pgvector 768d (`knowledge_base.go`)**:
+    - Fatiador semântico `chunkText` com sobreposição de contexto para documentos, manuais, FAQs e arquivos.
+    - Geração de embeddings vetoriais de 768 dimensões com o modelo `text-embedding-004` do Gemini.
+    - Busca por similaridade cosseno no PostgreSQL (`1 - (embedding <=> $1::vector)`) com injeção contextual Top-K no system prompt do agente.
+  - **Tools e Function Calling da IA no Atendimento**:
+    - `transfer_to_human`: Transbordo imediato para fila pendente com pausa da IA e notificação de equipe.
+    - `update_contact`: Captura e enriquecimento automático de nome, e-mail e empresa no CRM do contato.
+    - `add_tag`: Aplicação automática de tags contextuais de lead e atendimento.
+  - **Frontend Completo de Gestão de Agentes e Base de Conhecimento**:
+    - [`AgentsPage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/AgentsPage.tsx) com abas superiores unificadas: **🎙️ Agentes de Voz (PABX VoIP)** e **💬 Agentes de Chat (WhatsApp)**.
+    - [`ChatAgentsList.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/agents/ChatAgentsList.tsx) com cards de métricas, delay e RAG.
+    - [`ChatAgentEditor.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/agents/ChatAgentEditor.tsx) com abas de Identidade/Prompt, Humanização/Balões, RAG, Ferramentas e Simulador Sandbox interativo.
+    - [`KnowledgeBasePage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/KnowledgeBasePage.tsx) conectado à API real do PostgreSQL + pgvector, upload de arquivos, FAQs, artigos e modal de teste de busca semântica em tempo real.
+
+---
 
 ## 🚀 Próximas Implementações e Roadmap
-
-### 🤖 Fase 4: Agente Autônomo de Resposta de Chat (RAG + Ferramentas)
-- [ ] **Configuração de Agentes de Chat por Linha/Workspace**:
-  - Interface para criar personas exclusivas para atendimento em texto no WhatsApp.
-  - Definição de Prompt de Sistema, temperatura, delay de resposta (para simular digitação natural humana) e horário de funcionamento.
-- [ ] **RAG Vetorial com pgvector & Gemini Embeddings**:
-  - Geração de embeddings vetoriais com modelo `text-embedding-004` (768 dimensões) para os documentos da Base de Conhecimento do Workspace salvos em `embeddings`.
-  - Busca por similaridade cosseno (`<=>` HNSW) para responder perguntas dos clientes com precisão documental.
-- [ ] **Transcrição & Resposta Inteligente de Áudios**:
-  - Transcrição automática de mensagens de voz recebidas no WhatsApp via Gemini / Whisper.
-  - Capacidade do Agente de responder em texto ou sintetizar áudio TTS nativo dependendo da preferência configurada.
-- [ ] **Tools & Ações Automáticas do Agente**:
-  - Criar/Atualizar dados do contato no CRM durante a conversa.
-  - Mover o lead de estágio no Kanban.
-  - Aplicar tags automáticas na conversa.
-  - Transbordo para atendente humano (`status = 'pending'`, pausa na IA e notificação).
 
 ---
 

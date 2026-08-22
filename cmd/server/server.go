@@ -24,6 +24,7 @@ type server struct {
 	log       *slog.Logger
 	staticDir string
 	tickets   *ticketStore
+	debounce  *ChatDebounceManager
 	startedAt time.Time
 }
 
@@ -90,6 +91,18 @@ func newServer(ctx context.Context, storageDir, redisURL, pgURL, staticDir strin
 	mgr.nps = newNPSEngine(log, sStore, getSession)
 	mgr.followup = newFollowupEngine(log, getSession)
 
+	// Motor de Debounce e Humanização do Agente de Chat (WhatsApp)
+	mgr.Debounce = newChatDebounceManager(3*time.Second, func(ctx context.Context, wid, convID, sid, phone string, msgs []QueuedChatMessage) {
+		if pg == nil || pg.DB() == nil {
+			return
+		}
+		goSafe(log, func() {
+			if err := executeChatAgentTurn(ctx, pg.DB(), hub, mgr, wid, convID, sid, phone, msgs); err != nil {
+				log.Error("falha ao processar resposta do agente de chat", "err", err, "conv_id", convID, "workspace_id", wid)
+			}
+		})
+	})
+
 	hub.OnPresenceUpdate = func(workspaceID, convID, state, mediaType string) {
 		if pg == nil || pg.DB() == nil {
 			return
@@ -152,6 +165,7 @@ func newServer(ctx context.Context, storageDir, redisURL, pgURL, staticDir strin
 		log:       log,
 		staticDir: staticDir,
 		tickets:   newTicketStore(),
+		debounce:  mgr.Debounce,
 		startedAt: time.Now(),
 	}, nil
 }

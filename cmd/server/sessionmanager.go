@@ -29,6 +29,7 @@ type SessionManager struct {
 	Queue     *QueueManager
 	PG        *pgPool
 	Hub       *RealtimeHub
+	Debounce  *ChatDebounceManager
 	nps       *NPSEngine
 	followup  *FollowupEngine
 

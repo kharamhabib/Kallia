@@ -198,6 +198,23 @@ func (s *server) routes() http.Handler {
 	// ── Omnichannel: Mídias Locais (Áudio, Imagem, Vídeo, Documento) ──
 	mux.HandleFunc("GET /api/media/{wid}/{fileName}", s.handleServeMediaFile)
 
+	// ── Omnichannel: Agentes de Chat (WhatsApp) ────────────────────────
+	mux.HandleFunc("GET /api/workspaces/{wid}/chat-agents", s.handleListChatAgents)
+	mux.HandleFunc("POST /api/workspaces/{wid}/chat-agents", s.handleCreateChatAgent)
+	mux.HandleFunc("GET /api/workspaces/{wid}/chat-agents/{id}", s.handleGetChatAgent)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/chat-agents/{id}", s.handleUpdateChatAgent)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/chat-agents/{id}", s.handleDeleteChatAgent)
+	mux.HandleFunc("POST /api/workspaces/{wid}/chat-agents/{id}/test", s.handleTestChatAgent)
+
+	// ── Omnichannel: Base de Conhecimento & RAG (PostgreSQL + pgvector) ─
+	mux.HandleFunc("GET /api/workspaces/{wid}/knowledge", s.handleListKnowledgeDocs)
+	mux.HandleFunc("POST /api/workspaces/{wid}/knowledge", s.handleCreateKnowledgeDoc)
+	mux.HandleFunc("GET /api/workspaces/{wid}/knowledge/{id}", s.handleGetKnowledgeDoc)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/knowledge/{id}", s.handleUpdateKnowledgeDoc)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/knowledge/{id}", s.handleDeleteKnowledgeDoc)
+	mux.HandleFunc("PATCH /api/workspaces/{wid}/knowledge/{id}/toggle", s.handleToggleKnowledgeDoc)
+	mux.HandleFunc("POST /api/workspaces/{wid}/knowledge/search", s.handleTestKnowledgeSearch)
+
 
 	// Rotas Públicas de Documentação de API (Swagger / OpenAPI)
 	mux.HandleFunc("GET /api/docs", s.handleAPIDocs)

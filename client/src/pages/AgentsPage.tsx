@@ -13,6 +13,8 @@ import {
   PhoneCall,
   PhoneIncoming,
   PhoneOutgoing,
+  MessageSquare,
+  Phone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +29,10 @@ import {
   deleteAgent,
   type Agent,
 } from "@/services/agents";
+import { listChatAgents } from "@/services/chatAgents";
+import type { ChatAgent } from "@/types/chatAgent";
+import { ChatAgentsList } from "@/components/domain/agents/ChatAgentsList";
+import { ChatAgentEditor } from "@/components/domain/agents/ChatAgentEditor";
 import { getAIConfig, setAIConfig } from "@/services/ai";
 import { getAIProviders, type AIProviderConfig } from "@/services/aiProviders";
 import type { AIConfig } from "@/types/ai";
@@ -114,6 +120,12 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
 
   const [aiProviders, setAiProviders] = useState<AIProviderConfig[]>([]);
 
+  // Estados de Chat Agents (WhatsApp / Omnichannel)
+  const [channelType, setChannelType] = useState<"voice" | "chat">("voice");
+  const [chatAgents, setChatAgents] = useState<ChatAgent[]>([]);
+  const [selectedChatAgent, setSelectedChatAgent] = useState<ChatAgent | null>(null);
+  const [isEditingChatAgent, setIsEditingChatAgent] = useState(false);
+
   // Form State para Agente Especialista Selecionado
   const [specForm, setSpecForm] = useState<{
     name: string;
@@ -141,14 +153,16 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
     if (!sid && !wid) return;
     setLoading(true);
     try {
-      const [resAgents, resConfig, resProviders] = await Promise.all([
+      const [resAgents, resConfig, resProviders, resChatAgents] = await Promise.all([
         listAgents(sid, wid).catch(() => []),
         getAIConfig(sid, wid).catch(() => null),
         getAIProviders().catch(() => ({ providers: [] })),
+        wid ? listChatAgents(wid).catch(() => []) : Promise.resolve([]),
       ]);
       const providersList = resProviders.providers || [];
       setAgents(resAgents);
       setAiProviders(providersList);
+      setChatAgents(resChatAgents);
       if (resConfig) {
         const c = resConfig.aiConfig || defaultConfig;
         const provKey = c.provider || "gemini";
@@ -333,29 +347,131 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-extrabold tracking-tight text-foreground">Central de Agentes IA</h1>
             <span className="rounded-full bg-primary/10 text-primary text-xs font-extrabold px-2.5 py-0.5 border border-primary/20">
-              {specialists.length + 1} {specialists.length === 0 ? "agente cadastrado" : "agentes cadastrados"}
+              {channelType === "voice"
+                ? `${specialists.length + 1} ${specialists.length === 0 ? "agente de voz" : "agentes de voz"}`
+                : `${chatAgents.length} ${chatAgents.length === 1 ? "agente de chat" : "agentes de chat"}`}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            Configure a personalidade da IA Principal da conexão e cadastre Especialistas para transferência e chamadas ativas.
+            {channelType === "voice"
+              ? "Configure a personalidade da IA de Voz da conexão e cadastre Especialistas para transferência e chamadas ativas."
+              : "Crie personas autônomas de chat para atendimento no WhatsApp com RAG vetorial e simulação humana."}
           </p>
         </div>
 
-        <Button
-          onClick={handleCreateSpecialist}
-          disabled={saveBusy}
-          className="gap-2 rounded-xl shadow-xs font-semibold shrink-0 cursor-pointer"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Novo Agente Especialista</span>
-        </Button>
+        {channelType === "voice" ? (
+          <Button
+            onClick={handleCreateSpecialist}
+            disabled={saveBusy}
+            className="gap-2 rounded-xl shadow-xs font-semibold shrink-0 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Novo Agente Especialista</span>
+          </Button>
+        ) : !isEditingChatAgent ? (
+          <Button
+            onClick={() => {
+              setSelectedChatAgent(null);
+              setIsEditingChatAgent(true);
+            }}
+            className="gap-2 rounded-xl shadow-xs font-semibold shrink-0 cursor-pointer"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Novo Agente de Chat</span>
+          </Button>
+        ) : null}
       </div>
 
-      {/* Main Master-Detail Layout */}
+      {/* Alternador de Canais: Voz vs Chat */}
+      <div className="flex items-center gap-2 p-1 bg-muted/40 rounded-xl border w-fit">
+        <button
+          type="button"
+          onClick={() => {
+            setChannelType("voice");
+            setIsEditingChatAgent(false);
+          }}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+            channelType === "voice"
+              ? "bg-background text-foreground shadow-xs border"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Phone className="h-4 w-4 text-primary" />
+          Agentes de Voz (PABX VoIP)
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setChannelType("chat");
+          }}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer",
+            channelType === "chat"
+              ? "bg-background text-foreground shadow-xs border"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <MessageSquare className="h-4 w-4 text-emerald-500" />
+          Agentes de Chat (WhatsApp)
+          {chatAgents.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-600 text-[10px]">
+              {chatAgents.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Main Content Layout */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-7 w-7 animate-spin text-primary" />
         </div>
+      ) : channelType === "chat" ? (
+        isEditingChatAgent ? (
+          <ChatAgentEditor
+            workspaceId={wid || ""}
+            agent={selectedChatAgent}
+            onSave={(saved) => {
+              setChatAgents((prev) => {
+                const idx = prev.findIndex((a) => a.id === saved.id);
+                if (idx >= 0) {
+                  const next = [...prev];
+                  next[idx] = saved;
+                  return next;
+                }
+                return [saved, ...prev];
+              });
+              setIsEditingChatAgent(false);
+              setSelectedChatAgent(null);
+            }}
+            onDelete={(delId) => {
+              setChatAgents((prev) => prev.filter((a) => a.id !== delId));
+              setIsEditingChatAgent(false);
+              setSelectedChatAgent(null);
+            }}
+            onCancel={() => {
+              setIsEditingChatAgent(false);
+              setSelectedChatAgent(null);
+            }}
+          />
+        ) : (
+          <ChatAgentsList
+            workspaceId={wid || ""}
+            agents={chatAgents}
+            onSelectAgent={(ag) => {
+              setSelectedChatAgent(ag);
+              setIsEditingChatAgent(true);
+            }}
+            onNewAgent={() => {
+              setSelectedChatAgent(null);
+              setIsEditingChatAgent(true);
+            }}
+            onAgentDeleted={(delId) => {
+              setChatAgents((prev) => prev.filter((a) => a.id !== delId));
+            }}
+          />
+        )
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* COLUNA ESQUERDA: LISTA DE AGENTES (Master + Especialistas) */}

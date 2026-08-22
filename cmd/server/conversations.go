@@ -428,7 +428,7 @@ func pgCreateMessage(db *sql.DB, hub *RealtimeHub, msg Message, workspaceID stri
 
 // ── Ingestão de Mensagens do WhatsApp para PostgreSQL ───────────────────
 
-func pgIngestWhatsAppMessage(db *sql.DB, hub *RealtimeHub, workspaceID, sessionID, remotePhone, contactName, avatarURL, email, company, notes, text, mediaURL, contentType string, isFromMe bool, externalID string) error {
+func pgIngestWhatsAppMessage(db *sql.DB, hub *RealtimeHub, debounce *ChatDebounceManager, workspaceID, sessionID, remotePhone, contactName, avatarURL, email, company, notes, text, mediaURL, contentType string, isFromMe bool, externalID string) error {
 	if db == nil || workspaceID == "" {
 		return nil
 	}
@@ -468,7 +468,7 @@ func pgIngestWhatsAppMessage(db *sql.DB, hub *RealtimeHub, workspaceID, sessionI
 		contentType = "text"
 	}
 
-	_, err = pgCreateMessage(db, hub, Message{
+	createdMsg, err := pgCreateMessage(db, hub, Message{
 		ConversationID: conv.ID,
 		SenderType:     senderType,
 		Content:        text,
@@ -477,8 +477,42 @@ func pgIngestWhatsAppMessage(db *sql.DB, hub *RealtimeHub, workspaceID, sessionI
 		ExternalID:     externalID,
 		Status:         "delivered",
 	}, workspaceID)
+	if err != nil {
+		return err
+	}
 
-	return err
+	// 5. Se mensagem foi recebida do cliente, avalia ativação de IA e enfileira no Debounce
+	if !isFromMe && debounce != nil && createdMsg != nil {
+		if !conv.AIActive {
+			var hasActiveAgent bool
+			_ = db.QueryRow("SELECT EXISTS(SELECT 1 FROM chat_agents WHERE workspace_id = $1 AND active = true)", workspaceID).Scan(&hasActiveAgent)
+			if hasActiveAgent {
+				_, _ = db.Exec("UPDATE conversations SET ai_active = true WHERE id = $1", conv.ID)
+				conv.AIActive = true
+				if hub != nil {
+					hub.BroadcastJSON(workspaceID, map[string]interface{}{
+						"type": "conversation:updated",
+						"data": map[string]interface{}{
+							"id":        conv.ID,
+							"ai_active": true,
+						},
+					})
+				}
+			}
+		}
+
+		if conv.AIActive {
+			debounce.EnqueueMessage(workspaceID, conv.ID, sessionID, remotePhone, QueuedChatMessage{
+				MessageID:   createdMsg.ID,
+				ContentType: contentType,
+				Content:     text,
+				MediaURL:    mediaURL,
+				CreatedAt:   time.Now(),
+			})
+		}
+	}
+
+	return nil
 }
 
 // ── HTTP Handlers para /api/workspaces/{wid}/conversations ──────────────
@@ -839,6 +873,23 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+
+	// 4. Se o atendente humano enviou mensagem, pausa a IA e cancela debounce pendente
+	if senderType == "agent" {
+		if s.debounce != nil {
+			s.debounce.Cancel(convID)
+		}
+		_, _ = db.Exec("UPDATE conversations SET ai_active = false WHERE id = $1 AND workspace_id = $2 AND ai_active = true", convID, workspaceID)
+		if s.hub != nil {
+			s.hub.BroadcastJSON(workspaceID, map[string]interface{}{
+				"type": "conversation:updated",
+				"data": map[string]interface{}{
+					"id":        convID,
+					"ai_active": false,
+				},
+			})
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, msg)

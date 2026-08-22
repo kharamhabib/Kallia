@@ -172,6 +172,10 @@ Kallia/
 │       ├── gemini_live.go           # Cliente WebSocket nativo para a API Gemini Live (Google)
 │       ├── gemini_proxy.go          # Proxy WS/REST do Gemini (a chave nunca sai do servidor)
 │       ├── grok_live.go             # Cliente WebSocket nativo para a API Grok Realtime (xAI)
+│       ├── knowledge_base.go        # Motor RAG com PostgreSQL pgvector 768d, chunker e Gemini embeddings
+│       ├── chat_debounce.go         # Agrupador de mensagens picadas em janela de 3s e cancelamento dinâmico
+│       ├── chat_agents.go           # CRUD de Agentes de Chat e Sandbox de teste
+│       ├── chat_ai_engine.go        # Motor de IA de texto, transcrição de áudio, tools, balões e digitação
 │       ├── httpapi.go               # Rotas da API HTTP/WebRTC, workspaces, auto-criação, SSE, CORS
 │       ├── pocketbase_client.go     # Cliente PocketBase de Superuser com CRUD para workspaces, sessões, CRM e IA
 │       ├── pocketbase_sync.go       # Motor de hidratação inicial e listener SSE persistente (/api/realtime)
@@ -198,12 +202,22 @@ Kallia/
 │       │   ├── workspace.ts         # Store de workspaces ativos e planos
 │       │   ├── navigation.ts        # Gerenciador de seções e rotas
 │       │   └── auth.ts              # Gerenciador de sessão e tokens
+│       ├── services/
+│       │   ├── chatAgents.ts        # Serviço de API para Agentes de Chat
+│       │   ├── knowledge.ts         # Serviço de API para Base de Conhecimento e Busca RAG
+│       │   └── ...                  # Demais serviços de API
+│       ├── types/
+│       │   ├── chatAgent.ts         # Tipos TypeScript para ChatAgent e KnowledgeDocument
+│       │   └── ...                  # Demais tipos
 │       ├── components/
 │       │   ├── auth/LoginScreen.tsx # Tela de login integrada com PocketBase e Google OAuth2
 │       │   ├── layout/
 │       │   │   ├── AppShell.tsx     # Layout principal com barra superior e seletor de workspaces
 │       │   │   └── Sidebar.tsx      # Navegação lateral com atalho para Conversas (Chat)
 │       │   ├── domain/
+│       │   │   ├── agents/          # Agentes de Chat e Voz
+│       │   │   │   ├── ChatAgentsList.tsx   # Listagem em cards com métricas e badges
+│       │   │   │   └── ChatAgentEditor.tsx  # Editor completo com tabs e Simulador Sandbox
 │       │   │   ├── chat/            # Módulo Completo de Chat Omnichannel Estilo WhatsApp
 │       │   │   │   ├── ConversationsList.tsx    # Lista com filtros e botão "+ Nova Conversa"
 │       │   │   │   ├── ChatHeader.tsx           # Cabeçalho da conversa com IA toggle e atalhos
@@ -218,6 +232,9 @@ Kallia/
 │       │       ├── WorkspaceSelector.tsx        # Seletor de workspace em tempo real
 │       │       └── ConfirmModal.tsx             # Modal reutilizável de confirmação
 │       └── pages/
+│           ├── AgentsPage.tsx       # Central Unificada de Agentes IA (Voz PABX vs Chat WhatsApp)
+│           ├── KnowledgeBasePage.tsx# Base de Conhecimento RAG com pgvector e teste em tempo real
+│           └── ...
 │           ├── ConversationsPage.tsx # Central de Atendimento & Chat Omnichannel
 │           ├── DashboardPage.tsx     # Dashboard executivo com KPIs do Workspace ativo
 │           ├── ContactsPage.tsx      # Módulo de CRM de contatos unificado por Workspace (PostgreSQL)
@@ -385,6 +402,40 @@ A Central de Conversas (`/conversations`) opera com sincronização em tempo rea
 
 ---
 
-## 12. Manutenção e Atualizações
+## 12. Agente Autônomo de Resposta de Chat (RAG + Humanização Avançada)
+
+O Kallia possui um motor autônomo para responder mensagens de texto e áudio no WhatsApp com inteligência artificial, busca semântica em base de conhecimento e simulação comportamental humana:
+
+### 12.1 Motor de Debounce & Fila por Conversa (`chat_debounce.go`)
+- **Agrupamento de Mensagens Picadas**: Quando o cliente envia múltiplas mensagens consecutivas (ex: *"Oi"*, *"Tudo bem?"*, *"Quanto custa o plano?"*), o `ChatDebounceManager` acumula os textos em uma janela configurável de **3 segundos**.
+- **Cancelamento Dinâmico & Reagrupamento**: Se a IA já estiver gerando a resposta e o cliente enviar uma nova mensagem antes do envio final, o contexto é cancelado graciosamente (`context.CancelFunc`), o novo texto é incorporado ao lote e uma nova resposta holística é recalculada.
+- **Intervenção Humana Instantânea**: Se um operador humano enviar qualquer mensagem manual pelo chat do painel, o debounce da conversa é abortado imediatamente e a IA é pausada (`ai_active = false`).
+
+### 12.2 Simulação de Digitação Humana & Fatiamento Anti-Textão (`chat_ai_engine.go`)
+- **Fatiamento em Múltiplos Balões Naturais**: O algoritmo `splitIntoNaturalBubbles` analisa parágrafos, quebras de linha e pontuação, dividindo respostas longas em até 1 a 4 balões curtos, evitando blocos gigantes de texto no WhatsApp.
+- **Status de Digitação Proporcional**: Para cada balão da resposta, o sistema aciona a presença `"composing"` no WhatsApp via `SendChatPresence` e no WebSocket (`typing`), aguarda um delay configurável de digitação proporcional ao número de caracteres e introduz pausas breves entre balões.
+- **Transcrição Multimodal de Áudio**: Mensagens de voz recebidas são convertidas em texto pelo Gemini Multimodal (`audio/ogg`, `audio/mp4`, `audio/webm`), atualizando o histórico da conversa e permitindo que o agente responda com base no áudio.
+
+### 12.3 Base de Conhecimento & RAG Semântico (`knowledge_base.go`)
+- **Chunker Semântico**: O método `chunkText` particiona documentos, manuais, tabelas e FAQs em trechos de ~600 caracteres com sobreposição de 100 caracteres.
+- **Embeddings Vetoriais (768d)**: Vetores calculados através da API `models/text-embedding-004` do Google Gemini.
+- **Busca Vetorial no PostgreSQL**: Consulta cosseno direta na tabela `embeddings`:
+  ```sql
+  SELECT source_id, source_type, chunk_text, 1 - (embedding <=> $1::vector) AS similarity
+  FROM embeddings
+  WHERE workspace_id = $2
+  ORDER BY embedding <=> $1::vector
+  LIMIT $3
+  ```
+- **Injeção Top-K**: Os trechos mais relevantes são injetados automaticamente como contexto verificado no system prompt do agente.
+
+### 12.4 Tools & Function Calling da IA
+- `transfer_to_human`: Altera o status da conversa para `pending`, desativa a IA e notifica a equipe para transbordo imediato.
+- `update_contact`: Extrai nome, e-mail e empresa informados no diálogo e atualiza diretamente o registro do cliente no CRM.
+- `add_tag`: Aplica tags contextuais ao atendimento (ex: *"Lead Quente"*, *"Dúvida Preço"*).
+
+---
+
+## 13. Manutenção e Atualizações
 
 Sempre que uma alteração estrutural, novo modelo de dados ou adição de protocolo for realizada no sistema, este arquivo **`ARQUITETURA.MD`** deve ser atualizado imediatamente.

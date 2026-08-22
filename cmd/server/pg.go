@@ -309,6 +309,31 @@ var pgMigrations = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_automations_ws ON automations(workspace_id, active)`,
 
+	// ── Base de Conhecimento (Documentos RAG) ──────────────────────────
+	`CREATE TABLE IF NOT EXISTS knowledge_documents (
+		id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		workspace_id  TEXT NOT NULL,
+		title         TEXT NOT NULL,
+		source_type   TEXT NOT NULL DEFAULT 'text',
+		category      TEXT NOT NULL DEFAULT 'Empresa',
+		source_name   TEXT DEFAULT '',
+		content       TEXT NOT NULL DEFAULT '',
+		tokens_count  INT DEFAULT 0,
+		chunks_count  INT DEFAULT 0,
+		enabled       BOOLEAN DEFAULT true,
+		created_at    TIMESTAMPTZ DEFAULT now(),
+		updated_at    TIMESTAMPTZ DEFAULT now()
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_knowledge_docs_ws ON knowledge_documents(workspace_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(workspace_id, source_id)`,
+
+	// ── Ajustes e Colunas Adicionais de Chat Agents & Inboxes ───────────
+	`ALTER TABLE chat_agents ADD COLUMN IF NOT EXISTS typing_delay_sec INT DEFAULT 3`,
+	`ALTER TABLE chat_agents ADD COLUMN IF NOT EXISTS audio_reply_mode TEXT DEFAULT 'text'`,
+	`ALTER TABLE chat_agents ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT false`,
+	`ALTER TABLE chat_agents ADD COLUMN IF NOT EXISTS max_bubbles INT DEFAULT 3`,
+	`ALTER TABLE inboxes ADD COLUMN IF NOT EXISTS default_chat_agent_id UUID REFERENCES chat_agents(id) ON DELETE SET NULL`,
+
 	// ── Migrações de constraints para exclusão segura ──────────────────
 	`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_contact_id_fkey,
 	 ADD CONSTRAINT conversations_contact_id_fkey FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL`,

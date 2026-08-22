@@ -91,6 +91,17 @@ func (h *RealtimeHub) Broadcast(workspaceID string, payload []byte) {
 	}
 }
 
+// BroadcastJSON serializa a estrutura e realiza o broadcast para o workspace.
+func (h *RealtimeHub) BroadcastJSON(workspaceID string, v interface{}) {
+	if h == nil {
+		return
+	}
+	bytes, err := json.Marshal(v)
+	if err == nil {
+		h.Broadcast(workspaceID, bytes)
+	}
+}
+
 func (h *RealtimeHub) broadcastLocal(workspaceID string, payload []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

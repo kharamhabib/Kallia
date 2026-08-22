@@ -1449,6 +1449,7 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 	_ = pgIngestWhatsAppMessage(
 		s.mgr.PG.DB(),
 		s.mgr.Hub,
+		s.mgr.Debounce,
 		wid,
 		s.id,
 		sender,

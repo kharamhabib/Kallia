@@ -90,6 +90,14 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Isolamento de Segurança de Chaves**: Chaves de API armazenadas exclusivamente na coleção criptografada `ai_providers` com AES-256-GCM, com sanitização automática em `agents` e `sessions`.
 - **Transferência ao Vivo (`TransferTo`)**: A IA pode transferir a ligação em andamento para outro agente especialista de forma transparente, mantendo a chamada VoIP do WhatsApp ativa.
 
+### 🧠 Agente Autônomo de Chat (WhatsApp + RAG Semântico + Humanização)
+- **Motor de Debounce & Agrupamento de Fila**: Janela de 3s para unificar mensagens picadas em lote único e cancelamento gracioso em caso de novas mensagens enquanto a IA está gerando resposta.
+- **Simulação de Digitação Humana & Fatiamento Anti-Textão**: Divisão inteligente em múltiplos balões curtos e envio com presença `"composing"` no WhatsApp e delay proporcional por caractere.
+- **Transcrição Multimodal de Áudios**: Transcrição automática de áudios recebidos pelo WhatsApp via Gemini Multimodal.
+- **Base de Conhecimento RAG (pgvector 768d)**: Fatiador semântico de documentos/FAQs e busca por similaridade cosseno no PostgreSQL com injeção contextual Top-K.
+- **Tools & Function Calling**: Transbordo humano (`transfer_to_human`), atualização de CRM (`update_contact`) e auto-tags (`add_tag`).
+- **Simulador Sandbox**: Chat interativo no painel para testar respostas, RAG e tools antes de ativar no WhatsApp.
+
 ---
 
 ## 🏗️ Arquitetura
