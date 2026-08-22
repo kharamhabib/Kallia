@@ -1257,6 +1257,93 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 		return
 	}
 
+	// ── Tratar Reações do WhatsApp ─────────────────────────────────────
+	if evt.Message.ReactionMessage != nil {
+		targetMsgID := evt.Message.ReactionMessage.GetKey().GetID()
+		emoji := evt.Message.ReactionMessage.GetText()
+		if targetMsgID != "" {
+			var msgID, convID string
+			var metadataBytes []byte
+			err := s.mgr.PG.DB().QueryRow(
+				`SELECT id, conversation_id, metadata FROM messages WHERE external_id = $1`,
+				targetMsgID,
+			).Scan(&msgID, &convID, &metadataBytes)
+			if err == nil {
+				meta := map[string]interface{}{}
+				if len(metadataBytes) > 0 {
+					_ = json.Unmarshal(metadataBytes, &meta)
+				}
+				reactionsList := []map[string]interface{}{}
+				if rawReactions, ok := meta["reactions"].([]interface{}); ok {
+					for _, r := range rawReactions {
+						if rMap, ok := r.(map[string]interface{}); ok {
+							if rMap["sender"] != "contact" {
+								reactionsList = append(reactionsList, rMap)
+							}
+						}
+					}
+				}
+				if emoji != "" {
+					reactionsList = append(reactionsList, map[string]interface{}{
+						"emoji":      emoji,
+						"sender":     "contact",
+						"created_at": time.Now().UTC().Format(time.RFC3339),
+					})
+				}
+				meta["reactions"] = reactionsList
+				newMetaJSON, _ := json.Marshal(meta)
+				_, _ = s.mgr.PG.DB().Exec("UPDATE messages SET metadata = $1 WHERE id = $2", newMetaJSON, msgID)
+
+				if s.mgr.Hub != nil {
+					event, _ := json.Marshal(map[string]interface{}{
+						"type":            "message:updated",
+						"conversation_id": convID,
+						"message_id":      msgID,
+						"metadata":        meta,
+					})
+					s.mgr.Hub.Broadcast(wid, event)
+				}
+			}
+		}
+		return
+	}
+
+	// ── Tratar Revogações / Edições do WhatsApp ────────────────────────
+	if evt.Message.ProtocolMessage != nil && evt.Message.ProtocolMessage.GetType() == waE2E.ProtocolMessage_REVOKE {
+		targetMsgID := evt.Message.ProtocolMessage.GetKey().GetID()
+		if targetMsgID != "" {
+			var msgID, convID string
+			var metadataBytes []byte
+			err := s.mgr.PG.DB().QueryRow(
+				`SELECT id, conversation_id, metadata FROM messages WHERE external_id = $1`,
+				targetMsgID,
+			).Scan(&msgID, &convID, &metadataBytes)
+			if err == nil {
+				meta := map[string]interface{}{}
+				if len(metadataBytes) > 0 {
+					_ = json.Unmarshal(metadataBytes, &meta)
+				}
+				meta["is_deleted"] = true
+				meta["deleted_at"] = time.Now().UTC().Format(time.RFC3339)
+				newMetaJSON, _ := json.Marshal(meta)
+				delText := "Esta mensagem foi apagada"
+				_, _ = s.mgr.PG.DB().Exec("UPDATE messages SET content = $1, metadata = $2 WHERE id = $3", delText, newMetaJSON, msgID)
+
+				if s.mgr.Hub != nil {
+					event, _ := json.Marshal(map[string]interface{}{
+						"type":            "message:updated",
+						"conversation_id": convID,
+						"message_id":      msgID,
+						"content":         delText,
+						"metadata":        meta,
+					})
+					s.mgr.Hub.Broadcast(wid, event)
+				}
+			}
+		}
+		return
+	}
+
 	var targetJID types.JID
 	if evt.Info.IsFromMe {
 		targetJID = evt.Info.Chat

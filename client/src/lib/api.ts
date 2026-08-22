@@ -58,12 +58,13 @@ export const apiPost = async <T>(path: string, body: unknown): Promise<T> => {
   return parseResponse<T>(r);
 };
 
-export const apiDelete = async (path: string): Promise<void> => {
+export const apiDelete = async <T = void>(path: string): Promise<T> => {
   const r = await fetch(apiUrl(path), { method: "DELETE", headers: baseHeaders() });
   if (!r.ok) {
     guard(r.status);
     throw await parseError(r, path);
   }
+  return parseResponse<T>(r);
 };
 
 export const apiPut = async <T>(path: string, body: unknown): Promise<T> => {

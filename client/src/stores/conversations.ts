@@ -16,6 +16,7 @@ interface ConversationsState {
   messages: Message[];
   inboxes: Inbox[];
   tags: Tag[];
+  replyingToMessage: Message | null;
   isLoadingConversations: boolean;
   isLoadingMessages: boolean;
   isSendingMessage: boolean;
@@ -24,6 +25,7 @@ interface ConversationsState {
   wsConnected: boolean;
 
   // Actions
+  setReplyingToMessage: (msg: Message | null) => void;
   setFilters: (filters: Partial<ConversationFilters>) => void;
   fetchInboxes: (workspaceId: string) => Promise<void>;
   fetchTags: (workspaceId: string) => Promise<void>;
@@ -37,7 +39,22 @@ interface ConversationsState {
     media_url?: string;
     file_name?: string;
     mimetype?: string;
+    reply_to_id?: string;
   }) => Promise<void>;
+  reactToMessage: (
+    conversationId: string,
+    messageId: string,
+    emoji: string,
+  ) => Promise<void>;
+  editMessage: (
+    conversationId: string,
+    messageId: string,
+    content: string,
+  ) => Promise<void>;
+  deleteMessage: (
+    conversationId: string,
+    messageId: string,
+  ) => Promise<void>;
   updateConversationStatus: (
     conversationId: string,
     status: string,
@@ -75,6 +92,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   messages: [],
   inboxes: [],
   tags: [],
+  replyingToMessage: null,
   isLoadingConversations: false,
   isLoadingMessages: false,
   isSendingMessage: false,
@@ -87,6 +105,8 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     tagId: "",
     search: "",
   },
+
+  setReplyingToMessage: (msg) => set({ replyingToMessage: msg }),
 
   setFilters: (newFilters) => {
     set((state) => ({
@@ -228,7 +248,75 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       console.error("Erro ao enviar mensagem:", err);
       throw err;
     } finally {
-      set({ isSendingMessage: false });
+      set({ isSendingMessage: false, replyingToMessage: null });
+    }
+  },
+
+  reactToMessage: async (conversationId, messageId, emoji) => {
+    try {
+      const res = await apiPost<{ status: string; metadata: any }>(
+        `/api/conversations/${conversationId}/messages/${messageId}/react`,
+        { emoji },
+      );
+      if (res?.metadata) {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === messageId ? { ...m, metadata: res.metadata } : m,
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error("Erro ao reagir à mensagem:", err);
+    }
+  },
+
+  editMessage: async (conversationId, messageId, content) => {
+    try {
+      const res = await apiPatch<{ status: string; content: string; metadata: any }>(
+        `/api/conversations/${conversationId}/messages/${messageId}`,
+        { content },
+      );
+      if (res) {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  content: res.content || content,
+                  metadata: res.metadata || m.metadata,
+                }
+              : m,
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error("Erro ao editar mensagem:", err);
+      throw err;
+    }
+  },
+
+  deleteMessage: async (conversationId, messageId) => {
+    try {
+      const res = await apiDelete<{ status: string; content: string; metadata: any }>(
+        `/api/conversations/${conversationId}/messages/${messageId}`,
+      );
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === messageId
+            ? {
+                ...m,
+                content: res?.content || "Esta mensagem foi apagada",
+                metadata: res?.metadata || {
+                  ...(m.metadata || {}),
+                  is_deleted: true,
+                },
+              }
+            : m,
+        ),
+      }));
+    } catch (err) {
+      console.error("Erro ao apagar mensagem:", err);
+      throw err;
     }
   },
 
@@ -454,6 +542,19 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
 
               return { conversations: updated };
             });
+          } else if (data.type === "message:updated" && data.message_id) {
+            set((state) => ({
+              messages: state.messages.map((m) => {
+                if (m.id === data.message_id) {
+                  return {
+                    ...m,
+                    content: data.content !== undefined ? data.content : m.content,
+                    metadata: data.metadata !== undefined ? data.metadata : m.metadata,
+                  };
+                }
+                return m;
+              }),
+            }));
           } else if (data.type === "typing") {
             const convId = data.conversation_id;
             const isTyping = data.is_typing;

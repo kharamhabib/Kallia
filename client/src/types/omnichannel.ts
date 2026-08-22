@@ -51,6 +51,31 @@ export interface Inbox {
   created_at: string;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  sender: "agent" | "contact";
+  created_at: string;
+}
+
+export interface QuotedMessage {
+  id: string;
+  content: string;
+  sender_type: SenderType;
+  content_type: MessageContentType;
+}
+
+export interface MessageMetadata {
+  file_name?: string;
+  mimetype?: string;
+  reactions?: MessageReaction[];
+  reply_to?: QuotedMessage;
+  is_edited?: boolean;
+  edited_at?: string;
+  is_deleted?: boolean;
+  deleted_at?: string;
+  [key: string]: unknown;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -61,7 +86,7 @@ export interface Message {
   media_url?: string;
   external_id?: string;
   status: MessageStatus;
-  metadata?: Record<string, unknown>;
+  metadata?: MessageMetadata;
   created_at: string;
 }
 

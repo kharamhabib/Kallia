@@ -176,6 +176,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("PATCH /api/conversations/{id}", s.handleUpdateConversation)
 	mux.HandleFunc("GET /api/conversations/{id}/messages", s.handleListMessages)
 	mux.HandleFunc("POST /api/conversations/{id}/messages", s.handleSendMessage)
+	mux.HandleFunc("POST /api/conversations/{convId}/messages/{msgId}/react", s.handleReactMessage)
+	mux.HandleFunc("PATCH /api/conversations/{convId}/messages/{msgId}", s.handleEditMessage)
+	mux.HandleFunc("DELETE /api/conversations/{convId}/messages/{msgId}", s.handleDeleteMessage)
 	mux.HandleFunc("POST /api/conversations/{id}/tags", s.handleAddConversationTag)
 	mux.HandleFunc("DELETE /api/conversations/{id}/tags/{tagId}", s.handleRemoveConversationTag)
 

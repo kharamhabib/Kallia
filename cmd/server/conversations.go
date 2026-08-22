@@ -605,6 +605,7 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		FileName    string `json:"file_name,omitempty"`
 		Mimetype    string `json:"mimetype,omitempty"`
 		SenderID    string `json:"sender_id,omitempty"`
+		ReplyToID   string `json:"reply_to_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body inválido"})
@@ -755,6 +756,22 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Mimetype != "" {
 		metadata["mimetype"] = body.Mimetype
+	}
+	if body.ReplyToID != "" {
+		var replyID, replyContent, replySenderType, replyContentType, replyExtID string
+		_ = db.QueryRow(
+			`SELECT id::text, COALESCE(content, ''), sender_type, content_type, COALESCE(external_id, '')
+			 FROM messages WHERE id = $1`,
+			body.ReplyToID,
+		).Scan(&replyID, &replyContent, &replySenderType, &replyContentType, &replyExtID)
+		if replyID != "" {
+			metadata["reply_to"] = map[string]interface{}{
+				"id":           replyID,
+				"content":      replyContent,
+				"sender_type":  replySenderType,
+				"content_type": replyContentType,
+			}
+		}
 	}
 
 	// 3. Salvar no PostgreSQL e emitir WebSocket
@@ -966,5 +983,273 @@ func (s *server) handleStartConversation(w http.ResponseWriter, r *http.Request)
 
 	conv.Contact = contact
 	writeJSON(w, http.StatusCreated, conv)
+}
+
+func (s *server) handleReactMessage(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("convId")
+	msgID := r.PathValue("msgId")
+	db := s.pg.DB()
+	if db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "PostgreSQL não configurado"})
+		return
+	}
+
+	var body struct {
+		Emoji string `json:"emoji"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+
+	var workspaceID, contactPhone, sessionID, externalID string
+	var metadataBytes []byte
+	err := db.QueryRow(
+		`SELECT c.workspace_id, ct.phone, COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.metadata
+		 FROM messages m
+		 JOIN conversations c ON c.id = m.conversation_id
+		 JOIN contacts ct ON ct.id = c.contact_id
+		 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
+		 WHERE m.id = $1 AND c.id = $2`,
+		msgID, convID,
+	).Scan(&workspaceID, &contactPhone, &sessionID, &externalID, &metadataBytes)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mensagem não encontrada"})
+		return
+	}
+
+	meta := map[string]interface{}{}
+	if len(metadataBytes) > 0 {
+		_ = json.Unmarshal(metadataBytes, &meta)
+	}
+
+	// Atualiza reações em meta["reactions"]
+	reactionsList := []map[string]interface{}{}
+	if rawReactions, ok := meta["reactions"].([]interface{}); ok {
+		for _, r := range rawReactions {
+			if rMap, ok := r.(map[string]interface{}); ok {
+				if rMap["sender"] != "agent" {
+					reactionsList = append(reactionsList, rMap)
+				}
+			}
+		}
+	}
+	if body.Emoji != "" {
+		reactionsList = append(reactionsList, map[string]interface{}{
+			"emoji":      body.Emoji,
+			"sender":     "agent",
+			"created_at": time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+	meta["reactions"] = reactionsList
+	newMetaJSON, _ := json.Marshal(meta)
+
+	_, err = db.Exec("UPDATE messages SET metadata = $1 WHERE id = $2", newMetaJSON, msgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Dispara reação via Whatsmeow
+	if externalID != "" && contactPhone != "" {
+		var sess *Session
+		if sessionID != "" {
+			sess, _ = s.sessions.Get(sessionID)
+		}
+		if sess == nil || sess.getClient() == nil {
+			for _, info := range s.sessions.infos() {
+				if info.WorkspaceID == workspaceID && info.State == "open" {
+					sess, _ = s.sessions.Get(info.ID)
+					break
+				}
+			}
+		}
+		if sess != nil && sess.getClient() != nil {
+			chatJID, err := resolveRecipient(contactPhone)
+			if err == nil {
+				senderJID := chatJID
+				if sess.getClient().Store.ID != nil {
+					senderJID = sess.getClient().Store.ID.ToNonAD()
+				}
+				waMsg := sess.getClient().BuildReaction(chatJID, senderJID, externalID, body.Emoji)
+				_, _ = sess.getClient().SendMessage(r.Context(), chatJID, waMsg)
+			}
+		}
+	}
+
+	// Broadcast no WebSocket
+	if s.hub != nil && workspaceID != "" {
+		event, _ := json.Marshal(map[string]interface{}{
+			"type":            "message:updated",
+			"conversation_id": convID,
+			"message_id":      msgID,
+			"metadata":        meta,
+		})
+		s.hub.Broadcast(workspaceID, event)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "metadata": meta})
+}
+
+func (s *server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("convId")
+	msgID := r.PathValue("msgId")
+	db := s.pg.DB()
+	if db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "PostgreSQL não configurado"})
+		return
+	}
+
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Content) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "conteúdo obrigatório"})
+		return
+	}
+
+	var workspaceID, contactPhone, sessionID, externalID, senderType string
+	var metadataBytes []byte
+	err := db.QueryRow(
+		`SELECT c.workspace_id, ct.phone, COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.sender_type, m.metadata
+		 FROM messages m
+		 JOIN conversations c ON c.id = m.conversation_id
+		 JOIN contacts ct ON ct.id = c.contact_id
+		 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
+		 WHERE m.id = $1 AND c.id = $2`,
+		msgID, convID,
+	).Scan(&workspaceID, &contactPhone, &sessionID, &externalID, &senderType, &metadataBytes)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mensagem não encontrada"})
+		return
+	}
+
+	meta := map[string]interface{}{}
+	if len(metadataBytes) > 0 {
+		_ = json.Unmarshal(metadataBytes, &meta)
+	}
+	meta["is_edited"] = true
+	meta["edited_at"] = time.Now().UTC().Format(time.RFC3339)
+	newMetaJSON, _ := json.Marshal(meta)
+
+	_, err = db.Exec("UPDATE messages SET content = $1, metadata = $2 WHERE id = $3", body.Content, newMetaJSON, msgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Se for enviada e tiver WhatsApp ativo, dispara BuildEdit
+	if externalID != "" && senderType == "agent" && contactPhone != "" {
+		var sess *Session
+		if sessionID != "" {
+			sess, _ = s.sessions.Get(sessionID)
+		}
+		if sess == nil || sess.getClient() == nil {
+			for _, info := range s.sessions.infos() {
+				if info.WorkspaceID == workspaceID && info.State == "open" {
+					sess, _ = s.sessions.Get(info.ID)
+					break
+				}
+			}
+		}
+		if sess != nil && sess.getClient() != nil {
+			chatJID, err := resolveRecipient(contactPhone)
+			if err == nil {
+				editMsg := sess.getClient().BuildEdit(chatJID, externalID, &waE2E.Message{Conversation: proto.String(body.Content)})
+				_, _ = sess.getClient().SendMessage(r.Context(), chatJID, editMsg)
+			}
+		}
+	}
+
+	if s.hub != nil && workspaceID != "" {
+		event, _ := json.Marshal(map[string]interface{}{
+			"type":            "message:updated",
+			"conversation_id": convID,
+			"message_id":      msgID,
+			"content":         body.Content,
+			"metadata":        meta,
+		})
+		s.hub.Broadcast(workspaceID, event)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "content": body.Content, "metadata": meta})
+}
+
+func (s *server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	convID := r.PathValue("convId")
+	msgID := r.PathValue("msgId")
+	db := s.pg.DB()
+	if db == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "PostgreSQL não configurado"})
+		return
+	}
+
+	var workspaceID, contactPhone, sessionID, externalID, senderType string
+	var metadataBytes []byte
+	err := db.QueryRow(
+		`SELECT c.workspace_id, ct.phone, COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.sender_type, m.metadata
+		 FROM messages m
+		 JOIN conversations c ON c.id = m.conversation_id
+		 JOIN contacts ct ON ct.id = c.contact_id
+		 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
+		 WHERE m.id = $1 AND c.id = $2`,
+		msgID, convID,
+	).Scan(&workspaceID, &contactPhone, &sessionID, &externalID, &senderType, &metadataBytes)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "mensagem não encontrada"})
+		return
+	}
+
+	meta := map[string]interface{}{}
+	if len(metadataBytes) > 0 {
+		_ = json.Unmarshal(metadataBytes, &meta)
+	}
+	meta["is_deleted"] = true
+	meta["deleted_at"] = time.Now().UTC().Format(time.RFC3339)
+	newMetaJSON, _ := json.Marshal(meta)
+
+	deletedText := "Esta mensagem foi apagada"
+	_, err = db.Exec("UPDATE messages SET content = $1, metadata = $2 WHERE id = $3", deletedText, newMetaJSON, msgID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Dispara Revoke no WhatsApp
+	if externalID != "" && senderType == "agent" && contactPhone != "" {
+		var sess *Session
+		if sessionID != "" {
+			sess, _ = s.sessions.Get(sessionID)
+		}
+		if sess == nil || sess.getClient() == nil {
+			for _, info := range s.sessions.infos() {
+				if info.WorkspaceID == workspaceID && info.State == "open" {
+					sess, _ = s.sessions.Get(info.ID)
+					break
+				}
+			}
+		}
+		if sess != nil && sess.getClient() != nil {
+			chatJID, err := resolveRecipient(contactPhone)
+			if err == nil {
+				senderJID := chatJID
+				if sess.getClient().Store.ID != nil {
+					senderJID = sess.getClient().Store.ID.ToNonAD()
+				}
+				revokeMsg := sess.getClient().BuildRevoke(chatJID, senderJID, externalID)
+				_, _ = sess.getClient().SendMessage(r.Context(), chatJID, revokeMsg)
+			}
+		}
+	}
+
+	if s.hub != nil && workspaceID != "" {
+		event, _ := json.Marshal(map[string]interface{}{
+			"type":            "message:updated",
+			"conversation_id": convID,
+			"message_id":      msgID,
+			"content":         deletedText,
+			"metadata":        meta,
+		})
+		s.hub.Broadcast(workspaceID, event)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "content": deletedText, "metadata": meta})
 }
 

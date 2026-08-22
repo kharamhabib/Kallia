@@ -10,6 +10,7 @@ import {
   Video,
   Lock,
   MessageSquare,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,6 +45,8 @@ export const ChatInputBar = () => {
   const sendMessage = useConversationsStore((s) => s.sendMessage);
   const isSendingMessage = useConversationsStore((s) => s.isSendingMessage);
   const sendTypingSignal = useConversationsStore((s) => s.sendTypingSignal);
+  const replyingToMessage = useConversationsStore((s) => s.replyingToMessage);
+  const setReplyingToMessage = useConversationsStore((s) => s.setReplyingToMessage);
 
   const [text, setText] = useState("");
   const [isNoteMode, setIsNoteMode] = useState(false);
@@ -96,6 +99,8 @@ export const ChatInputBar = () => {
   const handleSend = async () => {
     if (!activeConversation) return;
 
+    const replyToId = replyingToMessage?.id;
+
     if (selectedFile) {
       await sendMessage({
         content: text.trim(),
@@ -103,6 +108,7 @@ export const ChatInputBar = () => {
         base64: selectedFile.base64,
         file_name: selectedFile.file.name,
         mimetype: selectedFile.file.type,
+        reply_to_id: replyToId,
       });
       setSelectedFile(null);
       setText("");
@@ -116,6 +122,7 @@ export const ChatInputBar = () => {
     await sendMessage({
       content,
       content_type: isNoteMode ? "note" : "text",
+      reply_to_id: replyToId,
     });
   };
 
@@ -259,6 +266,39 @@ export const ChatInputBar = () => {
         className="hidden"
         onChange={handleFileSelected}
       />
+
+      {/* Prévia de Citação / Resposta (Reply) */}
+      {replyingToMessage && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/10 px-3 py-2 text-xs transition-all animate-in fade-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <div className="h-8 w-1 shrink-0 rounded-full bg-primary" />
+            <div className="overflow-hidden">
+              <span className="font-bold text-primary block truncate text-[11px]">
+                {replyingToMessage.sender_type === "contact"
+                  ? activeConversation?.contact?.name || "Contato"
+                  : "Você"}
+              </span>
+              <span className="text-muted-foreground truncate block text-[11px]">
+                {replyingToMessage.content_type === "image" && "📷 Foto "}
+                {replyingToMessage.content_type === "audio" && "🎵 Áudio "}
+                {replyingToMessage.content_type === "video" && "🎥 Vídeo "}
+                {replyingToMessage.content_type === "document" && "📄 Documento "}
+                {replyingToMessage.content || "(Anexo de mídia)"}
+              </span>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setReplyingToMessage(null)}
+            className="h-6 w-6 shrink-0 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
+            title="Cancelar resposta"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
 
       {/* Alternador de Modo (Mensagem Externa vs Nota Interna) */}
       <div className="mb-2 flex items-center justify-between">
