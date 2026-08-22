@@ -137,6 +137,17 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/workspaces/{wid}/agents", s.handleCreateWorkspaceAgent)
 	mux.HandleFunc("PUT /api/workspaces/{wid}/agents/{agentId}", s.handleUpdateAgent)
 	mux.HandleFunc("DELETE /api/workspaces/{wid}/agents/{agentId}", s.handleDeleteAgent)
+	mux.HandleFunc("GET /api/workspaces/{wid}/ai-config", s.handleGetWorkspaceAIConfig)
+	mux.HandleFunc("POST /api/workspaces/{wid}/ai-config", s.handleSetWorkspaceAIConfig)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/ai-config", s.handleSetWorkspaceAIConfig)
+	mux.HandleFunc("GET /api/workspaces/{wid}/contacts", s.handleListWorkspaceCRMContacts)
+	mux.HandleFunc("POST /api/workspaces/{wid}/contacts", s.handleCreateWorkspaceCRMContact)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/contacts/{id}", s.handleUpdateWorkspaceCRMContact)
+	mux.HandleFunc("DELETE /api/workspaces/{wid}/contacts/{id}", s.handleDeleteWorkspaceCRMContact)
+	mux.HandleFunc("GET /api/workspaces/{wid}/history", s.handleWorkspaceHistory)
+	mux.HandleFunc("GET /api/workspaces/{wid}/ai-providers", s.handleListAIProviders)
+	mux.HandleFunc("PUT /api/workspaces/{wid}/ai-providers/{provider}", s.handleUpdateAIProvider)
+	mux.HandleFunc("POST /api/workspaces/{wid}/ai-providers/{provider}", s.handleUpdateAIProvider)
 
 	// Rotas de Autenticação do Usuário
 	mux.HandleFunc("GET /api/auth/me", s.handleMe)
@@ -841,6 +852,84 @@ func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"rows": rows})
 }
 
+func (s *server) handleWorkspaceHistory(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+
+	limit := 50
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
+	rawRows, err := pbClient.ListCallHistoryPB(r.Context(), wid, "", limit)
+	if err != nil || len(rawRows) == 0 {
+		// Fallback para broker local
+		var localRows []CallRecord
+		if s.sessions != nil {
+			for _, sess := range s.sessions.list() {
+				if sess.getWorkspaceID() == wid {
+					localRows = append(localRows, s.broker.historyRows(sess.id, limit)...)
+				}
+			}
+		}
+		rawRows = localRows
+	}
+
+	type ExtendedRow struct {
+		CallID       string `json:"callId"`
+		Peer         string `json:"peer"`
+		Phone        string `json:"phone"`
+		Name         string `json:"name,omitempty"`
+		Direction    string `json:"direction"`
+		StartedAt    int64  `json:"startedAt"`
+		EndedAt      *int64 `json:"endedAt,omitempty"`
+		EndReason    string `json:"endReason,omitempty"`
+		Summary      string `json:"summary,omitempty"`
+		TicketOpened bool   `json:"ticketOpened,omitempty"`
+		TicketReason string `json:"ticketReason,omitempty"`
+		RecordingURL string `json:"recordingUrl,omitempty"`
+	}
+
+	rows := make([]ExtendedRow, 0, len(rawRows))
+	for _, row := range rawRows {
+		phone := normalizePhone(row.Peer)
+		name := phone
+		// Tentar resolver nome no PocketBase contatos
+		if pbContact, _ := pbClient.GetContactByPhonePB(r.Context(), wid, phone); pbContact != nil && pbContact.Name != "" {
+			name = pbContact.Name
+		}
+
+		recURL := row.RecordingURL
+		if recURL == "" {
+			if path := findRecordingPath(row.CallID); path != "" {
+				recURL = fmt.Sprintf("/api/sessions/%s/recordings/%s", row.SessionID, row.CallID)
+			}
+		}
+
+		rows = append(rows, ExtendedRow{
+			CallID:       row.CallID,
+			Peer:         row.Peer,
+			Phone:        phone,
+			Name:         name,
+			Direction:    row.Direction,
+			StartedAt:    row.StartedAt,
+			EndedAt:      row.EndedAt,
+			EndReason:    row.EndReason,
+			Summary:      row.Summary,
+			TicketOpened: row.TicketOpened,
+			TicketReason: row.TicketReason,
+			RecordingURL: recURL,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"rows": rows})
+}
+
 func (s *server) handleDeleteHistoryCall(w http.ResponseWriter, r *http.Request) {
 	if !s.checkWritePermission(w, r) {
 		return
@@ -1476,6 +1565,126 @@ func (s *server) handleDeleteCRMContact(w http.ResponseWriter, r *http.Request) 
 	if err := s.sessions.store.deleteContact(r.Context(), sess.id, id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *server) handleListWorkspaceCRMContacts(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+	q := r.URL.Query().Get("q")
+
+	// 1. Tentar buscar diretamente do PocketBase
+	pbContacts, err := pbClient.ListContactsPB(r.Context(), wid, q)
+	if err == nil && len(pbContacts) > 0 {
+		writeJSON(w, http.StatusOK, pbContacts)
+		return
+	}
+
+	// 2. Fallback para cache local no SQLite
+	if s.sessions != nil && s.sessions.store != nil {
+		contacts, err := s.sessions.store.listContacts(r.Context(), wid, q)
+		if err == nil {
+			writeJSON(w, http.StatusOK, contacts)
+			return
+		}
+	}
+
+	if pbContacts == nil {
+		pbContacts = []ContactRecord{}
+	}
+	writeJSON(w, http.StatusOK, pbContacts)
+}
+
+func (s *server) handleCreateWorkspaceCRMContact(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+
+	var req ContactRecord
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.SessionID = wid
+	_ = pbClient.UpsertContactPB(r.Context(), wid, wid, req)
+	var res *ContactRecord
+	var err error
+	if s.sessions != nil && s.sessions.store != nil {
+		res, err = s.sessions.store.upsertContact(r.Context(), req)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if res == nil {
+		res = &req
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *server) handleUpdateWorkspaceCRMContact(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var req ContactRecord
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.ID = id
+	req.SessionID = wid
+	_ = pbClient.UpsertContactPB(r.Context(), wid, wid, req)
+	var res *ContactRecord
+	if s.sessions != nil && s.sessions.store != nil {
+		res, err = s.sessions.store.updateContactManual(r.Context(), req)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if res == nil {
+		res = &req
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *server) handleDeleteWorkspaceCRMContact(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if s.sessions != nil && s.sessions.store != nil {
+		_ = s.sessions.store.deleteContact(r.Context(), wid, id)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

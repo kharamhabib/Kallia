@@ -21,7 +21,7 @@ import { SchedulesTab } from "@/components/domain/schedule/SchedulesTab";
 import { WebphoneDrawer } from "@/components/domain/call/WebphoneDrawer";
 import { IncomingCallModal } from "@/components/domain/call/IncomingCallModal";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { ensureSessionsWired, useSessions } from "@/stores/sessions";
+import { ensureSessionsWired, refreshSessions, useSessions } from "@/stores/sessions";
 import { ensureCallsWired } from "@/stores/calls";
 import { useNavigation } from "@/stores/navigation";
 import { useTheme } from "@/stores/theme";
@@ -59,7 +59,15 @@ export const App = () => {
     ensureCallsWired();
   }, []);
 
+  useEffect(() => {
+    if (currentWorkspace?.id) {
+      void refreshSessions(currentWorkspace.id);
+    }
+  }, [currentWorkspace?.id]);
+
   const active = sessions.find((s) => s.id === activeId) ?? null;
+  const sid = active?.id || "";
+  const wid = currentWorkspace?.id;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -68,7 +76,29 @@ export const App = () => {
           <ConnectionsPage />
         ) : activeSection === "profile" ? (
           <ProfilePage />
-        ) : sessions.length === 0 ? (
+        ) : activeSection === "agents" ? (
+          <AgentsPage sid={sid} wid={wid} />
+        ) : activeSection === "contacts" ? (
+          <ContactsPage sid={sid} wid={wid} />
+        ) : activeSection === "calls" ? (
+          <CallsPage sid={sid} wid={wid} />
+        ) : activeSection === "chat_history" ? (
+          <CallsPage sid={sid} wid={wid} />
+        ) : activeSection === "billing" ? (
+          <BillingPage sid={sid} />
+        ) : activeSection === "knowledge" ? (
+          <KnowledgeBasePage sid={sid} />
+        ) : activeSection === "settings" ? (
+          <SettingsTab sid={sid} />
+        ) : activeSection === "schedules" ? (
+          <SchedulesTab sid={sid} />
+        ) : activeSection === "integrations" ? (
+          <IntegrationsTab sid={sid} />
+        ) : activeSection === "nps_qa" ? (
+          <NPSQualityPage sid={sid} />
+        ) : activeSection === "analytics" || activeSection === "dashboard" ? (
+          <DashboardPage sid={sid} />
+        ) : !active ? (
           <EmptyState
             icon={<PlusCircle className="h-6 w-6" />}
             title="Nenhuma conta conectada"
@@ -83,25 +113,11 @@ export const App = () => {
               </Button>
             }
           />
-        ) : active ? (
-          <>
-            {activeSection === "dashboard" && <DashboardPage sid={active.id} />}
-            {activeSection === "webphone" && <WebphonePage sid={active.id} />}
-            {activeSection === "calls" && <CallsPage sid={active.id} />}
-            {activeSection === "schedules" && <SchedulesTab sid={active.id} />}
-            {activeSection === "agents" && <AgentsPage sid={active.id} wid={currentWorkspace?.id} />}
-            {activeSection === "settings" && <SettingsTab sid={active.id} />}
-            {activeSection === "knowledge" && <KnowledgeBasePage sid={active.id} />}
-            {activeSection === "chat_history" && <CallsPage sid={active.id} />}
-            {activeSection === "contacts" && <ContactsPage sid={active.id} />}
-            {activeSection === "analytics" && <DashboardPage sid={active.id} />}
-            {activeSection === "live_monitoring" && <LiveMonitoringPage sid={active.id} />}
-            {activeSection === "nps_qa" && <NPSQualityPage sid={active.id} />}
-            {activeSection === "integrations" && <IntegrationsTab sid={active.id} />}
-            {activeSection === "billing" && <BillingPage sid={active.id} />}
-          </>
         ) : (
-          <EmptyState title="Selecione uma conta" description="Escolha uma conta no menu superior ou lateral." />
+          <>
+            {activeSection === "webphone" && <WebphonePage sid={active.id} />}
+            {activeSection === "live_monitoring" && <LiveMonitoringPage sid={active.id} />}
+          </>
         )}
       </AppShell>
       <WebphoneDrawer />

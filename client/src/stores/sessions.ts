@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { eventStream, type BrokerEvent } from "@/lib/event-stream";
 import { getClientId } from "@/lib/client-id";
 import { listSessions } from "@/services/sessions";
+import { useWorkspaceStore } from "@/stores/workspace";
 import type { SessionInfo } from "@/types/session";
 
 type State = {
@@ -19,9 +20,10 @@ const pickActive = (sessions: SessionInfo[], current: string | null): string | n
   return sessions[0]?.id ?? null;
 };
 
-export const refreshSessions = async (): Promise<SessionInfo[]> => {
+export const refreshSessions = async (workspaceId?: string): Promise<SessionInfo[]> => {
   try {
-    const sessions = await listSessions();
+    const wid = workspaceId !== undefined ? workspaceId : useWorkspaceStore.getState().currentWorkspace?.id;
+    const sessions = await listSessions(wid);
     useSessions.setState((s) => ({
       sessions,
       activeId: pickActive(sessions, s.activeId),
@@ -42,7 +44,8 @@ export const ensureSessionsWired = (): void => {
 
   eventStream.on((ev: BrokerEvent) => {
     if (ev.type === "session-list") {
-      void listSessions().then((sessions) => {
+      const wid = useWorkspaceStore.getState().currentWorkspace?.id;
+      void listSessions(wid).then((sessions) => {
         useSessions.setState((s) => {
           const ids = new Set(sessions.map((x) => x.id));
           const qrs: Record<string, string> = {};

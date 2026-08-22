@@ -2,13 +2,16 @@ import { useState } from "react";
 import { History } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { useHistory } from "@/hooks/useHistory";
+import { useWorkspaceStore } from "@/stores/workspace";
 import { HistoryItem } from "@/components/domain/history/HistoryDrawer";
 import { HistoryTable } from "@/components/domain/history/HistoryTable";
 import { cn } from "@/lib/utils";
 
-export const CallsPage = ({ sid }: { sid: string }) => {
+export const CallsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }) => {
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wid = propWid || currentWorkspace?.id;
   const [viewMode, setViewMode] = useState<"table" | "grid">("table");
-  const { data: historyRows = [] } = useHistory(sid, true);
+  const { data: historyRows = [] } = useHistory(sid || null, true, wid);
 
   return (
     <div className="space-y-5 w-full max-w-[1600px] mx-auto px-2 sm:px-6 py-3 animate-fade-in">
@@ -60,11 +63,11 @@ export const CallsPage = ({ sid }: { sid: string }) => {
           description="As ligações concluídas ou gravadas aparecerão aqui automaticamente."
         />
       ) : viewMode === "table" ? (
-        <HistoryTable sid={sid} rows={historyRows} />
+        <HistoryTable sid={sid || ""} rows={historyRows} />
       ) : (
         <ul className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {historyRows.map((r) => (
-            <HistoryItem key={r.callId} sid={sid} row={r} />
+            <HistoryItem key={r.callId} sid={sid || ""} row={r} />
           ))}
         </ul>
       )}

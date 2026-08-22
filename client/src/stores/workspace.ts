@@ -100,16 +100,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
 
       setCurrentWorkspace: (workspace) => {
+        let selected: Workspace | null = null;
         if (typeof workspace === "string") {
           const found = get().workspaces.find((w: Workspace) => w.id === workspace);
           if (found) {
-            set({ currentWorkspace: found });
+            selected = found;
           } else {
-            set({ currentWorkspace: { id: workspace, name: workspace, plan: "trial", plan_status: "active" } });
+            selected = { id: workspace, name: workspace, plan: "trial", plan_status: "active" };
           }
         } else {
-          set({ currentWorkspace: workspace });
+          selected = workspace;
         }
+        set({ currentWorkspace: selected });
       },
 
       createWorkspace: async (name: string, plan = "trial") => {

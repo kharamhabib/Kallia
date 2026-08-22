@@ -180,7 +180,7 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
     try {
       const [resAgents, resConfig, resProviders] = await Promise.all([
         listAgents(sid, wid).catch(() => []),
-        sid ? getAIConfig(sid).catch(() => null) : null,
+        getAIConfig(sid, wid).catch(() => null),
         getAIProviders().catch(() => ({ providers: [] })),
       ]);
       const providersList = resProviders.providers || [];
@@ -229,7 +229,7 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
     } finally {
       setLoading(false);
     }
-  }, [sid]);
+  }, [sid, wid]);
 
   useEffect(() => {
     loadData();
@@ -260,13 +260,13 @@ export const AgentsPage = ({ sid, wid: propWid }: { sid?: string; wid?: string }
   // Salva Agente Principal
   const handleSaveMaster = async () => {
     if (!aiConfig) return;
-    if (!sid) {
-      toast.error("Nenhuma conexão de WhatsApp ativa selecionada.");
+    if (!sid && !wid) {
+      toast.error("Nenhum workspace selecionado.");
       return;
     }
     setSaveBusy(true);
     try {
-      await setAIConfig(sid, aiConfig);
+      await setAIConfig(sid, aiConfig, wid);
       toast.success("Configurações do Agente Principal salvas!");
       await loadData();
       useAIAgents.getState().setActiveSessionConfig(aiConfig);

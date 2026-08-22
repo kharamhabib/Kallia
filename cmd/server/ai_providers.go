@@ -66,12 +66,18 @@ var SupportedAIProviders = map[string]struct {
 }
 
 func (s *server) handleListAIProviders(w http.ResponseWriter, r *http.Request) {
-	projectID := projectIDFromContext(r.Context())
+	projectID := r.PathValue("wid")
+	if projectID == "" {
+		projectID = r.URL.Query().Get("workspace_id")
+	}
+	if projectID == "" {
+		projectID = projectIDFromContext(r.Context())
+	}
 	if projectID == "" {
 		projectID = "default"
 	}
 
-	rows, err := pbClient.ListAIProvidersPB(r.Context())
+	rows, err := pbClient.ListAIProvidersPB(r.Context(), projectID)
 	if err != nil || len(rows) == 0 {
 		rows, _ = s.sessions.store.listAIProviders(r.Context(), projectID)
 	}
@@ -132,7 +138,13 @@ func (s *server) handleUpdateAIProvider(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	projectID := projectIDFromContext(r.Context())
+	projectID := r.PathValue("wid")
+	if projectID == "" {
+		projectID = r.URL.Query().Get("workspace_id")
+	}
+	if projectID == "" {
+		projectID = projectIDFromContext(r.Context())
+	}
 	if projectID == "" {
 		projectID = "default"
 	}
@@ -217,10 +229,10 @@ func resolveAIProviderKey(ctx context.Context, store *sessionStore, projectID, p
 	}
 
 	// 1. Tentar buscar no PocketBase (SSOT)
-	if pbRows, err := pbClient.ListAIProvidersPB(ctx); err == nil {
+	if pbRows, err := pbClient.ListAIProvidersPB(ctx, projectID); err == nil {
 		for _, r := range pbRows {
 			if r.Provider == provider && r.EncryptedAPIKey != "" {
-				if r.ProjectID == projectID || r.ProjectID == "default" || projectID == "default" || r.ProjectID == "" {
+				if r.ProjectID == projectID || (projectID != "default" && r.ProjectID == "default") {
 					key, _ := decryptSecret(r.EncryptedAPIKey)
 					if key != "" {
 						return key

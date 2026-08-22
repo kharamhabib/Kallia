@@ -48,8 +48,11 @@ import { formatPhoneNumber, getInitials, formatEndReason } from "@/utils/format"
 import type { Contact, UpsertContactPayload } from "@/types/contact";
 import { ConfirmModal } from "@/components/shared/ConfirmModal";
 
+import { useWorkspaceStore } from "@/stores/workspace";
+
 interface ContactsPageProps {
   sid?: string | null;
+  wid?: string;
 }
 
 const parseTags = (rawTags?: string | string[]): string[] => {
@@ -82,7 +85,10 @@ const parseTags = (rawTags?: string | string[]): string[] => {
     .filter((t) => t.length > 0 && t !== "[]" && t !== `""` && t !== `''`);
 };
 
-export const ContactsPage = ({ sid }: ContactsPageProps) => {
+export const ContactsPage = ({ sid, wid: propWid }: ContactsPageProps) => {
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wid = propWid || currentWorkspace?.id;
+
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -100,12 +106,12 @@ export const ContactsPage = ({ sid }: ContactsPageProps) => {
   }, [search]);
 
   // Queries & Mutations
-  const { data: rawContacts, isLoading } = useContacts(sid, debouncedSearch);
+  const { data: rawContacts, isLoading } = useContacts(sid, debouncedSearch, wid);
   const contacts = useMemo(() => (Array.isArray(rawContacts) ? rawContacts : []), [rawContacts]);
-  const { data: rawHistory } = useHistory(sid || "", !!sid);
+  const { data: rawHistory } = useHistory(sid || "", !!sid, wid);
   const history = useMemo(() => (Array.isArray(rawHistory) ? rawHistory : []), [rawHistory]);
-  const saveMutation = useSaveContact(sid || "");
-  const deleteMutation = useDeleteContact(sid || "");
+  const saveMutation = useSaveContact(sid || "", wid);
+  const deleteMutation = useDeleteContact(sid || "", wid);
 
   // Form State
   const [formData, setFormData] = useState<UpsertContactPayload>({

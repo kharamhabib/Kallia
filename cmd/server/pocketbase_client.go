@@ -1685,8 +1685,14 @@ func (c *PocketBaseClient) GetCallTranscriptPB(ctx context.Context, callID strin
 
 // --- PROVEDORES DE IA (AI_PROVIDERS) ---
 
-func (c *PocketBaseClient) ListAIProvidersPB(ctx context.Context) ([]aiProviderRow, error) {
-	resp, err := c.doAdminRequest(ctx, "GET", "/api/collections/ai_providers/records?perPage=200", nil)
+func (c *PocketBaseClient) ListAIProvidersPB(ctx context.Context, workspaceID string) ([]aiProviderRow, error) {
+	reqPath := "/api/collections/ai_providers/records?perPage=200"
+	if workspaceID != "" && workspaceID != "all" {
+		filter := fmt.Sprintf(`workspace_id="%s"`, workspaceID)
+		reqPath = fmt.Sprintf("/api/collections/ai_providers/records?filter=(%s)&perPage=200", url.QueryEscape(filter))
+	}
+
+	resp, err := c.doAdminRequest(ctx, "GET", reqPath, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1746,43 +1752,48 @@ func (c *PocketBaseClient) UpsertAIProviderPB(ctx context.Context, r aiProviderR
 		"options_json":      optObj,
 	}
 
-	// 1. Tentar localizar por filter se já existe
 	filter := fmt.Sprintf(`workspace_id="%s" && provider="%s"`, r.ProjectID, r.Provider)
 	searchURL := fmt.Sprintf("/api/collections/ai_providers/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
 	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
 	if err == nil && resp != nil {
 		defer resp.Body.Close()
-		var res PBListResponse[struct {
-			ID string `json:"id"`
-		}]
-		if json.NewDecoder(resp.Body).Decode(&res) == nil && len(res.Items) > 0 {
-			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/ai_providers/records/"+res.Items[0].ID, data)
-			if patchErr == nil {
-				defer patchResp.Body.Close()
-				return nil
+		if resp.StatusCode == http.StatusOK {
+			var pbRes PBListResponse[struct {
+				ID string `json:"id"`
+			}]
+			if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
+				patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/ai_providers/records/"+pbRes.Items[0].ID, data)
+				if patchErr == nil && patchResp != nil {
+					defer patchResp.Body.Close()
+					return nil
+				}
 			}
 		}
 	}
 
 	// 2. Se não encontrou, faz POST
 	createResp, createErr := c.doAdminRequest(ctx, "POST", "/api/collections/ai_providers/records", data)
-	if createErr == nil && createResp != nil {
-		defer createResp.Body.Close()
+	if createErr != nil {
+		return createErr
 	}
-	return createErr
+	defer createResp.Body.Close()
+	return nil
 }
 
 // --- CONTATOS DO CRM ---
 
 func (c *PocketBaseClient) ListContactsPB(ctx context.Context, targetID, q string) ([]ContactRecord, error) {
-	reqPath := "/api/collections/contacts/records?perPage=500&sort=-created"
-	if targetID != "" && q != "" {
-		filter := fmt.Sprintf(`(workspace_id="%s" || session_id="%s") && (name ~ "%s" || phone ~ "%s" || email ~ "%s" || company ~ "%s")`, targetID, targetID, q, q, q, q)
-		reqPath = fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=500&sort=-created", url.QueryEscape(filter))
-	} else if targetID != "" {
-		filter := fmt.Sprintf(`workspace_id="%s" || session_id="%s"`, targetID, targetID)
-		reqPath = fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=500&sort=-created", url.QueryEscape(filter))
+	if targetID == "" {
+		return []ContactRecord{}, nil
 	}
+
+	var filter string
+	if q != "" {
+		filter = fmt.Sprintf(`(workspace_id="%s" || session_id="%s") && (name ~ "%s" || phone ~ "%s" || email ~ "%s" || company ~ "%s")`, targetID, targetID, q, q, q, q)
+	} else {
+		filter = fmt.Sprintf(`workspace_id="%s" || session_id="%s"`, targetID, targetID)
+	}
+	reqPath := fmt.Sprintf("/api/collections/contacts/records?filter=(%s)&perPage=500&sort=-created", url.QueryEscape(filter))
 
 	resp, err := c.doAdminRequest(ctx, "GET", reqPath, nil)
 	if err != nil {

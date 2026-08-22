@@ -98,15 +98,20 @@ func (m *SessionManager) Get(id string) (*Session, bool) {
 	return s, ok
 }
 
-func (m *SessionManager) infos() []SessionInfo {
+func (m *SessionManager) list() []*Session {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
 	ordered := make([]*Session, 0, len(m.order))
 	for _, id := range m.order {
 		if s, ok := m.sessions[id]; ok {
 			ordered = append(ordered, s)
 		}
 	}
-	m.mu.RUnlock()
+	return ordered
+}
+
+func (m *SessionManager) infos() []SessionInfo {
+	ordered := m.list()
 	out := make([]SessionInfo, 0, len(ordered))
 	for _, s := range ordered {
 		out = append(out, s.info())

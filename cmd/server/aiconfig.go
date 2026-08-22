@@ -91,6 +91,27 @@ type AIConfig struct {
 	GrokOutputSpeed          float64              `json:"grokOutputSpeed"`     // 0.7–1.5, padrão 1.0
 }
 
+func defaultAIConfig() AIConfig {
+	return AIConfig{
+		Provider:            "gemini",
+		ModelName:           "gemini-3.1-flash-live-preview",
+		VoiceName:           "Puck",
+		LanguageCode:        "pt-BR",
+		SystemInstruction:   "Você é um assistente virtual de voz prestativo e educado.",
+		AutoAnswer:          false,
+		AutoAnswerDelay:     0,
+		Temperature:         1.0,
+		MaxDurationMin:      15,
+		TranscribeAudio:     true,
+		PredefinedTools:     []string{"hangup", "open_ticket", "send_message", "schedule_call"},
+		ToolPrompts:         DefaultToolPrompts,
+		EnableGrokWebSearch: true,
+		EnableGrokXSearch:   true,
+		GrokReasoningEffort: "high",
+		GrokOutputSpeed:     1.0,
+	}
+}
+
 func (s *server) handleSetAIConfig(w http.ResponseWriter, r *http.Request) {
 	sess := s.sessionByID(w, r.PathValue("sid"))
 	if sess == nil {
@@ -138,6 +159,122 @@ func (s *server) handleSetAIConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"aiConfig": cfg})
 }
 
+func (s *server) handleGetWorkspaceAIConfig(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+
+	var cfg AIConfig
+	var found bool
+
+	// 1. Tentar buscar da coleção agents no PocketBase (Agente Principal do Workspace)
+	pbAgents, err := pbClient.ListAgentsPB(r.Context(), wid)
+	if err == nil && len(pbAgents) > 0 {
+		for _, ag := range pbAgents {
+			if ag.Inbound || strings.ToLower(strings.TrimSpace(ag.Name)) == "agente principal" {
+				if err := json.Unmarshal([]byte(ag.AIConfig), &cfg); err == nil {
+					found = true
+					break
+				}
+			}
+		}
+	}
+
+	// 2. Se não encontrou no PocketBase, procurar em qualquer sessão ativa do workspace
+	if !found {
+		if s.sessions != nil {
+			for _, sess := range s.sessions.list() {
+				if sess.getWorkspaceID() == wid {
+					cfg = sess.getAIConfig()
+					if cfg.SystemInstruction != "" {
+						found = true
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Fallback para default
+	if !found || cfg.SystemInstruction == "" {
+		cfg = defaultAIConfig()
+	}
+
+	prov := cfg.Provider
+	if prov == "" {
+		prov = "gemini"
+	}
+
+	// Resolve se há chave configurada no PocketBase, SQLite ou .env para o workspace e provedor selecionado
+	key := resolveAIProviderKey(r.Context(), s.sessions.store, wid, prov)
+	if key == "" {
+		key = resolveAIProviderKey(r.Context(), s.sessions.store, wid, "gemini")
+	}
+	if key == "" && cfg.GeminiAPIKey != "" && !strings.Contains(cfg.GeminiAPIKey, "•") {
+		key = cfg.GeminiAPIKey
+	}
+
+	hasKey := key != ""
+	if hasKey {
+		if len(key) > 6 {
+			cfg.GeminiAPIKey = key[:3] + "•••••" + key[len(key)-3:]
+		} else {
+			cfg.GeminiAPIKey = "•••••"
+		}
+	} else {
+		cfg.GeminiAPIKey = ""
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"aiConfig":    cfg,
+		"enabled":     hasKey,
+		"geminiProxy": true,
+	})
+}
+
+func (s *server) handleSetWorkspaceAIConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.checkWritePermission(w, r) {
+		return
+	}
+	wid := r.PathValue("wid")
+	if wid == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wid é obrigatório"})
+		return
+	}
+
+	var cfg AIConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
+		return
+	}
+
+	// Sanitiza para armazenamento (chaves de API residem exclusivamente em ai_providers criptografadas)
+	cfgToStore := cfg
+	cfgToStore.GeminiAPIKey = ""
+	b, _ := json.Marshal(cfgToStore)
+
+	// Persistir no PocketBase (Agente Principal do Workspace)
+	_ = pbClient.UpsertMasterAgentPB(r.Context(), wid, "Agente Principal", "Agente de Atendimento Principal", string(b), true, true)
+
+	// Atualiza em memória e SQLite para todas as sessões ativas deste workspace
+	if s.sessions != nil {
+		for _, sess := range s.sessions.list() {
+			if sess.getWorkspaceID() == wid {
+				sess.setAIConfig(cfg)
+				_ = pbClient.UpdateSessionAIConfigPB(r.Context(), sess.id, string(b))
+				_ = sess.mgr.store.setAIConfig(r.Context(), sess.id, string(b))
+				if sess.mgr.Scheduler != nil {
+					sess.mgr.Scheduler.RecalculateActiveCount()
+				}
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"aiConfig": cfg})
+}
+
 func (s *server) handleGetAIConfig(w http.ResponseWriter, r *http.Request) {
 	sess := s.sessionByID(w, r.PathValue("sid"))
 	if sess == nil {
@@ -151,9 +288,9 @@ func (s *server) handleGetAIConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve se há chave configurada no PocketBase, SQLite ou .env para o provedor selecionado
-	key := resolveAIProviderKey(r.Context(), s.sessions.store, sess.projectID, prov)
+	key := resolveAIProviderKey(r.Context(), s.sessions.store, sess.getWorkspaceID(), prov)
 	if key == "" {
-		key = resolveAIProviderKey(r.Context(), s.sessions.store, sess.projectID, "gemini")
+		key = resolveAIProviderKey(r.Context(), s.sessions.store, sess.getWorkspaceID(), "gemini")
 	}
 	if key == "" && cfg.GeminiAPIKey != "" && !strings.Contains(cfg.GeminiAPIKey, "•") {
 		key = cfg.GeminiAPIKey
