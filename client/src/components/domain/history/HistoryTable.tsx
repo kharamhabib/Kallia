@@ -2,6 +2,9 @@ import { useState } from "react";
 import {
   PhoneIncoming,
   PhoneOutgoing,
+  PhoneOff,
+  PhoneMissed,
+  Smartphone,
   FileText,
   Sparkles,
   Trash2,
@@ -29,6 +32,61 @@ interface HistoryTableProps {
   sid: string;
   rows: HistoryRow[];
 }
+
+const EndReasonBadge = ({
+  label,
+  statusType,
+}: {
+  label: string;
+  statusType: string;
+}) => {
+  if (label.includes("IA")) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 border border-purple-500/25 px-2 py-0.5 text-[10px] font-semibold text-purple-600 dark:text-purple-400">
+        <Sparkles className="h-3 w-3 shrink-0 text-purple-500" />
+        {label}
+      </span>
+    );
+  }
+  if (statusType === "rejected" || label.toLowerCase().includes("recusada")) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 border border-red-500/25 px-2 py-0.5 text-[10px] font-semibold text-red-600 dark:text-red-400">
+        <PhoneOff className="h-3 w-3 shrink-0 text-red-500" />
+        {label}
+      </span>
+    );
+  }
+  if (
+    statusType === "missed" ||
+    label.includes("Não atendeu") ||
+    label.includes("Cancelada") ||
+    label.includes("limite") ||
+    label.includes("ocupada")
+  ) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+        <PhoneMissed className="h-3 w-3 shrink-0 text-amber-500" />
+        {label}
+      </span>
+    );
+  }
+  if (statusType === "accepted_elsewhere" || label.includes("outro aparelho")) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/10 border border-blue-500/25 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+        <Smartphone className="h-3 w-3 shrink-0 text-blue-500" />
+        {label}
+      </span>
+    );
+  }
+
+  // Padrão: Desligado pelo cliente, Desligado pelo operador, Concluída normalmente
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/80 border border-border px-2 py-0.5 text-[10px] font-medium text-foreground">
+      <PhoneOff className="h-3 w-3 shrink-0 text-muted-foreground" />
+      {label}
+    </span>
+  );
+};
 
 const HistoryTableRow = ({
   sid,
@@ -105,10 +163,7 @@ const HistoryTableRow = ({
 
       {/* MOTIVO TÉRMINO */}
       <td className="py-3 px-4 whitespace-nowrap">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-400 shrink-0" />
-          {statusDetails.badgeText}
-        </span>
+        <EndReasonBadge label={statusDetails.badgeText} statusType={statusDetails.statusType} />
       </td>
 
       {/* STATUS */}

@@ -87,6 +87,27 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Correção do Cabeçalho e Reprodução de Áudio WAV**: Corrigido bug crítico em [`recorder.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/recorder.go) onde a gravação inicial escrevia o cabeçalho WAV de 44 bytes via `WriteAt` sem reposicionar o cursor de escrita do arquivo (`f.Seek(44, io.SeekStart)`), fazendo com que os primeiros bytes de áudio PCM sobrescrevessem o cabeçalho WAV corrompendo a reprodução nos players HTML5.
   - **Transcript no Ciclo de Vida do CallRecord**: Adicionado o campo `Transcript []TranscriptLine` ao `CallRecord` em [`broker.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/broker.go) e implementado `Broker.saveTranscript` integrado a `HistoryPersister.SaveTranscript` e `SaveCall`, garantindo que o diálogo completo seja propagado ao PocketBase e SQLite sem risco de sobrescrita concorrente por chamadas assíncronas de encerramento.
   - **Eliminação de Despedida Repetida**: Refinado o prompt de instrução de encerramento em [`ai_agent.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/ai_agent.go), [`aiconfig.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/aiconfig.go), [`gemini_live.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/gemini_live.go) e [`grok_live.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/grok_live.go) instruindo o modelo a emitir uma única despedida natural e acionar a tool `hangup` simultaneamente no mesmo turno, impedindo a fala dupla consecutiva observada nos logs.
+- [x] **Reorganização e Padronização de Nomenclatura da Sidebar (22/08/2026)**:
+  - **Ajustes de Nomes nos Menus**:
+    - *"Conversas (Chat)"* ➔ **"Conversas"**
+    - *"Webphone & Ligações"* ➔ **"Ligações"**
+    - *"Conexões do Workspace"* ➔ **"Conexões"** (movido para o grupo superior **CONSTRUÇÃO**)
+    - *"Disparos & Agenda"* ➔ **"Ligações Agendadas"**
+    - *"Histórico de Chat"* ➔ **"Chamados em Aberto"**
+  - **Sincronização do AppShell**: Títulos de cabeçalho sincronizados em [`AppShell.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/layout/AppShell.tsx) e [`Sidebar.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/layout/Sidebar.tsx).
+- [x] **Padronização Visual das Tags de Motivo de Término no Histórico de Chamadas (22/08/2026)**:
+  - **Design System Harmonizado**: A coluna *Motivo Término* em [`HistoryTable.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/history/HistoryTable.tsx) agora utiliza tags no padrão pílula (`rounded-full`, borda sutil, ícone contextual e tipografia de 10px), combinando perfeitamente com os badges de *Tipo* e *Status*.
+  - **Ícones e Cores Contextuais por Motivo**:
+    - 🤖 **Finalizado pela IA**: Roxo suave com ícone `Sparkles` (`bg-purple-500/10 text-purple-600 border-purple-500/25`).
+    - 📵 **Desligado pelo cliente / operador / Concluída**: Cinza elegante com ícone `PhoneOff` (`bg-muted/80 text-foreground border-border`).
+    - 🚫 **Recusada**: Vermelho com ícone `PhoneOff` (`bg-red-500/10 text-red-600 border-red-500/25`).
+    - ⏳ **Não atendida / Ocupada / Limite / Cancelada**: Âmbar com ícone `PhoneMissed` (`bg-amber-500/10 text-amber-600 border-amber-500/25`).
+    - 📱 **Atendida em outro aparelho**: Azul com ícone `Smartphone` (`bg-blue-500/10 text-blue-600 border-blue-500/25`).
+- [x] **Regras de Tempo Limite WhatsApp para Edição (15 min) e Exclusão (48 horas) (22/08/2026)**:
+  - **Ocultação Automática de Opções Expiradas**:
+    - **Editar Mensagem**: Ocultada automaticamente no menu da mensagem se o envio tiver ocorrido há mais de **15 minutos** (limite oficial do WhatsApp).
+    - **Apagar para Todos**: Ocultada automaticamente no menu da mensagem se o envio tiver ocorrido há mais de **48 horas** (janela oficial do WhatsApp para comandos de revogação).
+  - **Prevenção de Erros de Backend**: Garante que o usuário só visualize ações realizáveis no protocolo do WhatsApp, eliminando tentativas de revogação ou edição rejeitadas pela rede.
 - [x] **Correção de Exclusão de Contato com Chave Estrangeira em Conversas e Deals (22/08/2026)**:
   - **Tratamento de Foreign Key Constraint (`23503`)**: A exclusão de contatos pelo CRM falhava com erro 500 (`violates foreign key constraint conversations_contact_id_fkey on table conversations`) quando o contato possuía conversas ou oportunidades vinculadas.
   - **Desvinculação Segura e `ON DELETE SET NULL`**:

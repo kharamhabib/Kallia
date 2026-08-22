@@ -215,6 +215,16 @@ export const ChatTimeline = () => {
             const isAI = msg.sender_type === "ai";
             const isDeleted = Boolean(msg.metadata?.is_deleted);
             const isEdited = Boolean(msg.metadata?.is_edited);
+            const msgAgeMs = msg.created_at
+              ? Math.max(0, Date.now() - new Date(msg.created_at).getTime())
+              : 0;
+            const canEdit =
+              !isContact &&
+              !isDeleted &&
+              msg.content_type === "text" &&
+              msgAgeMs <= 15 * 60 * 1000; // Limite de 15 minutos do WhatsApp
+            const canDelete =
+              !isContact && !isDeleted && msgAgeMs <= 48 * 60 * 60 * 1000; // Limite de 48 horas do WhatsApp
 
             // Separador de Data Agrupado por Dia
             const showDateDivider =
@@ -285,7 +295,7 @@ export const ChatTimeline = () => {
                                 <span>Copiar</span>
                               </DropdownMenuItem>
                             )}
-                            {msg.content_type === "text" && (
+                            {canEdit && (
                               <DropdownMenuItem
                                 onClick={() => openEditModal(msg)}
                                 className="gap-2 text-xs cursor-pointer"
@@ -294,13 +304,15 @@ export const ChatTimeline = () => {
                                 <span>Editar</span>
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem
-                              onClick={() => openDeleteModal(msg)}
-                              className="gap-2 text-xs text-destructive focus:text-destructive cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              <span>Apagar para todos</span>
-                            </DropdownMenuItem>
+                            {canDelete && (
+                              <DropdownMenuItem
+                                onClick={() => openDeleteModal(msg)}
+                                className="gap-2 text-xs text-destructive focus:text-destructive cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                <span>Apagar para todos</span>
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
 

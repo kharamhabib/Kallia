@@ -47,23 +47,23 @@ export const Sidebar = ({ onNavigate }: { onNavigate?: () => void }) => {
       category: "CONSTRUÇÃO",
       items: [
         { id: "agents", label: "Agentes IA", icon: Bot },
+        { id: "connections", label: "Conexões", icon: Smartphone },
         { id: "knowledge", label: "Base de Conhecimento", icon: BookOpen },
       ],
     },
     {
       category: "OPERAÇÃO",
       items: [
-        { id: "conversations", label: "Conversas (Chat)", icon: MessageSquare },
-        { id: "connections", label: "Conexões do Workspace", icon: Smartphone },
-        { id: "webphone", label: "Webphone & Ligações", icon: PhoneCall },
-        { id: "schedules", label: "Disparos & Agenda", icon: Calendar },
+        { id: "conversations", label: "Conversas", icon: MessageSquare },
+        { id: "webphone", label: "Ligações", icon: PhoneCall },
+        { id: "schedules", label: "Ligações Agendadas", icon: Calendar },
       ],
     },
     {
       category: "REGISTROS",
       items: [
         { id: "calls", label: "Histórico de Ligações", icon: History },
-        { id: "chat_history", label: "Histórico de Chat", icon: MessageSquare },
+        { id: "chat_history", label: "Chamados em Aberto", icon: MessageSquare },
         { id: "contacts", label: "Contatos", icon: Users },
       ],
     },
