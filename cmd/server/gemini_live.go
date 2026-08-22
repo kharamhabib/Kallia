@@ -194,7 +194,7 @@ func (g *GeminiLiveClient) buildTools() []map[string]any {
 		case "hangup":
 			decls = append(decls, map[string]any{
 				"name":        "hangup",
-				"description": "Desliga a chamada telefônica. REGRA MANDATÓRIA: Você DEVE falar em voz alta uma despedida educada, calorosa e completa (ex: 'Muito obrigado pelo contato, foi um prazer te atender! Tenha um ótimo dia, tchau tchau!') ANTES de invocar esta ferramenta. NUNCA chame hangup silenciosamente.",
+				"description": "Desliga a chamada telefônica. Fale uma única despedida natural e educada (ex: 'Muito obrigado pelo contato! Tenha um ótimo dia, até logo!') e acione esta ferramenta simultaneamente. Nunca repita a despedida.",
 				"parameters":  map[string]any{"type": "OBJECT", "properties": map[string]any{}},
 			})
 		case "open_ticket":

@@ -19,21 +19,22 @@ const (
 const maxHistorySize = 500
 
 type CallRecord struct {
-	SessionID    string     `json:"sessionId"`
-	WorkspaceID  string     `json:"workspaceId,omitempty"`
-	AgentID      string     `json:"agentId,omitempty"`
-	CallID       string     `json:"callId"`
-	Owner        *string    `json:"owner"`
-	Direction    string     `json:"direction"`
-	Peer         string     `json:"peer"`
-	StartedAt    int64      `json:"startedAt"`
-	Status       CallStatus `json:"status"`
-	EndedAt      *int64     `json:"endedAt,omitempty"`
-	EndReason    string     `json:"endReason,omitempty"`
-	Summary      string     `json:"summary,omitempty"`
-	TicketOpened bool       `json:"ticketOpened,omitempty"`
-	TicketReason string     `json:"ticketReason,omitempty"`
-	RecordingURL string     `json:"recordingUrl,omitempty"`
+	SessionID    string           `json:"sessionId"`
+	WorkspaceID  string           `json:"workspaceId,omitempty"`
+	AgentID      string           `json:"agentId,omitempty"`
+	CallID       string           `json:"callId"`
+	Owner        *string          `json:"owner"`
+	Direction    string           `json:"direction"`
+	Peer         string           `json:"peer"`
+	StartedAt    int64            `json:"startedAt"`
+	Status       CallStatus       `json:"status"`
+	EndedAt      *int64           `json:"endedAt,omitempty"`
+	EndReason    string           `json:"endReason,omitempty"`
+	Summary      string           `json:"summary,omitempty"`
+	TicketOpened bool             `json:"ticketOpened,omitempty"`
+	TicketReason string           `json:"ticketReason,omitempty"`
+	RecordingURL string           `json:"recordingUrl,omitempty"`
+	Transcript   []TranscriptLine `json:"transcript,omitempty"`
 }
 
 type AuthSnapshot struct {
@@ -68,6 +69,7 @@ type HistoryPersister interface {
 	SaveSummary(sessionID, callID, summary string)
 	SaveTicket(sessionID, callID, reason string)
 	SaveRecording(sessionID, callID, recordingURL string)
+	SaveTranscript(sessionID, callID string, transcript []TranscriptLine)
 }
 
 type Broker struct {
@@ -298,6 +300,23 @@ func (b *Broker) saveRecording(sessionID, callID, recordingURL string) {
 	b.mu.Unlock()
 	if b.History != nil {
 		b.History.SaveRecording(sessionID, callID, recordingURL)
+	}
+}
+
+func (b *Broker) saveTranscript(sessionID, callID string, transcript []TranscriptLine) {
+	b.mu.Lock()
+	for i := range b.history {
+		if b.history[i].SessionID == sessionID && b.history[i].CallID == callID {
+			b.history[i].Transcript = transcript
+			break
+		}
+	}
+	if c, ok := b.calls[callID]; ok && c.SessionID == sessionID {
+		c.Transcript = transcript
+	}
+	b.mu.Unlock()
+	if b.History != nil {
+		b.History.SaveTranscript(sessionID, callID, transcript)
 	}
 }
 

@@ -102,7 +102,7 @@ func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.Ca
 		}
 		if len(toolRules) > 0 {
 			config.SystemInstruction += "\n\n### REGRAS OBRIGATÓRIAS DE FINALIZAÇÃO, DESPEDIDA E MANUTENÇÃO DA CHAMADA:\n" +
-				"1. OBRIGAÇÃO DE DESPEDIDA POR VOZ (FERRAMENTA HANGUP): Você NUNCA deve chamar a ferramenta `hangup` silenciosamente ou sem falar. Antes de executar `hangup`, você DEVE SEMPRE falar em voz alta uma despedida completa, calorosa e educada (ex: \"Muito obrigado pelo contato! Qualquer dúvida estamos à disposição. Tenha um excelente dia, tchau tchau!\"). Fale primeiro a despedida e somente então chame a ferramenta `hangup`.\n" +
+				"1. OBRIGAÇÃO DE DESPEDIDA POR VOZ (FERRAMENTA HANGUP): Você NUNCA deve chamar a ferramenta `hangup` silenciosamente. Ao encerrar a chamada, profira uma ÚNICA despedida natural, calorosa e educada (ex: \"Muito obrigado pelo contato! Tenha um ótimo dia, até logo!\") e acione a ferramenta `hangup` simultaneamente no mesmo turno. JAMAIS repita ou fale duas despedidas consecutivas.\n" +
 				"2. REGRA ABSOLUTA: JAMAIS se despeça ou execute a ferramenta `hangup` automaticamente logo após executar ferramentas intermediárias (como `send_message`, `web_search`, `x_search`, `schedule_call` ou `open_ticket`).\n" +
 				"3. FLUXO OBRIGATÓRIO APÓS FERRAMENTAS: Assim que qualquer ferramenta for executada, informe verbalmente a confirmação para o cliente e PERGUNTE SEMPRE: \"Há mais alguma coisa em que eu possa te ajudar?\".\n" +
 				"4. USO DA FERRAMENTA HANGUP: A ferramenta `hangup` deve ser chamada APENAS E EXCLUSIVAMENTE quando o cliente responder que NÃO precisa de mais nada, agradecer no encerramento ou se despedir expressamente.\n" +
@@ -618,6 +618,12 @@ func (a *ServerAIAgent) Detach() {
 	// Captura a transcrição antes de fechar o provedor
 	transcript := a.getTranscriptLines()
 
+	if a.sess.mgr != nil && a.sess.mgr.broker != nil {
+		a.sess.mgr.broker.updateCall(a.callID, func(r *CallRecord) {
+			r.Transcript = transcript
+		})
+	}
+
 	a.closeCurrentProvider()
 
 	// Post-call actions em background
@@ -1119,24 +1125,12 @@ func (a *ServerAIAgent) executePostCallActions(transcript []TranscriptLine) {
 		return
 	}
 
-	// Salva a transcrição no banco de dados principal (PocketBase SSOT + SQLite)
-	if a.sess.mgr != nil && a.sess.mgr.store != nil {
-		goSafe(a.log, func() {
-			if a.agentID != "" {
-				_ = pbClient.UpdateCallAgentPB(context.Background(), a.callID, a.agentID)
-			}
-			if pbErr := pbClient.UpdateCallTranscriptPB(context.Background(), a.callID, transcript); pbErr != nil {
-				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no PocketBase", "err", pbErr)
-			} else {
-				a.log.Info("[ServerAIAgent] Transcrição salva no PocketBase com sucesso")
-			}
-			err := a.sess.mgr.store.saveTranscript(context.Background(), a.sess.id, a.callID, transcript)
-			if err != nil {
-				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no SQLite", "err", err)
-			} else {
-				a.log.Info("[ServerAIAgent] Transcrição salva no SQLite com sucesso")
-			}
-		})
+	// Salva a transcrição no broker e no banco de dados principal (PocketBase SSOT + SQLite)
+	if a.sess.mgr != nil && a.sess.mgr.broker != nil {
+		a.sess.mgr.broker.saveTranscript(a.sess.id, a.callID, transcript)
+	}
+	if a.agentID != "" {
+		_ = pbClient.UpdateCallAgentPB(context.Background(), a.callID, a.agentID)
 	}
 
 	config := a.config

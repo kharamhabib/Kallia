@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -57,8 +58,12 @@ func NewServerAudioRecorder(recordingsDir, callID, peerInfo string) (*ServerAudi
 		mixBuf:     make([]float32, 0, 16000),
 	}
 
-	// Escreve o cabeçalho WAV de 44 bytes inicial
+	// Escreve o cabeçalho WAV de 44 bytes inicial e posiciona o cursor em 44 para os dados PCM
 	if err := r.writeHeader(0); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if _, err := f.Seek(44, io.SeekStart); err != nil {
 		f.Close()
 		return nil, err
 	}

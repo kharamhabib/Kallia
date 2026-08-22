@@ -716,9 +716,13 @@ func (p *pgHistoryPersister) SaveCall(rec CallRecord) {
 			endedAt = *rec.EndedAt
 		}
 
-		// 1. Tenta carregar transcrição do SQLite caso já tenha sido gravada
+		// 1. Tenta carregar transcrição do registro ou do SQLite caso já tenha sido gravada
 		var transcriptJSON string
-		if lines, err := p.store.getTranscript(ctx, rec.SessionID, rec.CallID); err == nil && len(lines) > 0 {
+		if len(rec.Transcript) > 0 {
+			if b, e := json.Marshal(rec.Transcript); e == nil {
+				transcriptJSON = string(b)
+			}
+		} else if lines, err := p.store.getTranscript(ctx, rec.SessionID, rec.CallID); err == nil && len(lines) > 0 {
 			if b, e := json.Marshal(lines); e == nil {
 				transcriptJSON = string(b)
 			}
@@ -760,6 +764,21 @@ func (p *pgHistoryPersister) SaveRecording(sessionID, callID, recordingURL strin
 		// 2. Atualizar no SQLite local
 		if err := p.store.updateCallRecording(ctx, sessionID, callID, recordingURL); err != nil {
 			p.log.Error("falha ao persistir URL de gravação da chamada no SQLite", "callId", callID, "err", err)
+		}
+	})
+}
+
+func (p *pgHistoryPersister) SaveTranscript(sessionID, callID string, transcript []TranscriptLine) {
+	goSafe(p.log, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// 1. Atualizar no PocketBase (SSOT)
+		_ = pbClient.UpdateCallTranscriptPB(ctx, callID, transcript)
+
+		// 2. Atualizar no SQLite local
+		if err := p.store.saveTranscript(ctx, sessionID, callID, transcript); err != nil {
+			p.log.Error("falha ao persistir transcrição no SQLite", "callId", callID, "err", err)
 		}
 	})
 }
