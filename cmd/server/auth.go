@@ -737,4 +737,3 @@ func (s *server) userCanAccessSession(ctx context.Context, sid, userID, role, de
 
 	return false
 }
-

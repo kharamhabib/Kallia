@@ -14,7 +14,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Auditoria de Segurança & Sizing SaaS**: Conformidade OWASP e dimensionamento para VPS Hostinger 16GB RAM (suportando 250+ sessões WhatsApp e 80-120 chamadas VoIP simultâneas).
 - [x] **Autenticação JWT & Perfis (RBAC)**: Suporte aos papéis `appadmin` (superadministrador), `creator` (proprietário do tenant/projeto) e `normal` (operador de atendimento).
 - [x] **API Keys por Conexão (`kc_*`)**: Geração automática de chaves únicas por sessão para consumo seguro por APIs externas.
-- [x] **Agentes Especialistas & Hot-Swap (`TransferTo`)**: Suporte a personas distintas para chamadas *inbound* e *outbound*, e transferência de chamadas em tempo real entre agentes sem derrubar o canal VoIP.
+- [x] **Agentes Especialistas & Hot-Swap (`TransferTo`)**: Suporte a personas distintas para chamadas _inbound_ e _outbound_, e transferência de chamadas em tempo real entre agentes sem derrubar o canal VoIP.
 - [x] **Mensagens Interativas com Botões (Multi-Device)**: Injeção automática de nós binários `biz` e `bot` via `whatsmeow` no Go para possibilitar exibição de botões interativos nativos enviados por contas pessoais MD.
 - [x] **PocketBase como Banco Primário de Negócio & Sync Híbrido (20/08/2026)**: Centralização de Agentes, Contatos CRM, Projetos e Metadados no PocketBase com sincronia total Dev ↔ Prod e SQLite local isolado para VoIP whatsmeow.
 - [x] **Sincronização em Tempo Real Go ↔ PocketBase (SSE /api/realtime) & Hidratação Dev/VPS (20/08/2026)**: Implementação de hidratação automática no boot e listener persistente de SSE em tempo real para sincronização bidirecional de Workspaces, Agentes, Configurações de IA, Provedores e Contatos entre VPS e ambiente de desenvolvimento local, com suporte a sessões em standby no Dev.
@@ -77,7 +77,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Persistência Centralizada no PocketBase (SSOT) de Transcrições e Resolução de Nomes de Contato (21/08/2026)**:
   - **Upsert Seguro de Transcrição no PocketBase**: Atualizados `SaveCallHistoryPB`, `UpdateCallTranscriptPB` e `UpdateCallSummaryPB` em [`pocketbase_client.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/pocketbase_client.go) com proteção contra sobrescrita de dados existentes (`[]` vazios) e criação garantida do registro com a transcrição completa no PocketBase.
   - **Leitura Resiliente de Transcrições**: `GetCallTranscriptPB` e o endpoint `/transcript` agora decodificam de forma flexível strings JSON ou arrays nativos armazenados na coleção `call_history` do PocketBase com sincronização reversa para o SQLite.
-  - **Resolução e Auto-Sync de Contatos**: Implementado `GetContactByPhonePB` no cliente PocketBase e integrado em `resolveContactName` ([`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go)), garantindo que nomes resolvidos (como *"Kallia CRM"*) sejam sincronizados no PocketBase e SQLite em vez de ficarem como *"Contato WhatsApp"*.
+  - **Resolução e Auto-Sync de Contatos**: Implementado `GetContactByPhonePB` no cliente PocketBase e integrado em `resolveContactName` ([`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go)), garantindo que nomes resolvidos (como _"Kallia CRM"_) sejam sincronizados no PocketBase e SQLite em vez de ficarem como _"Contato WhatsApp"_.
 - [x] **Persistência Completa de Metadados de Chamadas no PocketBase (`workspace_id`, `agent_id`, `recording_url`, `transcript`) (21/08/2026)**:
   - **Resolução de `workspace_id`**: Adicionado `getWorkspaceID()` em [`session.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/session.go) e [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go), garantindo que o identificador real do workspace seja propagado para o `CallRecord` e nunca caia como `"default"`.
   - **Identificação e Hot-Sync de `agent_id`**: Adicionados métodos `resolveDefaultAgentID`, `SetAgentID` e `UpdateCallAgentPB`, associando o ID do agente atendente (principal ou especialista) tanto na inicialização quanto nas transferências de chamada.
@@ -100,20 +100,20 @@ Este documento registra as implementações recentes concluídas e as melhorias 
     - Em [`session.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/session.go), implementado o listener para `*events.ChatPresence` (`pgPushIncomingPresence`).
     - Quando o cliente no WhatsApp começa a digitar ou gravar áudio, o backend Go identifica o contato e a conversa ativa no workspace e transmite o evento WebSocket `typing` com `is_typing: true` e `media: "text" | "audio"`.
   - **Exibição Dinâmica no Painel de Conversas**:
-    - **No Cabeçalho do Chat ([`ChatHeader.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatHeader.tsx))**: O subtítulo do contato alterna com efeito pulsante verde para *"digitando..."* ou *"gravando áudio..."*.
+    - **No Cabeçalho do Chat ([`ChatHeader.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatHeader.tsx))**: O subtítulo do contato alterna com efeito pulsante verde para _"digitando..."_ ou _"gravando áudio..."_.
     - **Na Timeline ([`ChatTimeline.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatTimeline.tsx))**: Animação de bolinhas com indicador específico de digitação de texto ou gravação de voz.
-    - **Na Lista Lateral de Conversas ([`ConversationsList.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ConversationsList.tsx))**: O card da conversa substitui temporariamente a última mensagem por *"digitando..."* ou *"gravando áudio..."* em verde vibrante.
+    - **Na Lista Lateral de Conversas ([`ConversationsList.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ConversationsList.tsx))**: O card da conversa substitui temporariamente a última mensagem por _"digitando..."_ ou _"gravando áudio..."_ em verde vibrante.
     - **Auto-Limpeza Inteligente ([`conversations.ts`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/stores/conversations.ts))**: O status é limpo imediatamente na chegada da mensagem enviada ou automaticamente após 7 segundos de inatividade (caso o usuário apague o texto no WhatsApp).
 - [x] **Reorganização e Padronização de Nomenclatura da Sidebar (22/08/2026)**:
   - **Ajustes de Nomes nos Menus**:
-    - *"Conversas (Chat)"* ➔ **"Conversas"**
-    - *"Webphone & Ligações"* ➔ **"Ligações"**
-    - *"Conexões do Workspace"* ➔ **"Conexões"** (movido para o grupo superior **CONSTRUÇÃO**)
-    - *"Disparos & Agenda"* ➔ **"Ligações Agendadas"**
-    - *"Histórico de Chat"* ➔ **"Chamados em Aberto"**
+    - _"Conversas (Chat)"_ ➔ **"Conversas"**
+    - _"Webphone & Ligações"_ ➔ **"Ligações"**
+    - _"Conexões do Workspace"_ ➔ **"Conexões"** (movido para o grupo superior **CONSTRUÇÃO**)
+    - _"Disparos & Agenda"_ ➔ **"Ligações Agendadas"**
+    - _"Histórico de Chat"_ ➔ **"Chamados em Aberto"**
   - **Sincronização do AppShell**: Títulos de cabeçalho sincronizados em [`AppShell.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/layout/AppShell.tsx) e [`Sidebar.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/layout/Sidebar.tsx).
 - [x] **Padronização Visual das Tags de Motivo de Término no Histórico de Chamadas (22/08/2026)**:
-  - **Design System Harmonizado**: A coluna *Motivo Término* em [`HistoryTable.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/history/HistoryTable.tsx) agora utiliza tags no padrão pílula (`rounded-full`, borda sutil, ícone contextual e tipografia de 10px), combinando perfeitamente com os badges de *Tipo* e *Status*.
+  - **Design System Harmonizado**: A coluna _Motivo Término_ em [`HistoryTable.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/history/HistoryTable.tsx) agora utiliza tags no padrão pílula (`rounded-full`, borda sutil, ícone contextual e tipografia de 10px), combinando perfeitamente com os badges de _Tipo_ e _Status_.
   - **Ícones e Cores Contextuais por Motivo**:
     - 🤖 **Finalizado pela IA**: Roxo suave com ícone `Sparkles` (`bg-purple-500/10 text-purple-600 border-purple-500/25`).
     - 📵 **Desligado pelo cliente / operador / Concluída**: Cinza elegante com ícone `PhoneOff` (`bg-muted/80 text-foreground border-border`).
@@ -141,7 +141,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
       - `✓✓` Check duplo azul claro (`text-sky-400`): Lida / visualizada pelo cliente.
   - **Sinalização de Presença Bidirecional ("Digitando..." e "Gravando áudio...")**:
     - Ao digitar no campo de texto ou gravar áudio no [`ChatInputBar.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatInputBar.tsx), o frontend envia evento de presença para o backend Go, que aciona nativamente `sess.getClient().SendChatPresence(ctx, chatJID, state, media)`.
-    - No WhatsApp do cliente aparece *"digitando..."* ou *"gravando áudio..."* em tempo real.
+    - No WhatsApp do cliente aparece _"digitando..."_ ou _"gravando áudio..."_ em tempo real.
     - No chat dos operadores, o indicador de digitação do cliente também distingue quando ele está digitando texto ou gravando áudio.
 - [x] **Correção de WebSocket Handshake (http.Hijacker), Queries de Edição/Revogação e Posicionamento Lateral de Ações (22/08/2026)**:
   - **Correção de Handshake WebSocket (HTTP 500)**: O middleware `withRequestLog` em [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go) encapsulava a resposta com `statusRecorder`, o qual não implementava a interface `http.Hijacker`. Implementado o método `Hijack()` no `statusRecorder`, permitindo que o Gorilla WebSocket realize o upgrade de conexão com sucesso e sem erros 500.
@@ -153,8 +153,8 @@ Este documento registra as implementações recentes concluídas e as melhorias 
     - ↩️ **Responder (Reply / Citação)**: Barra de resposta citada acima do campo de entrada no [`ChatInputBar.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatInputBar.tsx) com botão `X` de cancelamento. Balões renderizam o cabeçalho colorido da mensagem citada.
     - 📋 **Copiar**: Cópia com feedback visual de toast.
     - ✏️ **Editar Mensagem**: Modal de edição rápida que dispara a mensagem de edição nativa no WhatsApp (`whatsmeow.BuildEdit`) e exibe o badge `(editada)` no balão.
-    - 🗑️ **Apagar para Todos (Revoke)**: Modal de confirmação que dispara o comando de revogação no WhatsApp (`whatsmeow.BuildRevoke`) e substitui a mensagem por *"Esta mensagem foi apagada"*.
-  - **Separadores de Data na Linha do Tempo**: Agrupamento temporal com pílula flutuante sticky (*"Hoje"*, *"Ontem"*, dias da semana para os últimos 7 dias ou data formatada `DD/MM/AAAA`).
+    - 🗑️ **Apagar para Todos (Revoke)**: Modal de confirmação que dispara o comando de revogação no WhatsApp (`whatsmeow.BuildRevoke`) e substitui a mensagem por _"Esta mensagem foi apagada"_.
+  - **Separadores de Data na Linha do Tempo**: Agrupamento temporal com pílula flutuante sticky (_"Hoje"_, _"Ontem"_, dias da semana para os últimos 7 dias ou data formatada `DD/MM/AAAA`).
   - **Auto-Scroll Inteligente (Smart Scroll)**: Desativa a rolagem automática quando o operador sobe para ler o histórico antigo e exibe botão flutuante discreto `↓` para retornar às mensagens recentes, reativando o auto-scroll quando o usuário estiver no fim da página.
 - [x] **Resolução de Autenticação WebSocket (`?token=`) e Correção 401 de Mídias Locais (22/08/2026)**:
   - **Correção de Handshake WebSocket (`/ws?token=`)**: Em [`auth.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/auth.go) (`withCombinedAuth`), o extrator de tokens por query param agora aceita tanto `?token=` quanto `?apiKey=`, permitindo que os WebSockets do frontend completem o handshake sem o erro `401 HTTP Authentication failed; no valid credentials available`.
@@ -169,7 +169,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Encaixe Exato na Altura da Tela (Sem Scroll Externo)**: Em [`AppShell.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/layout/AppShell.tsx), o container principal `<main>` agora detecta `activeSection === "conversations"` e remove padding (`p-0`) e scroll externo (`overflow-hidden h-full`), fazendo com que o Chat ocupe 100% da área útil da janela sem transbordar para baixo.
   - **Responsividade Mobile & Botão Voltar**: Em [`ConversationsPage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/ConversationsPage.tsx) e [`ChatHeader.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatHeader.tsx), telas móveis alternam perfeitamente entre a lista de conversas e o chat individual com botão `← Voltar`.
   - **Largura Equilibrada da Barra Lateral (`w-72 lg:w-80`)**: Reduzida a largura da lista de conversas para dar mais espaço à linha do tempo e ao painel lateral de contato.
-  - **Compactação e Flexibilidade dos Botões do Header**: No [`ChatHeader.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatHeader.tsx), os botões de ação (*IA*, *Tags*, *Ligar*, *Resolver* e *Gaveta*) agora possuem encolhimento responsivo (`shrink-0`, textos ocultos em telas compactas), impedindo que o nome ou telefone do contato sejam esmagados ao abrir o painel lateral.
+  - **Compactação e Flexibilidade dos Botões do Header**: No [`ChatHeader.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatHeader.tsx), os botões de ação (_IA_, _Tags_, _Ligar_, _Resolver_ e _Gaveta_) agora possuem encolhimento responsivo (`shrink-0`, textos ocultos em telas compactas), impedindo que o nome ou telefone do contato sejam esmagados ao abrir o painel lateral.
   - **Botão Fechar no Painel de Contato**: Adicionado botão `X` no topo de [`ContactDetailsDrawer.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ContactDetailsDrawer.tsx) para fechamento rápido do painel lateral.
   - **Correção da Codificação de Áudio/PTT no WhatsApp**: No [`ChatInputBar.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/components/domain/chat/ChatInputBar.tsx), adicionada detecção dinâmica de mimetypes suportados pelo navegador (`audio/ogg`, `audio/mp4`, `audio/webm`) e, em [`conversations.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/conversations.go), a flag PTT agora respeita o container correto, corrigindo a falha de reprodução de áudios no aplicativo WhatsApp.
 - [x] **Resolução de LID do WhatsApp & Integração Unificada da Aba de Contatos (22/08/2026)**:
@@ -191,7 +191,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **PostgreSQL 16 com pgvector & Auto-migrations**: Criado [`pg.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/pg.go) com pool resiliente e migrações idempotentes para `inboxes`, `contacts`, `tags`, `contact_tags`, `chat_agents`, `conversations`, `conversation_tags`, `messages` (com particionamento mensal), `embeddings` (vetorial para RAG), `pipelines`, `pipeline_stages`, `deals` e `automations`.
   - **Tags Customizadas de Workspace**: Criado [`tags.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/tags.go) com suporte a tags reutilizáveis com cores e escopos (`contact`, `conversation`, `both`) com endpoints de gestão e atribuição N:N.
   - **Contatos Unificados & Auto-migração**: Criado [`contacts_pg.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/contacts_pg.go) migrando automaticamente os contatos legados do PocketBase/SQLite para o PostgreSQL na inicialização com suporte a busca, paginação, tags e atributos personalizados.
-  - **Hub WebSocket de Tempo Real (`realtime_ws.go`)**: Implementado endpoint `/api/workspaces/{wid}/ws` com clusterização via Redis Pub/Sub, indicadores de digitação (*typing*), status de entrega/leitura e isolamento por workspace.
+  - **Hub WebSocket de Tempo Real (`realtime_ws.go`)**: Implementado endpoint `/api/workspaces/{wid}/ws` com clusterização via Redis Pub/Sub, indicadores de digitação (_typing_), status de entrega/leitura e isolamento por workspace.
   - **Motor de Conversas & Ingestão WhatsApp (`conversations.go`)**: Implementado gerenciamento de inboxes, conversas e mensagens com reabertura automática de tickets resolvidos e ingestão direta de eventos do WhatsApp (`whatsmeow`) transmitindo em tempo real via WebSocket.
 - [x] **Diagnóstico e Correção de Ativação do Widget Chatwoot & CORS Preflight (`widget.js` & `withCORS`) (22/08/2026)**:
   - **Correção de Preflight CORS para Domínio do Chatwoot (`chat.rockburger.com.br`)**: A função `withCORS` em [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go) foi atualizada para suportar reflexão dinâmica de origem, suporte a subdomínios wildcard e permissão explícita para todos os headers (`X-API-Key`, `X-Connection-API-Key`, `Content-Type`, etc.), eliminando o erro de bloqueio de preflight.
@@ -199,18 +199,18 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Unificação de IDs e Elementos DOM**: Corrigidas inconsistências onde `setStatus`, `addTranscript`, `audio` e `panel` buscavam IDs legados `wacalls-`.
 - [x] **Concordância Gramatical Completa de Gênero (`do(a)`, `ao(à)`, `dele(a)`) (22/08/2026)**:
   - **Padronização de Artigos e Contrações**: Ajustadas todas as frases e presets para utilizar flexibilização completa: `do(a) [session_name]`, `ao(à) [session_name]`, `dele(a)`, `sobre o(a) [session_name]`, `central de atendimento do(a) [session_name]`.
-  - **Regra de Concordância Aprimorada**: Instrução master explicitando adaptações para nomes masculinos, femininos ou de empresas (*"do João / ao João / dele"*, *"da Maria / à Maria / dela"*, *"da Kallia / à Kallia / dela"*).
+  - **Regra de Concordância Aprimorada**: Instrução master explicitando adaptações para nomes masculinos, femininos ou de empresas (_"do João / ao João / dele"_, _"da Maria / à Maria / dela"_, _"da Kallia / à Kallia / dela"_).
 - [x] **Nome do Agente, Modelo e Sentido da Chamada no Card Lateral (`AgentsPage.tsx`) (22/08/2026)**:
-  - **Exibição do Nome Personalizado no Card do Agente Principal**: O card lateral agora exibe o nome configurado do agente (ex: *Kallia*, *Sofia*) no título e no avatar dinâmico com a inicial, além do subtítulo de atendimento.
+  - **Exibição do Nome Personalizado no Card do Agente Principal**: O card lateral agora exibe o nome configurado do agente (ex: _Kallia_, _Sofia_) no título e no avatar dinâmico com a inicial, além do subtítulo de atendimento.
   - **Badges Dinâmicos de Modelo & Sentido no Card**: Badges visuais indicando o Modelo Base ativo (`[Bot: Secretária Pessoal]`, `[Building2: Atendente Comercial]`, etc.) e o Sentido da Chamada (`[PhoneCall: In & Outbound]`, `[PhoneIncoming: Só Inbound]`, `[PhoneOutgoing: Só Outbound]`).
 - [x] **Transparência na Aba Identidade, Nome Opcional com Switch & Frases de Abertura Sincronizadas (22/08/2026)**:
-  - **Transparência de IA na Aba Identidade**: O bloco de divulgação de IA foi movido para a primeira aba (*Identidade & Fluxo*), ficando ao lado do Nome do Agente e do Modelo Base.
+  - **Transparência de IA na Aba Identidade**: O bloco de divulgação de IA foi movido para a primeira aba (_Identidade & Fluxo_), ficando ao lado do Nome do Agente e do Modelo Base.
   - **Nome Próprio Opcional (`useAgentName`)**: Adicionado switch/checkbox para habilitar ou desabilitar o nome fictício. Se desmarcado, a IA atua de forma institucional em nome da empresa sem nome de pessoa.
   - **Modelos de Fala e Saudações Sincronizadas**:
-    - *Modo Natural / Discreta*: Se apresenta naturalmente como *"Aqui é a Sofia, assistente do [session_name]"* ou *"Falo em nome do [session_name]"* (sem citar termos como IA/virtual na abertura, mas confirmando cordialmente caso seja perguntada).
-    - *Modo Avisar no Início*: Informa proativamente *"Aqui é a Sofia, assistente virtual de inteligência artificial do [session_name]"*.
-    - Os presets rápidos (*Pessoal*, *Empresa*, *Suporte*) adaptam suas frases de abertura e encerramento em tempo real com base no nome e modo de transparência selecionados.
-  - **Toolbar Superior Dinâmico (`PromptQuickBar.tsx`)**: Exibe o avatar/iniciais do nome quando ativo ou ícone genérico de bot com o título *Assistente de Atendimento*, além do badge em tempo real do modo de transparência ativo (`Natural / Discreta` vs `Avisar IA`).
+    - _Modo Natural / Discreta_: Se apresenta naturalmente como _"Aqui é a Sofia, assistente do [session_name]"_ ou _"Falo em nome do [session_name]"_ (sem citar termos como IA/virtual na abertura, mas confirmando cordialmente caso seja perguntada).
+    - _Modo Avisar no Início_: Informa proativamente _"Aqui é a Sofia, assistente virtual de inteligência artificial do [session_name]"_.
+    - Os presets rápidos (_Pessoal_, _Empresa_, _Suporte_) adaptam suas frases de abertura e encerramento em tempo real com base no nome e modo de transparência selecionados.
+  - **Toolbar Superior Dinâmico (`PromptQuickBar.tsx`)**: Exibe o avatar/iniciais do nome quando ativo ou ícone genérico de bot com o título _Assistente de Atendimento_, além do badge em tempo real do modo de transparência ativo (`Natural / Discreta` vs `Avisar IA`).
 - [x] **Fase 4: Agente Autônomo de Resposta de Chat (RAG + Humanização Avançada) (22/08/2026)**:
   - **Motor de Debounce & Agrupador de Fila por Conversa (`chat_debounce.go`)**:
     - Agrupamento inteligente de mensagens picadas do cliente em janela de debounce de 3 segundos, evitando respostas duplicadas ou fragmentadas.
@@ -243,8 +243,9 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 ---
 
 ### 📊 Fase 5: CRM com Kanban (Pipelines, Estágios e Deals)
+
 - [ ] **Quadro Kanban Visual de Oportunidades**:
-  - Visualização de colunas customizáveis (ex: *Novo Lead*, *Em Qualificação*, *Proposta Enviada*, *Fechado/Ganho*, *Perdido*).
+  - Visualização de colunas customizáveis (ex: _Novo Lead_, _Em Qualificação_, _Proposta Enviada_, _Fechado/Ganho_, _Perdido_).
   - Drag-and-drop de cards entre estágios com atualização em tempo real.
 - [ ] **Gestão de Negociações (Deals)**:
   - Criação de deals com valor monetário estimado, responsável, data de fechamento prevista e motivo de perda.
@@ -256,15 +257,17 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 ---
 
 ### ⚡ Fase 6: Automações Personalizadas & Triggers de Fluxo
+
 - [ ] **Motor de Automações por Eventos (`automations`)**:
-  - Gatilhos suportados: *Nova mensagem recebida*, *Palavra-chave detectada*, *Conversa criada*, *Conversa resolvida*, *Chamada encerrada*, *Avaliação de NPS recebida*.
-  - Ações suportadas: *Aplicar Tag*, *Atribuir a Operador*, *Enviar Mensagem Modelo*, *Criar Negociação no Kanban*, *Chamar Webhook Externo (N8N/Make)*.
+  - Gatilhos suportados: _Nova mensagem recebida_, _Palavra-chave detectada_, _Conversa criada_, _Conversa resolvida_, _Chamada encerrada_, _Avaliação de NPS recebida_.
+  - Ações suportadas: _Aplicar Tag_, _Atribuir a Operador_, _Enviar Mensagem Modelo_, _Criar Negociação no Kanban_, _Chamar Webhook Externo (N8N/Make)_.
 - [ ] **Editor Visual de Regras no Frontend**:
   - Interface intuitiva de criação de automações "SE [Gatilho] ENTÃO [Ação]" sem necessidade de código.
 
 ---
 
 ### 🌐 Fase 7: Canais Adicionais Omnichannel
+
 - [ ] **Instagram Direct & Facebook Messenger**: Ingestão de mensagens diretas e comentários via Meta Graph API conectadas ao mesmo inbox do PostgreSQL.
 - [ ] **Telegram Bot**: Conexão de bots do Telegram para suporte e atendimento unificado.
 - [ ] **E-mail & SMS**: Recepção e disparo de e-mails de tickets e SMS transacionais.
@@ -272,6 +275,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 ---
 
 ### 📈 Fase 8: Relatórios Avançados & Métricas de Atendimento
+
 - [ ] **Métricas Omnichannel de Atendimento**:
   - TMA (Tempo Médio de Atendimento) e TME (Tempo Médio de Primeira Resposta).
   - Volume de mensagens por canal, dia e horário de pico.
