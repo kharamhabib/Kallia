@@ -214,28 +214,57 @@ func (s *server) routes() http.Handler {
 	return withCORS(handler, s.log)
 }
 
-// withCORS aplica a política de origens. KALLIA_CORS_ORIGINS (lista separada
-// por vírgula) restringe as origens permitidas; sem ela, mantém "*" (necessário
-// para o widget do Chatwoot em domínio diverso), com aviso se houver API key.
+// withCORS aplica a política de origens com suporte a reflexão dinâmica e subdomínios.
 func withCORS(h http.Handler, log *slog.Logger) http.Handler {
 	allowed := parseCSVEnv("KALLIA_CORS_ORIGINS")
-	if len(allowed) == 0 {
-		log.Warn("KALLIA_CORS_ORIGINS não definida — CORS aberto (*). Restrinja para os domínios do painel/Chatwoot em produção.")
-	}
 	allowedSet := map[string]bool{}
 	for _, o := range allowed {
-		allowedSet[o] = true
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		if len(allowedSet) == 0 {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		} else if origin != "" && allowedSet[origin] {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
+		clean := strings.TrimRight(strings.ToLower(o), "/")
+		if clean != "" {
+			allowedSet[clean] = true
 		}
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Id, X-API-Key")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
+	}
+	if len(allowedSet) == 0 {
+		log.Warn("KALLIA_CORS_ORIGINS não definida — CORS aberto (*). Restrinja para os domínios do painel/Chatwoot em produção se necessário.")
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := strings.TrimRight(r.Header.Get("Origin"), "/")
+
+		isAllowed := false
+		if len(allowedSet) == 0 || allowedSet["*"] {
+			isAllowed = true
+		} else if origin != "" {
+			if allowedSet[strings.ToLower(origin)] {
+				isAllowed = true
+			} else {
+				// Permitir subdomínios (ex: *.rockburger.com.br ou domínios da mesma organização)
+				for pattern := range allowedSet {
+					if strings.HasPrefix(pattern, "*.") {
+						root := strings.TrimPrefix(pattern, "*.")
+						if strings.HasSuffix(strings.ToLower(origin), root) {
+							isAllowed = true
+							break
+						}
+					}
+				}
+			}
+		}
+
+		if isAllowed {
+			if origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			}
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Id, X-API-Key, X-Connection-API-Key, X-Requested-With, Accept, Origin, Cache-Control")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

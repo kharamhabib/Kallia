@@ -15,7 +15,7 @@
 
   // Previne carregamento duplicado do widget
   if (window.__KALLIA_WIDGET_LOADED__) {
-    console.log("[Kallia] Widget já carregado nesta página.");
+    console.log("[Kallia] Widget já inicializado nesta página.");
     return;
   }
   window.__KALLIA_WIDGET_LOADED__ = true;
@@ -83,9 +83,9 @@
   var style = document.createElement("style");
   style.id = "kallia-widget-styles";
   style.textContent =
-    "#kallia-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#687076;transition:all .15s ease}" +
+    "#kallia-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#687076;transition:all .15s ease;margin-right:6px;padding:6px 8px;border-radius:6px}" +
     "#kallia-btn:hover{color:#11181c;background:#f1f3f5}" +
-    "#kallia-btn.kallia-floating-btn{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:#30a46c;color:#fff;box-shadow:0 8px 24px rgba(48,164,108,.35);z-index:99998;border:none}" +
+    "#kallia-btn.kallia-floating-btn{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:#30a46c;color:#fff;box-shadow:0 8px 24px rgba(48,164,108,.35);z-index:99998;border:none;margin:0;padding:0}" +
     "#kallia-btn.kallia-floating-btn:hover{transform:scale(1.05);filter:brightness(1.05)}" +
     "#kallia-panel{position:fixed;bottom:20px;right:20px;width:296px;background:#fff;color:#11181c;border:1px solid #dfe3e6;border-radius:12px;box-shadow:0 12px 32px rgba(17,24,28,.12);z-index:99999;font-family:'Inter','InterDisplay',-apple-system,system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}" +
     "#kallia-panel .cw-h{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #eceef0;font-size:14px;font-weight:600;color:#11181c;letter-spacing:-.01em}" +
@@ -745,7 +745,10 @@
   function refreshBinding() {
     connectEvents();
     var key = convKey();
-    if (key === currentConvKey && callable) return; 
+    if (key === currentConvKey && callable) {
+      ensureButton();
+      return; 
+    }
     currentConvKey = key;
     callable = false;
     resolved = null;
@@ -833,13 +836,33 @@
       if (a) return { container: a, sibling: a.querySelector("button") || a, isFloating: false };
     }
 
-    // Estratégia 1: Seletores conhecidos do Chatwoot (v2, v3, v4)
+    // Estratégia 1: Busca pelo botão nativo "Resolver" / "Resolve" / "Pendência" do Chatwoot
+    var btns = document.querySelectorAll("button");
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var txt = (b.textContent || "").toLowerCase().trim();
+      var aria = (b.getAttribute("aria-label") || "").toLowerCase();
+      var title = (b.getAttribute("title") || "").toLowerCase();
+      if (
+        txt.indexOf("resolver") > -1 || txt.indexOf("resolve") > -1 ||
+        aria.indexOf("resolver") > -1 || aria.indexOf("resolve") > -1 ||
+        title.indexOf("resolver") > -1 || title.indexOf("resolve") > -1 ||
+        txt.indexOf("pendência") > -1 || txt.indexOf("snooze") > -1
+      ) {
+        var p = b.parentElement;
+        if (p) {
+          return { container: p, sibling: b, isFloating: false };
+        }
+      }
+    }
+
+    // Estratégia 2: Seletores conhecidos do Chatwoot (v2, v3, v4)
     var selectors = [
       ".conversation-header .actions",
       ".conversation--header-actions",
       "header .actions",
       "header [class*='actions']",
-      "div[data-testid='conversation-header'] div[class*='actions']",
+      "div[data-testid='conversation-header']",
       ".conversation-header [class*='button-group']",
       "header div.flex.items-center",
       ".conversation--header div.flex",
@@ -855,23 +878,19 @@
       }
     }
 
-    // Estratégia 2: Busca por botões de ação na barra superior (Resolve, Snooze, More)
-    var btns = document.querySelectorAll("button");
-    for (var i = 0; i < btns.length; i++) {
-      var b = btns[i];
-      var r = b.getBoundingClientRect();
-      if (r.width >= 24 && r.width <= 50 && r.height >= 24 && r.height <= 50 && r.top < 150) {
-        var p = b.parentElement;
-        if (p) {
-          var sib = p.querySelectorAll(":scope > button");
-          if (sib.length >= 1 && sib.length <= 8) {
-            return { container: p, sibling: b, isFloating: false };
-          }
+    // Estratégia 3: Botões na parte superior direita (top < 160)
+    for (var j = 0; j < btns.length; j++) {
+      var b2 = btns[j];
+      var r = b2.getBoundingClientRect();
+      if (r.width >= 24 && r.width <= 140 && r.height >= 24 && r.height <= 50 && r.top < 160 && r.left > window.innerWidth * 0.4) {
+        var p2 = b2.parentElement;
+        if (p2) {
+          return { container: p2, sibling: b2, isFloating: false };
         }
       }
     }
 
-    // Estratégia 3: Fallback para botão flutuante se não encontrar cabeçalho
+    // Estratégia 4: Fallback para botão flutuante se não encontrar cabeçalho
     return { container: document.body, sibling: null, isFloating: true };
   }
 
@@ -910,6 +929,8 @@
 
     if (found.isFloating) {
       document.body.appendChild(btn);
+    } else if (found.sibling && found.sibling.parentElement === found.container) {
+      found.container.insertBefore(btn, found.sibling);
     } else {
       found.container.appendChild(btn);
     }
@@ -935,7 +956,7 @@
   (function retry() {
     refreshBinding();
     ensureButton();
-    if (++tries < 30) setTimeout(retry, 1000);
+    if (++tries < 40) setTimeout(retry, 1000);
   })();
 
   connectEvents();
