@@ -21,7 +21,11 @@ import { useNavigation } from "@/stores/navigation";
 import { apiPost, apiDelete } from "@/lib/api";
 import { toast } from "sonner";
 
-export const ContactDetailsDrawer = () => {
+interface ContactDetailsDrawerProps {
+  onClose?: () => void;
+}
+
+export const ContactDetailsDrawer = ({ onClose }: ContactDetailsDrawerProps) => {
   const activeConversation = useConversationsStore(
     (s) => s.activeConversation,
   );
@@ -57,9 +61,26 @@ export const ContactDetailsDrawer = () => {
   };
 
   return (
-    <aside className="w-80 shrink-0 border-l bg-card/40 p-4 space-y-5 overflow-y-auto custom-scrollbar select-none text-xs">
+    <aside className="w-72 lg:w-80 h-full shrink-0 border-l bg-card/60 p-4 space-y-4 overflow-y-auto custom-scrollbar select-none text-xs flex flex-col">
+      {/* Top Header com Fechar */}
+      <div className="flex items-center justify-between border-b pb-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          Detalhes do Contato
+        </span>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-6 w-6 rounded-full text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+
       {/* Header do Perfil */}
-      <div className="flex flex-col items-center text-center space-y-2 pt-2">
+      <div className="flex flex-col items-center text-center space-y-2 pt-1">
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xl border">
           {contact.avatar_url ? (
             <img

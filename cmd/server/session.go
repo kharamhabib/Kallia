@@ -1308,22 +1308,56 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 	}
 
 	contentType := "text"
+	mediaURL := ""
+	var dl whatsmeow.DownloadableMessage
+	var ext string
+
 	if evt.Message.ImageMessage != nil {
 		contentType = "image"
+		dl = evt.Message.GetImageMessage()
+		ext = "jpg"
 		if text == "" {
 			text = evt.Message.ImageMessage.GetCaption()
 		}
 	} else if evt.Message.AudioMessage != nil {
 		contentType = "audio"
+		dl = evt.Message.GetAudioMessage()
+		ext = "ogg"
 	} else if evt.Message.VideoMessage != nil {
 		contentType = "video"
+		dl = evt.Message.GetVideoMessage()
+		ext = "mp4"
 		if text == "" {
 			text = evt.Message.VideoMessage.GetCaption()
 		}
 	} else if evt.Message.DocumentMessage != nil {
 		contentType = "document"
-		if text == "" {
-			text = evt.Message.DocumentMessage.GetFileName()
+		dl = evt.Message.GetDocumentMessage()
+		ext = "pdf"
+		if docName := evt.Message.DocumentMessage.GetFileName(); docName != "" {
+			if e := filepath.Ext(docName); e != "" {
+				ext = strings.TrimPrefix(e, ".")
+			}
+			if text == "" {
+				text = docName
+			}
+		}
+	}
+
+	// Baixa e descriptografa a mídia recebida em background para renderização instantânea no Chat
+	if dl != nil && s.getClient() != nil {
+		storageRoot := "./storage"
+		if s.mgr != nil && s.mgr.db != nil && s.mgr.db.storageDir != "" {
+			storageRoot = s.mgr.db.storageDir
+		}
+		if data, err := s.getClient().Download(context.Background(), dl); err == nil && len(data) > 0 {
+			if url, serr := SaveIncomingMedia(storageRoot, wid, string(evt.Info.ID), ext, data); serr == nil {
+				mediaURL = url
+			} else {
+				s.log.Error("falha ao salvar mídia recebida no disco", "err", serr, "msg_id", evt.Info.ID)
+			}
+		} else if err != nil {
+			s.log.Error("falha ao baixar mídia do WhatsApp", "err", err, "msg_id", evt.Info.ID)
 		}
 	}
 
@@ -1335,7 +1369,7 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 		sender,
 		contactName,
 		text,
-		"",
+		mediaURL,
 		contentType,
 		evt.Info.IsFromMe,
 		string(evt.Info.ID),

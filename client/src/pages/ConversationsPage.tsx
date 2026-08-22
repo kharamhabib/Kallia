@@ -6,6 +6,7 @@ import { ChatInputBar } from "@/components/domain/chat/ChatInputBar";
 import { ContactDetailsDrawer } from "@/components/domain/chat/ContactDetailsDrawer";
 import { useConversationsStore } from "@/stores/conversations";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { cn } from "@/lib/utils";
 
 export const ConversationsPage = () => {
   const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
@@ -57,14 +58,24 @@ export const ConversationsPage = () => {
   }, [wid]);
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] md:h-screen w-full overflow-hidden bg-background">
-      {/* Coluna 1: Lista de Conversas (Painel Esquerdo) */}
-      <div className="w-full md:w-80 lg:w-96 shrink-0 h-full">
+    <div className="flex h-full w-full overflow-hidden bg-background">
+      {/* Coluna 1: Lista de Conversas (Painel Esquerdo - Fixo e Responsivo) */}
+      <div
+        className={cn(
+          "w-full md:w-72 lg:w-80 shrink-0 h-full border-r bg-card/60",
+          activeConversationId ? "hidden md:block" : "block",
+        )}
+      >
         <ConversationsList />
       </div>
 
       {/* Coluna 2: Chat Ativo (Painel Central) */}
-      <div className="hidden md:flex flex-1 flex-col h-full min-w-0 bg-background">
+      <div
+        className={cn(
+          "flex-1 flex-col h-full min-w-0 bg-background overflow-hidden",
+          activeConversationId ? "flex" : "hidden md:flex",
+        )}
+      >
         {activeConversationId ? (
           <>
             <ChatHeader
@@ -75,15 +86,15 @@ export const ConversationsPage = () => {
             <ChatInputBar />
           </>
         ) : (
-          <div className="flex h-full flex-col items-center justify-center p-6 text-center text-muted-foreground">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted/60 mb-4 text-2xl">
+          <div className="flex h-full flex-col items-center justify-center p-6 text-center text-muted-foreground select-none">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 mb-4 text-3xl shadow-sm">
               💬
             </div>
             <h3 className="text-base font-bold text-foreground">
               Central de Atendimento Omnichannel
             </h3>
-            <p className="text-xs text-muted-foreground max-w-sm mt-1">
-              Selecione uma conversa na barra lateral para iniciar o atendimento ao vivo, gerenciar tags e enviar mensagens via WhatsApp.
+            <p className="text-xs text-muted-foreground max-w-sm mt-1.5 leading-relaxed">
+              Selecione uma conversa ao lado para iniciar o atendimento em tempo real, gerenciar tags e enviar mensagens via WhatsApp.
             </p>
           </div>
         )}
@@ -91,8 +102,8 @@ export const ConversationsPage = () => {
 
       {/* Coluna 3: Gaveta de Detalhes do Contato (Painel Direito Retrátil) */}
       {activeConversationId && isDrawerOpen && (
-        <div className="hidden xl:block h-full">
-          <ContactDetailsDrawer />
+        <div className="hidden lg:block h-full shrink-0">
+          <ContactDetailsDrawer onClose={() => setIsDrawerOpen(false)} />
         </div>
       )}
     </div>

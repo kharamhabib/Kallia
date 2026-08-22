@@ -680,8 +680,9 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 						if mime == "" {
 							mime = "audio/ogg; codecs=opus"
 						}
+						isPTT := strings.Contains(mime, "ogg")
 						waMsg = &waE2E.Message{AudioMessage: &waE2E.AudioMessage{
-							Mimetype: proto.String(mime), PTT: proto.Bool(true),
+							Mimetype: proto.String(mime), PTT: proto.Bool(isPTT),
 							URL: &up.URL, DirectPath: &up.DirectPath, MediaKey: up.MediaKey,
 							FileEncSHA256: up.FileEncSHA256, FileSHA256: up.FileSHA256, FileLength: proto.Uint64(up.FileLength),
 						}}

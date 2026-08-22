@@ -10,6 +10,7 @@ import {
   Play,
   Pause,
   Image as ImageIcon,
+  Video,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -128,6 +129,24 @@ export const ChatTimeline = () => {
                         <div className="flex items-center gap-2 p-3 text-xs">
                           <ImageIcon className="h-4 w-4" />
                           <span>Imagem recebida</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Renderização de Vídeo */}
+                  {msg.content_type === "video" && (
+                    <div className="mb-2 overflow-hidden rounded-xl bg-black/5">
+                      {msg.media_url ? (
+                        <video
+                          src={msg.media_url}
+                          controls
+                          className="max-h-72 w-full rounded-lg object-contain bg-black/80"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 p-3 text-xs">
+                          <Video className="h-4 w-4" />
+                          <span>Vídeo recebido</span>
                         </div>
                       )}
                     </div>

@@ -135,7 +135,8 @@ export const ConversationsList = () => {
             <Button
               size="sm"
               onClick={() => setIsNewConvOpen(true)}
-              className="h-8 gap-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-2xs"
+              className="h-8 px-2 sm:px-2.5 gap-1 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-2xs shrink-0"
+              title="Iniciar Nova Conversa via WhatsApp"
             >
               <Plus className="h-3.5 w-3.5" />
               <span>Nova Conversa</span>
@@ -148,10 +149,11 @@ export const ConversationsList = () => {
                   variant="outline"
                   size="sm"
                   className={cn(
-                    "h-8 gap-1 rounded-lg text-xs font-medium cursor-pointer",
+                    "h-8 px-2 gap-1 rounded-lg text-xs font-medium cursor-pointer shrink-0",
                     (filters.assignee !== "all" || filters.tagId || filters.channel !== "all") &&
                       "border-primary text-primary font-bold bg-primary/5",
                   )}
+                  title="Filtros de Atribuição e Canal"
                 >
                   <Filter className="h-3.5 w-3.5" />
                   <ChevronDown className="h-3 w-3 opacity-60" />

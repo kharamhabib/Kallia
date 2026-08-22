@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { useNavigation } from "@/stores/navigation";
+import { cn } from "@/lib/utils";
 
 const sectionTitles: Record<string, string> = {
   dashboard: "Painel de Controle",
@@ -58,8 +59,15 @@ export const AppShell = ({ children }: { children: ReactNode }) => {
           </div>
         </header>
 
-        {/* Scrollable Page Body */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-6 custom-scrollbar">
+        {/* Page Body: No padding and no outer scroll for Conversations/Chat */}
+        <main
+          className={cn(
+            "flex-1 custom-scrollbar",
+            activeSection === "conversations"
+              ? "p-0 overflow-hidden flex flex-col h-full min-h-0"
+              : "overflow-y-auto p-3 sm:p-6",
+          )}
+        >
           {children}
         </main>
       </div>

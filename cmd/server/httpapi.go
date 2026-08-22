@@ -191,6 +191,9 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /api/contacts/{id}/tags", s.handleAddContactTag)
 	mux.HandleFunc("DELETE /api/contacts/{id}/tags/{tagId}", s.handleRemoveContactTag)
 
+	// ── Omnichannel: Mídias Locais (Áudio, Imagem, Vídeo, Documento) ──
+	mux.HandleFunc("GET /api/media/{wid}/{fileName}", s.handleServeMediaFile)
+
 
 	// Rotas Públicas de Documentação de API (Swagger / OpenAPI)
 	mux.HandleFunc("GET /api/docs", s.handleAPIDocs)
@@ -2655,5 +2658,35 @@ func (s *server) handleAdminUpdateWorkspace(w http.ResponseWriter, r *http.Reque
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "workspace atualizado"})
 }
+
+// handleServeMediaFile serve arquivos de mídia (áudios, imagens, vídeos e documentos)
+// armazenados em storage/media/{wid}/{fileName} com cabeçalhos de cache otimizados.
+func (s *server) handleServeMediaFile(w http.ResponseWriter, r *http.Request) {
+	wid := r.PathValue("wid")
+	fileName := r.PathValue("fileName")
+
+	// Prevenção contra Path Traversal
+	if wid == "" || fileName == "" ||
+		strings.Contains(wid, "..") || strings.Contains(fileName, "..") ||
+		strings.Contains(fileName, "/") || strings.Contains(fileName, "\\") {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	storageRoot := "./storage"
+	if s.sessions != nil && s.sessions.db != nil && s.sessions.db.storageDir != "" {
+		storageRoot = s.sessions.db.storageDir
+	}
+
+	filePath := filepath.Join(storageRoot, "media", wid, fileName)
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeFile(w, r, filePath)
+}
+
 
 

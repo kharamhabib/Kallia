@@ -157,6 +157,7 @@ Kallia/
 │       ├── realtime_ws.go           # Hub WebSocket bidirecional em tempo real + Redis PubSub
 │       ├── conversations.go         # CRUD de conversas, inboxes, envio de mídias e ingestão WhatsApp
 │       ├── contacts_pg.go           # CRM unificado no PostgreSQL com auto-migração de contatos
+│       ├── media_storage.go         # Storage local de mídias do chat e job de retenção/limpeza
 │       ├── tags.go                  # Tags multicoloridas de Workspace (contacts & conversations)
 │       ├── auth.go                  # Autenticação JWT, login PocketBase, middleware RBAC e SuperAdmin
 │       ├── db.go                    # dbProvider com suporte a SQLite local e namespaces

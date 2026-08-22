@@ -165,7 +165,23 @@ export const ChatInputBar = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
 
-      const recorder = new MediaRecorder(stream);
+      let chosenMime = "";
+      if (typeof MediaRecorder.isTypeSupported === "function") {
+        if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
+          chosenMime = "audio/ogg;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          chosenMime = "audio/mp4";
+        } else if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          chosenMime = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          chosenMime = "audio/webm";
+        }
+      }
+
+      const recorder = chosenMime
+        ? new MediaRecorder(stream, { mimeType: chosenMime })
+        : new MediaRecorder(stream);
+
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (ev) => {
@@ -196,7 +212,14 @@ export const ChatInputBar = () => {
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
 
     mediaRecorderRef.current.onstop = () => {
-      const blob = new Blob(audioChunksRef.current, { type: "audio/ogg; codecs=opus" });
+      const activeMime = mediaRecorderRef.current?.mimeType || "audio/ogg; codecs=opus";
+      const blob = new Blob(audioChunksRef.current, { type: activeMime });
+      const ext = activeMime.includes("ogg")
+        ? "ogg"
+        : activeMime.includes("mp4")
+        ? "mp4"
+        : "webm";
+
       const reader = new FileReader();
       reader.onload = () => {
         const base64 = reader.result as string;
@@ -204,8 +227,8 @@ export const ChatInputBar = () => {
           content: "",
           content_type: "audio",
           base64,
-          file_name: `audio_${Date.now()}.ogg`,
-          mimetype: "audio/ogg; codecs=opus",
+          file_name: `audio_${Date.now()}.${ext}`,
+          mimetype: activeMime,
         });
       };
       reader.readAsDataURL(blob);
@@ -227,7 +250,7 @@ export const ChatInputBar = () => {
   if (!activeConversation) return null;
 
   return (
-    <footer className="border-t bg-card/90 p-3 backdrop-blur-md">
+    <footer className="shrink-0 border-t bg-card/90 p-2.5 sm:p-3 backdrop-blur-md">
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}

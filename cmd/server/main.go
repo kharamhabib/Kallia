@@ -116,6 +116,10 @@ func main() {
 	// Inicia a escuta contínua de eventos em tempo real do PocketBase (SSE)
 	startPocketBaseRealtimeListener(ctx, srv.sessions.store, srv.broker, srv.sessions)
 
+	// Inicia a rotina de retenção e limpeza automática de mídias locais (padrão: 30 dias)
+	mediaRetentionDays := envInt("KALLIA_MEDIA_RETENTION_DAYS", 30)
+	StartMediaCleaner(*storageDir, mediaRetentionDays, 24*time.Hour)
+
 	httpSrv := &http.Server{
 		Addr:              *addr,
 		Handler:           srv.routes(),
