@@ -107,9 +107,27 @@ func (s *Session) setAIConfig(c AIConfig) {
 
 func (s *Session) getAIConfig() AIConfig {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	cfg := s.aiConfig
-	resolveAIConfigKeys(context.Background(), s.mgr.store, s.projectID, &cfg)
+	s.mu.Unlock()
+
+	// Se a sessão ainda não possui AIConfig configurado na memória, tenta carregar do PocketBase do workspace
+	if cfg.SystemInstruction == "" && !cfg.ServerSideAI {
+		wid := s.getWorkspaceID()
+		if pbAgents, err := pbClient.ListAgentsPB(context.Background(), wid); err == nil {
+			for _, ag := range pbAgents {
+				if ag.Inbound || strings.ToLower(strings.TrimSpace(ag.Name)) == "agente principal" {
+					var pbCfg AIConfig
+					if json.Unmarshal([]byte(ag.AIConfig), &pbCfg) == nil {
+						cfg = pbCfg
+						s.setAIConfig(cfg)
+						break
+					}
+				}
+			}
+		}
+	}
+
+	resolveAIConfigKeys(context.Background(), s.mgr.store, s.getWorkspaceID(), &cfg)
 	return cfg
 }
 
@@ -585,7 +603,7 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 
 	// Auto-atendimento server-side: aceita e acopla IA automaticamente
 	config := s.getAIConfig()
-	resolveAIConfigKeys(context.Background(), s.mgr.store, s.projectID, &config)
+	resolveAIConfigKeys(context.Background(), s.mgr.store, s.getWorkspaceID(), &config)
 	if config.ServerSideAI && config.AutoAnswer && config.GeminiAPIKey != "" {
 		s.log.Info("[ServerAI] Agendando auto-atendimento", "callId", callID, "peer", evt.From.String(), "delay", config.AutoAnswerDelay)
 
@@ -635,6 +653,8 @@ func (s *Session) onIncomingOffer(ctx context.Context, evt *events.CallOffer) {
 				return info.PeerJid
 			})
 		})
+	} else {
+		s.log.Info("[ServerAI] Auto-atendimento não ativado para a chamada", "callId", callID, "serverSideAI", config.ServerSideAI, "autoAnswer", config.AutoAnswer, "hasApiKey", config.GeminiAPIKey != "", "workspaceId", s.getWorkspaceID())
 	}
 }
 

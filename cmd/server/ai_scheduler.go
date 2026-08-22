@@ -118,7 +118,7 @@ func (s *AIScheduler) tick(ctx context.Context) {
 // checkSession verifica e dispara agendamentos para uma sessão específica.
 func (s *AIScheduler) checkSession(ctx context.Context, sess *Session) {
 	config := sess.getAIConfig()
-	resolveAIConfigKeys(ctx, sess.mgr.store, sess.projectID, &config)
+	resolveAIConfigKeys(ctx, sess.mgr.store, sess.getWorkspaceID(), &config)
 
 	// Só processa se serverSideAI estiver ativado e houver chave API
 	if !config.ServerSideAI || config.GeminiAPIKey == "" {
@@ -278,7 +278,7 @@ func (s *AIScheduler) RecalculateActiveCount() {
 	var total int64
 	for _, sess := range sessions {
 		config := sess.getAIConfig()
-		resolveAIConfigKeys(context.Background(), sess.mgr.store, sess.projectID, &config)
+		resolveAIConfigKeys(context.Background(), sess.mgr.store, sess.getWorkspaceID(), &config)
 		if !config.ServerSideAI || config.GeminiAPIKey == "" {
 			continue
 		}

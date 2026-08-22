@@ -228,15 +228,25 @@ func resolveAIProviderKey(ctx context.Context, store *sessionStore, projectID, p
 		projectID = "default"
 	}
 
-	// 1. Tentar buscar no PocketBase (SSOT)
-	if pbRows, err := pbClient.ListAIProvidersPB(ctx, projectID); err == nil {
+	// 1. Tentar buscar no PocketBase específico para o workspace
+	if pbRows, err := pbClient.ListAIProvidersPB(ctx, projectID); err == nil && len(pbRows) > 0 {
 		for _, r := range pbRows {
 			if r.Provider == provider && r.EncryptedAPIKey != "" {
-				if r.ProjectID == projectID || (projectID != "default" && r.ProjectID == "default") {
-					key, _ := decryptSecret(r.EncryptedAPIKey)
-					if key != "" {
-						return key
-					}
+				key, _ := decryptSecret(r.EncryptedAPIKey)
+				if key != "" {
+					return key
+				}
+			}
+		}
+	}
+
+	// 1b. Fallback: buscar em qualquer ai_provider cadastrado no PocketBase
+	if pbAll, err := pbClient.ListAIProvidersPB(ctx, "all"); err == nil && len(pbAll) > 0 {
+		for _, r := range pbAll {
+			if r.Provider == provider && r.EncryptedAPIKey != "" {
+				key, _ := decryptSecret(r.EncryptedAPIKey)
+				if key != "" {
+					return key
 				}
 			}
 		}

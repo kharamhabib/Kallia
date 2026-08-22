@@ -17,8 +17,10 @@ export type AIProviderConfig = {
   options?: Record<string, unknown>;
 };
 
-export const getAIProviders = () =>
-  apiGet<{ providers: AIProviderConfig[] }>("/api/ai-providers");
+export const getAIProviders = (wid?: string) => {
+  const url = wid ? `/api/workspaces/${wid}/ai-providers` : "/api/ai-providers";
+  return apiGet<{ providers: AIProviderConfig[] }>(url);
+};
 
 export const updateAIProvider = (
   provider: string,
@@ -27,5 +29,9 @@ export const updateAIProvider = (
     enabled: boolean;
     defaultModel?: string;
     options?: Record<string, unknown>;
-  }
-) => apiPost<AIProviderConfig>(`/api/ai-providers/${provider}`, payload);
+  },
+  wid?: string
+) => {
+  const url = wid ? `/api/workspaces/${wid}/ai-providers/${provider}` : `/api/ai-providers/${provider}`;
+  return apiPost<AIProviderConfig>(url, payload);
+};

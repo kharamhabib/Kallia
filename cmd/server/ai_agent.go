@@ -70,7 +70,7 @@ type ServerAIAgent struct {
 
 // NewServerAIAgent cria e acopla um agente de IA ao CallManager.
 func NewServerAIAgent(sess *Session, callID, peer, direction string, cm *call.CallManager, config AIConfig, log *slog.Logger) *ServerAIAgent {
-	resolveAIConfigKeys(context.Background(), sess.mgr.store, sess.projectID, &config)
+	resolveAIConfigKeys(context.Background(), sess.mgr.store, sess.getWorkspaceID(), &config)
 	config.ChatwootEnabled = sess.getChatwoot().valid()
 	if config.Provider == "" {
 		config.Provider = "gemini"
@@ -772,7 +772,7 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 	if newCfg.ModelName == "" {
 		newCfg.ModelName = masterCfg.ModelName
 	}
-	resolveAIConfigKeys(context.Background(), a.sess.mgr.store, a.sess.projectID, &newCfg)
+	resolveAIConfigKeys(context.Background(), a.sess.mgr.store, a.sess.getWorkspaceID(), &newCfg)
 
 	// Combinar Instruções Globais do Agente Principal + Instruções Específicas do Agente Especialista
 	if masterCfg.SystemInstruction != "" {

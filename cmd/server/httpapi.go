@@ -1076,7 +1076,7 @@ func (s *server) doStartCall(sess *Session, w http.ResponseWriter, r *http.Reque
 	}
 	owner := clientID(r)
 	config := sess.getAIConfig()
-	resolveAIConfigKeys(r.Context(), sess.mgr.store, sess.projectID, &config)
+	resolveAIConfigKeys(r.Context(), sess.mgr.store, sess.getWorkspaceID(), &config)
 	isServerAI := body.AI && config.ServerSideAI && config.GeminiAPIKey != ""
 	if isServerAI {
 		owner = serverOwnerID
@@ -1184,7 +1184,7 @@ func (s *server) doAccept(sess *Session, w http.ResponseWriter, r *http.Request)
 
 	owner := clientID(r)
 	config := sess.getAIConfig()
-	resolveAIConfigKeys(r.Context(), sess.mgr.store, sess.projectID, &config)
+	resolveAIConfigKeys(r.Context(), sess.mgr.store, sess.getWorkspaceID(), &config)
 	isServerAI := body.AI && config.ServerSideAI && config.GeminiAPIKey != ""
 	if isServerAI {
 		owner = serverOwnerID

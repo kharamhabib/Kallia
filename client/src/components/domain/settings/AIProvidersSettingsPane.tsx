@@ -9,10 +9,14 @@ import { Switch } from "@/components/ui/Switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { getAIProviders, updateAIProvider, type AIProviderConfig } from "@/services/aiProviders";
+import { useWorkspaceStore } from "@/stores/workspace";
 
 type ProviderTab = "grok" | "gemini" | "openai";
 
 export const AIProvidersSettingsPane = () => {
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const wid = currentWorkspace?.id;
+
   const [providers, setProviders] = useState<AIProviderConfig[]>([]);
   const [activeTab, setActiveTab] = useState<ProviderTab>("grok");
   const [loading, setLoading] = useState(true);
@@ -27,7 +31,7 @@ export const AIProvidersSettingsPane = () => {
   const loadProviders = async () => {
     try {
       setLoading(true);
-      const res = await getAIProviders();
+      const res = await getAIProviders(wid);
       const list = res.providers || [];
       setProviders(list);
 
@@ -53,7 +57,7 @@ export const AIProvidersSettingsPane = () => {
 
   useEffect(() => {
     loadProviders();
-  }, []);
+  }, [wid]);
 
   const handleSave = async (providerKey: string) => {
     try {
@@ -62,11 +66,15 @@ export const AIProvidersSettingsPane = () => {
       const isEnabled = enabledState[providerKey] || false;
       const model = selectedModels[providerKey] || "";
 
-      await updateAIProvider(providerKey, {
-        apiKey: keyVal,
-        enabled: isEnabled,
-        defaultModel: model,
-      });
+      await updateAIProvider(
+        providerKey,
+        {
+          apiKey: keyVal,
+          enabled: isEnabled,
+          defaultModel: model,
+        },
+        wid
+      );
 
       toast.success(`Configuração do provedor ${providerKey.toUpperCase()} salva com sucesso! (Criptografada AES-256)`);
       await loadProviders();
