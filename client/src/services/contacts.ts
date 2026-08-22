@@ -8,9 +8,11 @@ export const getCRMContacts = (sid?: string | null, search?: string, wid?: strin
     : sid
     ? `/api/sessions/${sid}/crm-contacts${query}`
     : `/api/contacts${query}`;
-  return apiGet<Contact[] | null>(url).then(
-    (res) => (Array.isArray(res) ? res : [])
-  );
+  return apiGet<any>(url).then((res) => {
+    if (Array.isArray(res)) return res;
+    if (res && Array.isArray(res.items)) return res.items;
+    return [];
+  });
 };
 
 export const createCRMContact = (sid: string | undefined, data: UpsertContactPayload, wid?: string) => {

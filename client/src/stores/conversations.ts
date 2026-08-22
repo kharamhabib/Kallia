@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/lib/api";
-import { getToken } from "@/lib/auth";
+import { getToken, getApiBase } from "@/lib/auth";
 import type {
   Conversation,
   Message,
@@ -383,13 +383,24 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
 
     const token = getToken() || "";
     const loc = window.location;
-    const proto = loc.protocol === "https:" ? "wss:" : "ws:";
-    const host =
-      import.meta.env.VITE_API_URL
-        ? new URL(import.meta.env.VITE_API_URL).host
-        : loc.host;
+    const base = getApiBase();
 
-    const wsUrl = `${proto}//${host}/api/workspaces/${workspaceId}/ws?token=${encodeURIComponent(token)}`;
+    let wsProto = loc.protocol === "https:" ? "wss:" : "ws:";
+    let wsHost = loc.host;
+
+    if (base.startsWith("https://")) {
+      wsProto = "wss:";
+      try {
+        wsHost = new URL(base).host;
+      } catch {}
+    } else if (base.startsWith("http://")) {
+      wsProto = "ws:";
+      try {
+        wsHost = new URL(base).host;
+      } catch {}
+    }
+
+    const wsUrl = `${wsProto}//${wsHost}/api/workspaces/${workspaceId}/ws?token=${encodeURIComponent(token)}`;
 
     try {
       const ws = new WebSocket(wsUrl);

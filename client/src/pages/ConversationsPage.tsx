@@ -22,6 +22,8 @@ export const ConversationsPage = () => {
     (s) => s.disconnectWebSocket,
   );
 
+  const fetchMessages = useConversationsStore((s) => s.fetchMessages);
+
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const wid = currentWorkspace?.id;
@@ -32,6 +34,22 @@ export const ConversationsPage = () => {
       void fetchInboxes(wid);
       void fetchTags(wid);
       connectWebSocket(wid);
+
+      // Polling de sincronização a cada 3s para garantir 0 atraso
+      const interval = setInterval(() => {
+        if (document.visibilityState === "visible") {
+          void fetchConversations(wid);
+          const currentActiveId = useConversationsStore.getState().activeConversationId;
+          if (currentActiveId) {
+            void fetchMessages(currentActiveId);
+          }
+        }
+      }, 3000);
+
+      return () => {
+        clearInterval(interval);
+        disconnectWebSocket();
+      };
     }
     return () => {
       disconnectWebSocket();

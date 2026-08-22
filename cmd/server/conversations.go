@@ -639,8 +639,24 @@ func (s *server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Se for mensagem externa (não nota interna) e tiver sessão WhatsApp ativa, dispara pelo whatsmeow
 	var externalID string
-	if body.ContentType != "note" && sessionID != "" && contactPhone != "" {
-		sess, _ := s.sessions.Get(sessionID)
+	if body.ContentType != "note" && contactPhone != "" {
+		var sess *Session
+		if sessionID != "" {
+			sess, _ = s.sessions.Get(sessionID)
+		}
+		if sess == nil || sess.getClient() == nil || sess.getClient().Store.ID == nil {
+			// Busca qualquer sessão pareada ativa deste workspace
+			for _, info := range s.sessions.infos() {
+				if info.WorkspaceID == workspaceID && info.State == "open" {
+					sess, _ = s.sessions.Get(info.ID)
+					if sess != nil && sess.getClient() != nil && sess.getClient().Store.ID != nil {
+						sessionID = info.ID
+						break
+					}
+				}
+			}
+		}
+
 		if sess != nil && sess.getClient() != nil && sess.getClient().Store.ID != nil {
 			jid, err := resolveRecipient(contactPhone)
 			if err == nil {

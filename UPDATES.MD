@@ -87,6 +87,15 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Correção do Cabeçalho e Reprodução de Áudio WAV**: Corrigido bug crítico em [`recorder.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/recorder.go) onde a gravação inicial escrevia o cabeçalho WAV de 44 bytes via `WriteAt` sem reposicionar o cursor de escrita do arquivo (`f.Seek(44, io.SeekStart)`), fazendo com que os primeiros bytes de áudio PCM sobrescrevessem o cabeçalho WAV corrompendo a reprodução nos players HTML5.
   - **Transcript no Ciclo de Vida do CallRecord**: Adicionado o campo `Transcript []TranscriptLine` ao `CallRecord` em [`broker.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/broker.go) e implementado `Broker.saveTranscript` integrado a `HistoryPersister.SaveTranscript` e `SaveCall`, garantindo que o diálogo completo seja propagado ao PocketBase e SQLite sem risco de sobrescrita concorrente por chamadas assíncronas de encerramento.
   - **Eliminação de Despedida Repetida**: Refinado o prompt de instrução de encerramento em [`ai_agent.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/ai_agent.go), [`aiconfig.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/aiconfig.go), [`gemini_live.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/gemini_live.go) e [`grok_live.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/grok_live.go) instruindo o modelo a emitir uma única despedida natural e acionar a tool `hangup` simultaneamente no mesmo turno, impedindo a fala dupla consecutiva observada nos logs.
+- [x] **Resolução de LID do WhatsApp & Integração Unificada da Aba de Contatos (22/08/2026)**:
+  - **Conversão Automática de LID (@lid) para Número Real de Telefone**: Em [`session.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/session.go), a ingestão de mensagens agora utiliza `s.realPhone(targetJID)` e o store de contatos do Whatsmeow para resolver identificadores temporários do WhatsApp Multi-Device (ex: `88240136671451`) para o número real com DDI/DDD (ex: `5527995307346`) e nome verificado do cliente.
+  - **Exibição dos Contatos na Aba 'Contatos' (PostgreSQL)**: Corrigido em [`contacts.ts`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/services/contacts.ts) o parsing da resposta paginada do endpoint unificado do PostgreSQL (`{ items: [...], total: N }`), garantindo que todos os contatos criados no chat apareçam instantaneamente na aba de Contatos do CRM.
+  - **Busca Unificada (`q` e `search`)**: Em [`contacts_pg.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/contacts_pg.go), o handler agora aceita de forma transparente tanto o parâmetro `q` quanto `search`.
+- [x] **Otimização de Latência e Tempo Real do Chat Omnichannel (22/08/2026)**:
+  - **Broadcast Local Imediato (< 1ms)**: Em [`realtime_ws.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/realtime_ws.go), o método `Broadcast` agora despacha as mensagens diretamente para todos os operadores locais conectados antes de repassar ao Redis Pub/Sub, eliminando qualquer atraso de fila ou loop de rede.
+  - **Resolução Dinâmica de Sessão Ativa de Envio**: Em [`conversations.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/conversations.go), `handleSendMessage` agora resolve a sessão ativa de WhatsApp do workspace em tempo de execução caso a inbox não possua um ID estático, permitindo envio imediato pelo Whatsmeow sem travar a requisição.
+  - **Suporte a WebSocket no Proxy Vite (`ws: true`)**: Habilitado o proxy de WebSockets no [`vite.config.ts`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/vite.config.ts) e corrigido o construtor de URL do WebSocket em [`conversations.ts`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/stores/conversations.ts) utilizando `getApiBase()`.
+  - **Fallback Polling de 3s no Frontend**: Adicionada sincronização contínua leve em [`ConversationsPage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/ConversationsPage.tsx) para garantir que mesmo sob oscilações de rede nenhuma mensagem fique pendente.
 - [x] **Implementação do Frontend Omnichannel & Chat Completo Estilo WhatsApp (22/08/2026)**:
   - **Interface em 3 Colunas Inspirada no WhatsApp / Chatwoot**: Criado [`ConversationsPage.tsx`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/client/src/pages/ConversationsPage.tsx) integrado ao layout e design system existente do Kallia Call.
   - **Store e Conexão em Tempo Real (`conversations.ts`)**: Gerenciador de estado com sincronização bidirecional via WebSocket e reconexão automática, refletindo novas mensagens, contadores de não lidas e indicadores de digitação instantaneamente.
@@ -118,16 +127,59 @@ Este documento registra as implementações recentes concluídas e as melhorias 
     - Os presets rápidos (*Pessoal*, *Empresa*, *Suporte*) adaptam suas frases de abertura e encerramento em tempo real com base no nome e modo de transparência selecionados.
   - **Toolbar Superior Dinâmico (`PromptQuickBar.tsx`)**: Exibe o avatar/iniciais do nome quando ativo ou ícone genérico de bot com o título *Assistente de Atendimento*, além do badge em tempo real do modo de transparência ativo (`Natural / Discreta` vs `Avisar IA`).
 
+## 🚀 Próximas Implementações e Roadmap
+
+### 🤖 Fase 4: Agente Autônomo de Resposta de Chat (RAG + Ferramentas)
+- [ ] **Configuração de Agentes de Chat por Linha/Workspace**:
+  - Interface para criar personas exclusivas para atendimento em texto no WhatsApp.
+  - Definição de Prompt de Sistema, temperatura, delay de resposta (para simular digitação natural humana) e horário de funcionamento.
+- [ ] **RAG Vetorial com pgvector & Gemini Embeddings**:
+  - Geração de embeddings vetoriais com modelo `text-embedding-004` (768 dimensões) para os documentos da Base de Conhecimento do Workspace salvos em `embeddings`.
+  - Busca por similaridade cosseno (`<=>` HNSW) para responder perguntas dos clientes com precisão documental.
+- [ ] **Transcrição & Resposta Inteligente de Áudios**:
+  - Transcrição automática de mensagens de voz recebidas no WhatsApp via Gemini / Whisper.
+  - Capacidade do Agente de responder em texto ou sintetizar áudio TTS nativo dependendo da preferência configurada.
+- [ ] **Tools & Ações Automáticas do Agente**:
+  - Criar/Atualizar dados do contato no CRM durante a conversa.
+  - Mover o lead de estágio no Kanban.
+  - Aplicar tags automáticas na conversa.
+  - Transbordo para atendente humano (`status = 'pending'`, pausa na IA e notificação).
+
 ---
 
-## 🚀 Próximas Implementações (Roadmap)
+### 📊 Fase 5: CRM com Kanban (Pipelines, Estágios e Deals)
+- [ ] **Quadro Kanban Visual de Oportunidades**:
+  - Visualização de colunas customizáveis (ex: *Novo Lead*, *Em Qualificação*, *Proposta Enviada*, *Fechado/Ganho*, *Perdido*).
+  - Drag-and-drop de cards entre estágios com atualização em tempo real.
+- [ ] **Gestão de Negociações (Deals)**:
+  - Criação de deals com valor monetário estimado, responsável, data de fechamento prevista e motivo de perda.
+  - Vinculação direta entre Negociação, Contato e Conversa do WhatsApp.
+- [ ] **Ações Rápidas no Card**:
+  - Botão de discagem imediata pelo Webphone a partir do card.
+  - Abertura da janela de chat com histórico completo ao clicar no card.
 
-1. **Relatórios Avançados de Performance de Agentes**:
-   - Métricas de NPS acumulado por agente especialista.
-   - Análise de sentimentos e tempo médio de atendimento (TMA) das ligações operadas por IA.
+---
 
-3. **Integração de Provedores de Voz Adicionais**:
-   - Opção de fallback para ElevenLabs / OpenAI Realtime API além do Google Gemini Live e xAI Grok.
+### ⚡ Fase 6: Automações Personalizadas & Triggers de Fluxo
+- [ ] **Motor de Automações por Eventos (`automations`)**:
+  - Gatilhos suportados: *Nova mensagem recebida*, *Palavra-chave detectada*, *Conversa criada*, *Conversa resolvida*, *Chamada encerrada*, *Avaliação de NPS recebida*.
+  - Ações suportadas: *Aplicar Tag*, *Atribuir a Operador*, *Enviar Mensagem Modelo*, *Criar Negociação no Kanban*, *Chamar Webhook Externo (N8N/Make)*.
+- [ ] **Editor Visual de Regras no Frontend**:
+  - Interface intuitiva de criação de automações "SE [Gatilho] ENTÃO [Ação]" sem necessidade de código.
 
-4. **Gravação Dual-Channel na Nuvem (S3 / R2)**:
-   - Exportação automática dos arquivos WAV de gravação de áudio para buckets S3 ou Cloudflare R2 para economizar espaço de disco no VPS.
+---
+
+### 🌐 Fase 7: Canais Adicionais Omnichannel
+- [ ] **Instagram Direct & Facebook Messenger**: Ingestão de mensagens diretas e comentários via Meta Graph API conectadas ao mesmo inbox do PostgreSQL.
+- [ ] **Telegram Bot**: Conexão de bots do Telegram para suporte e atendimento unificado.
+- [ ] **E-mail & SMS**: Recepção e disparo de e-mails de tickets e SMS transacionais.
+
+---
+
+### 📈 Fase 8: Relatórios Avançados & Métricas de Atendimento
+- [ ] **Métricas Omnichannel de Atendimento**:
+  - TMA (Tempo Médio de Atendimento) e TME (Tempo Médio de Primeira Resposta).
+  - Volume de mensagens por canal, dia e horário de pico.
+  - Taxa de resolução autônoma por IA vs atendente humano.
+- [ ] **Exportação de Gravações de Voz para Nuvem (S3 / Cloudflare R2)**:
+  - Backup automático de gravações de chamadas de voz WAV para bucket S3/R2 para economia de disco local.

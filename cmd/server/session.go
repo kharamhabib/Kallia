@@ -1257,15 +1257,47 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 		return
 	}
 
-	sender := evt.Info.Sender.User
+	var targetJID types.JID
+	if evt.Info.IsFromMe {
+		targetJID = evt.Info.Chat
+	} else if evt.Info.Sender.User != "" {
+		targetJID = evt.Info.Sender
+	} else {
+		targetJID = evt.Info.Chat
+	}
+
+	sender := ""
+	if targetJID.Server == types.DefaultUserServer && len(targetJID.User) <= 13 {
+		sender = targetJID.User
+	} else {
+		sender = s.realPhone(targetJID)
+	}
+	if sender == "" || len(sender) > 13 {
+		if realChat := s.realPhone(evt.Info.Chat); realChat != "" && len(realChat) <= 13 {
+			sender = realChat
+		}
+	}
 	if sender == "" {
-		sender = evt.Info.Chat.User
+		sender = targetJID.User
 	}
 	if sender == "" {
 		return
 	}
 
 	contactName := evt.Info.PushName
+	if contactName == "" {
+		if cli := s.getClient(); cli != nil && cli.Store != nil && cli.Store.Contacts != nil {
+			if c, err := cli.Store.Contacts.GetContact(context.Background(), targetJID.ToNonAD()); err == nil && c.Found {
+				if c.FullName != "" {
+					contactName = c.FullName
+				} else if c.BusinessName != "" {
+					contactName = c.BusinessName
+				} else if c.PushName != "" {
+					contactName = c.PushName
+				}
+			}
+		}
+	}
 	if contactName == "" {
 		contactName = sender
 	}

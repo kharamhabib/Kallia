@@ -78,18 +78,16 @@ func (h *RealtimeHub) unregister(c *WSClient) {
 	h.log.Debug("[WS] Cliente desconectado", "workspace", c.workspaceID, "user", c.userID)
 }
 
-// Broadcast envia uma mensagem para todos os clientes conectados de um workspace.
+// Broadcast envia uma mensagem imediatamente para todos os clientes locais e publica no Redis Pub/Sub.
 func (h *RealtimeHub) Broadcast(workspaceID string, payload []byte) {
-	// Se Redis estiver disponível, publica no canal Redis para atingir todas as instâncias em cluster
+	// 1. Despacha imediatamente para todos os clientes conectados localmente (latência zero < 1ms)
+	h.broadcastLocal(workspaceID, payload)
+
+	// 2. Publica no canal Redis para atingir instâncias adicionais em cluster (se ativo)
 	if h.rdb != nil {
 		channel := "ws:workspace:" + workspaceID
-		if err := h.rdb.Publish(h.ctx, channel, payload).Err(); err != nil {
-			h.log.Warn("[WS PubSub] Falha ao publicar no Redis, despachando localmente", "err", err)
-			h.broadcastLocal(workspaceID, payload)
-		}
-		return
+		_ = h.rdb.Publish(h.ctx, channel, payload).Err()
 	}
-	h.broadcastLocal(workspaceID, payload)
 }
 
 func (h *RealtimeHub) broadcastLocal(workspaceID string, payload []byte) {

@@ -350,6 +350,9 @@ func (s *server) handleListWorkspaceContactsPG(w http.ResponseWriter, r *http.Re
 
 	q := r.URL.Query()
 	search := q.Get("search")
+	if search == "" {
+		search = q.Get("q")
+	}
 	tagID := q.Get("tag_id")
 	limit := 50
 	offset := 0

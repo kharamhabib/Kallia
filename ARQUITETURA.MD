@@ -1,23 +1,16 @@
-# Arquitetura do Sistema: Kallia 2.0
+# Arquitetura do Sistema: Kallia 2.0 (VoIP & Omnichannel SaaS)
 
-O **Kallia** (plataforma PABX VoIP profissional SaaS baseada em WhatsApp) é uma solução completa de atendimento por voz, CRM de contatos e inteligência artificial conversacional em tempo real que permite realizar e receber chamadas de voz diretamente pelo navegador, gerenciar múltiplos workspaces e conexões desacopladas, e automatizar atendimentos com agentes de IA multi-provedor autônomos.
-
-O sistema suporta **múltiplos provedores de IA de voz em tempo real**:
-
-- **Google Gemini Live** (`gemini_live.go`) — API nativa de voz bidirecional do Google via WebSockets com 5 vozes e troca dinâmica de persona.
-- **xAI Grok Realtime** (`grok_live.go`) — API de voz em tempo real da xAI com suporte a Web Search, X Search, reasoning effort (`high`/`none`), transcrição nativa e 26 vozes.
-- **OpenAI Realtime** (planejado) — Estrutura preparada para integração futura.
-
-Modos de operação da IA:
-
-1. **Server-Side (Autônoma/Principal)**: O servidor Go gerencia tudo diretamente em background (WebSocket + CGO Opus/MLow + Pipeline de Áudio), sem necessidade de manter abas de navegador abertas. Suporta múltiplos agentes especialistas, transferência de chamadas em tempo real (`TransferTo`) e troca dinâmica de provedor (Gemini ↔ Grok) durante a chamada.
-2. **Client-Side (Híbrida/Navegador)**: O áudio é roteado através do navegador do operador via WebRTC, gerenciando a conexão com a IA diretamente na ponta cliente.
+O **Kallia** é uma plataforma SaaS profissional de atendimento corporativo integrada ao WhatsApp e canais digitais, combinando:
+1. **PABX VoIP Baseado em WhatsApp**: Realização e recepção de chamadas de voz diretamente no navegador via Webphone, gravação dual-channel estocástica, transcrição em tempo real e agentes de voz de baixa latência (**Google Gemini Live** e **xAI Grok Realtime**).
+2. **Central Omnichannel de Conversas (Estilo WhatsApp / Chatwoot)**: Recepção e envio contínuo de mensagens (texto, áudio PTT com gravação no microfone, fotos, documentos e notas internas), visualização em 3 colunas, tags de workspace e filtros avançados.
+3. **CRM de Contatos & Kanban de Vendas**: Unificação de clientes com histórico de interações (chamadas e mensagens), pipeline de negociações (Deals) e campos personalizados.
+4. **Inteligência Artificial RAG & Automações**: Agentes autônomos para resposta automática de mensagens com busca semântica em Base de Conhecimento vetorial (**pgvector** no PostgreSQL 16) e gatilhos de fluxo.
 
 ---
 
-## 1. Visão Geral da Arquitetura e Multi-Tenancy (Kallia 2.0 Workspaces)
+## 1. Visão Geral da Arquitetura e Multi-Tenancy
 
-O Kallia adota o modelo de **Workspaces Multi-Tenant Desacoplados**:
+O Kallia adota o modelo de **Workspaces Multi-Tenant Desacoplados** com autoridade distribuída especializada:
 
 ```
                               ┌────────────────────────────────────────┐
@@ -28,85 +21,91 @@ O Kallia adota o modelo de **Workspaces Multi-Tenant Desacoplados**:
                               │  └─────────────────┬────────────────┘  │
                               └────────────────────┼───────────────────┘
                                                    │
-                ┌──────────────────────────────────┼──────────────────────────────────┐
-                │                                  │                                  │
-                ▼                                  ▼                                  ▼
-      ┌────────────────────┐            ┌────────────────────┐            ┌────────────────────┐
-      │      contacts      │            │       agents       │            │    ai_providers    │
-      │  (CRM do Workspace)│            │(Especialistas IA)  │            │(Chaves Criptograf.)│
-      └────────────────────┘            └────────────────────┘            └────────────────────┘
-                ▲                                  ▲                                  ▲
-                │                                  │                                  │
-                └──────────────────────────────────┼──────────────────────────────────┘
-                                                   │ workspace_id
-                                                   ▼
-                                        ┌────────────────────┐
-                                        │      sessions      │
-                                        │(Instâncias WhatsApp│
-                                        │   Desacopladas)    │
-                                        └──────────┬─────────┘
-                                                   │
-                         ┌─────────────────────────┴─────────────────────────┐
-                         │                                                   │
-                         ▼                                                   ▼
-              ┌─────────────────────┐                             ┌─────────────────────┐
-              │    call_history     │                             │    call_ratings     │
-              │ (Histórico VoIP)    │                             │  (NPS de Atendimento)│
-              └─────────────────────┘                             └─────────────────────┘
+                 ┌─────────────────────────────────┼─────────────────────────────────┐
+                 │                                 │                                 │
+                 ▼                                 ▼                                 ▼
+       ┌────────────────────┐            ┌────────────────────┐            ┌────────────────────┐
+       │   ai_providers     │            │       agents       │            │      sessions      │
+       │(Chaves Criptograf.)│            │(Especialistas Voz) │            │(Conexões WhatsApp) │
+       └────────────────────┘            └────────────────────┘            └──────────┬─────────┘
+                                                   │                                  │
+                                                   ▼                                  │
+       ┌────────────────────────────────────────────────────────────────────────┐     │
+       │                   POSTGRESQL 16 + PGVECTOR (OMNICHANNEL)               │     │
+       │                                                                        │     │
+       │  ┌──────────────┐     ┌──────────────┐     ┌────────────────────────┐  │     │
+       │  │   inboxes    │◄────┤conversations ├────►│       messages         │  │     │
+       │  └──────────────┘     └──────┬───────┘     │(Particionamento Mensal)│  │     │
+       │                              │             └────────────────────────┘  │     │
+       │                              ▼                                         │     │
+       │  ┌──────────────┐     ┌──────────────┐     ┌────────────────────────┐  │     │
+       │  │     tags     │◄────┤   contacts   │◄────┤       embeddings       │  │     │
+       │  │ (Workspace)  │     │(CRM Unificado│     │ (pgvector 768d p/ RAG) │  │     │
+       │  └──────────────┘     └──────┬───────┘     └────────────────────────┘  │     │
+       │                              ▼                                         │     │
+       │                       ┌──────────────┐                                 │     │
+       │                       │  pipelines / │                                 │     │
+       │                       │ stages/deals │                                 │     │
+       │                       └──────────────┘                                 │     │
+       └────────────────────────────────────────────────────────────────────────┘     │
+                                                   ▲                                  │
+                                                   │                                  │
+                                                   └──────────────────────────────────┘
 ```
 
 ### Princípios Fundamentais do Modelo Desacoplado:
 1. **Workspaces como Tenant Raiz (SSOT)**:
-   - Todo recurso (Agentes, Provedores de IA, CRM de Contatos, Histórico de Chamadas, Avaliações e Conexões) pertence a um **Workspace** (`workspace_id`), eliminando o antigo conceito de `projects`.
-   - Um usuário pode ser membro ou proprietário de múltiplos Workspaces com papéis granulares (`owner`, `admin`, `member`) via `workspace_members`.
+   - Todo recurso (Agentes, Provedores de IA, CRM de Contatos, Histórico de Chamadas, Inboxes, Conversas, Tags e Negociações) pertence estritamente a um **Workspace** (`workspace_id`).
+   - Usuários possuem papéis granulares (`owner`, `admin`, `member`) via `workspace_members`.
 2. **Desacoplamento Total de Conexões WhatsApp**:
-   - As conexões WhatsApp (`sessions`) são apenas **canais de entrada e saída de áudio**.
-   - Se uma linha de WhatsApp for excluída, reconectada ou substituída, **todos os dados de inteligência (Agentes, CRM de Contatos, Chaves de Provedores e Histórico) permanecem 100% preservados no Workspace**.
+   - As conexões WhatsApp (`sessions`) são apenas **canais de entrada e saída de áudio e mensagens**.
+   - Se uma linha de WhatsApp for excluída, reconectada ou substituída, **todos os dados de inteligência (Agentes, Histórico de Conversas, Contatos, Chaves e Negociações) permanecem 100% preservados no Workspace**.
 3. **Controle de Cotas por Plano de Workspace**:
    - Cada Workspace possui limites configuráveis de:
      - `max_connections`: Número de linhas WhatsApp ativas simultaneamente (ex: Trial: 1, Basic: 1, Advantage: 3, Expert: 5).
      - `max_concurrent_calls`: Número de chamadas de voz simultâneas.
      - `max_agents`: Número de personas/agentes especialistas disponíveis.
 4. **Controle de Acesso por Roles (RBAC)**:
-   - `appadmin`: Superadministrador com visão global de todos os Workspaces, sessões e usuários cadastrados no ecossistema (PocketBase e SQLite). Possui permissão para gerenciar e auditar qualquer workspace e conexão.
-   - `creator` / `owner`: Proprietário do Workspace. Gerencia conexões, API keys, membros, agentes especialistas e integrações de IA.
-   - `normal` / `member`: Operador convidado. Acesso operacional (efetuar e receber chamadas, visualizar CRM e histórico), sem permissão para criar/deletar conexões ou chaves de provedores.
+   - `appadmin`: Superadministrador com visão global de todos os Workspaces, sessões e usuários cadastrados no ecossistema.
+   - `creator` / `owner`: Proprietário do Workspace. Gerencia conexões, membros, agentes especialistas e configurações de IA.
+   - `normal` / `member`: Operador convidado. Acesso operacional (chat, chamadas, contatos e histórico), sem permissão para deletar conexões ou chaves mestras.
 
 ---
 
 ## 2. Divisão de Responsabilidade entre Bancos de Dados
 
-O sistema combina o **PocketBase** como autoridade de negócio central e o **SQLite Local** para operações de baixa latência e protocolos criptográficos:
+O sistema opera com uma arquitetura de banco de dados híbrida e especializada:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                POCKETBASE (SSOT CENTRAL)                               │
+│                                POCKETBASE (SSOT DE NEGÓCIO)                            │
 │                                                                                        │
-│  - users & auth: Gestão de identidade, senhas e roles.                                 │
-│  - workspaces: Organizações, cotas (max_connections, max_agents) e planos de billing.  │
-│  - workspace_members: Associação n-para-n entre usuários e workspaces.                 │
-│  - agents: Prompts de IA, vozes, ferramentas e parâmetros de raciocínio.               │
+│  - users & auth: Gestão de identidade, senhas, papéis (RBAC) e Google OAuth2.          │
+│  - workspaces & workspace_members: Tenants, cotas de planos e controle de membros.     │
+│  - agents: Personas e especialistas de voz para auto-atendimento telefônico.           │
 │  - ai_providers: Chaves criptografadas (AES-256-GCM) de Gemini, Grok e OpenAI.         │
-│  - contacts: CRM completo de contatos por empresa.                                     │
-│  - call_history & call_ratings: Histórico consolidado de ligações, resumos e NPS.      │
+│  - call_history & call_ratings: Histórico de chamadas de voz, gravações WAV e NPS.     │
 │  - sessions: Cadastro de conexões vinculadas ao workspace_id.                          │
 └────────────────────────────────────────────────────────────────────────────────────────┘
-                                            ▲
-                                            │ Sincronização Bidirecional (SSE /api/realtime)
-                                            │ e Hidratação no Boot (hydrateFromPocketBase)
+                                            │
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                   POSTGRESQL 16 + PGVECTOR (OMNICHANNEL & CRM VETORIAL)                │
+│                                                                                        │
+│  - inboxes & conversations: Inboxes por canal e sessões de atendimento ativas/fechadas.│
+│  - messages: Timeline completa (texto, áudio, fotos, docs, notas) c/ partição mensal. │
+│  - contacts & tags: CRM unificado com tags multicoloridas de workspace.                │
+│  - embeddings: Índice vetorial HNSW (768 dimensões) para RAG e Base de Conhecimento.   │
+│  - pipelines, stages & deals: CRM visual Kanban de oportunidades de vendas.            │
+│  - automations: Motor de regras e gatilhos de fluxo automático para o chat.           │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+                                            │
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                              SQLITE LOCAL (BAIXA LATÊNCIA)                             │
 │                                                                                        │
-│  1. ./storage/whatsapp/{id}.db (whatsmeow):                                            │
-│     - Chaves criptográficas fim-a-fim do protocolo Signal/WhatsApp.                    │
-│     - Tokens de sessão, chaves de pré-compartilhamento e estado de dispositivo.        │
-│                                                                                        │
-│  2. sessions.db (Camada Operacional do Servidor Go):                                   │
-│     - sessions: Metadados locais das instâncias ativas (alinhado a workspace_id).       │
-│     - call_transcripts: Buffer de áudio em tempo real durante ligações VoIP ao vivo.   │
-│     - sent_polls: Mapeamento binário de enquetes e botões interativos do WhatsApp.     │
-│     - users / ai_providers / contacts: Cache local de fallback de leitura rápida.      │
+│  - ./storage/whatsapp/{id}.db (whatsmeow): Chaves criptográficas do Signal/WhatsApp.  │
+│  - sessions.db: Buffer de transcrições de voz ao vivo e mapeamento binário de enquetes.│
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -116,7 +115,9 @@ O sistema combina o **PocketBase** como autoridade de negócio central e o **SQL
 
 ### Backend (Go 1.26+)
 - **Autenticação & Dados Primários (SSOT)**: PocketBase (Google OAuth2, e-mail/senha, RBAC, REST API, SSE Realtime `/api/realtime`).
+- **Módulo Omnichannel & CRM Vetorial**: PostgreSQL 16 com extensão **`pgvector`** (`pgvector/pgvector:pg16`), particionamento mensal da tabela `messages`, pool resiliente e migrações idempotentes no boot.
 - **Persistência de Sessão WhatsApp**: SQLite nativo isolado por conexão (`./storage/whatsapp/{id}.db`) para o motor Signal/WhatsApp do `whatsmeow`.
+- **Hub WebSocket de Tempo Real**: Endpoint `/api/workspaces/{wid}/ws` com clusterização Redis Pub/Sub, despacho local com latência zero (< 1ms), indicadores de digitação (*typing*) e recibos de entrega.
 - **Fila & Concorrência**: Redis 7 com fallback automático em memória RAM (`queue.go`) para rate-limiting anti-bloqueio e entrega de webhooks.
 - **Processamento de Mídia**: CGO com wrapping de codecs Opus/MLow nativos (`libopus_mlow.so` / `opus_mlow.dll`).
 - **Gravação de Áudio Dual-Channel**: Gravação e mixagem estocástica em tempo real dos dois canais de áudio (Cliente + IA) salvas em `storage/recordings/YYYYMMDD_HHMMSS_Contato_CallID.wav` com player autenticado.
@@ -126,14 +127,20 @@ O sistema combina o **PocketBase** como autoridade de negócio central e o **SQL
 
 ### Frontend (React 19, TypeScript, Vite)
 - **Core**: React 19, TypeScript, Vite.
-- **Estilização**: Vanilla CSS / Tailwind CSS v4, Lucide Icons, Design System executivo escuro/claro.
+- **Estilização**: Vanilla CSS / Tailwind CSS v4, Lucide Icons, Design System executivo escuro/claro com temas adaptativos.
+- **Módulo de Chat Omnichannel (Estilo WhatsApp)**:
+  - `ConversationsPage`: Layout mestre em 3 colunas (Lista, Timeline, Detalhes do Contato).
+  - `ConversationsList`: Filtros por status (Abertas, Pendentes, Resolvidas), atribuição, tags e modal de "+ Nova Conversa".
+  - `ChatTimeline`: Balões de mensagem WhatsApp, notas internas amarelas privadas, player de áudio com scrubbing, lightbox de imagem e status de leitura.
+  - `ChatInputBar`: Gravador de voz PTT em tempo real pelo microfone do navegador, seletor de emojis integrado, menu de anexos e alternador de modo WhatsApp vs Nota Interna.
+  - `ContactDetailsDrawer`: Painel lateral retrátil com dados do contato, tags e atalhos rápidos.
 - **Componentes Globais Reutilizáveis**:
   - `WorkspaceSelector`: Seletor rápido de Workspace no cabeçalho com troca ágil de contexto.
   - `ConfirmModal`: Modal de confirmação seguro utilizado em exclusões do CRM e do Histórico.
   - `AudioRecordingPlayer`: Player de áudio com marcador de linha do tempo customizado (`.audio-slider`) e controle de volume/download.
   - `TranscriptModal` & `SummaryModal`: Visualizadores modais de transcrição e resumos gerados por IA.
-- **Estado**: Zustand (Stores globais para chamadas, sessões, workspaces, autenticação e IA).
-- **Comunicação**: Event Stream via SSE (`/api/events`) com tickets temporários e requisições HTTP REST com Bearer Token.
+- **Estado**: Zustand (`conversations.ts`, `workspace.ts`, `auth.ts`, `navigation.ts`).
+- **Comunicação**: Sincronização nativa via WebSocket bidirecional (`/api/workspaces/{wid}/ws`) com fallback leve de polling contínuo.
 
 ---
 
@@ -141,12 +148,16 @@ O sistema combina o **PocketBase** como autoridade de negócio central e o **SQL
 
 ```
 Kallia/
-├── pb_schema.json                   # Esquema consolidado das 8 coleções do PocketBase
-├── pb_hooks/
-│   └── main.pb.js                   # Hook PocketBase para auto-criação de Workspace no registro de usuários
+├── pb_schema.json                   # Esquema consolidado das coleções do PocketBase
+├── docker-compose.yaml              # Orquestração de containers (app, pocketbase, redis, postgres c/ pgvector)
 ├── cmd/
 │   └── server/                      # Servidor Go Principal
-│       ├── main.go                  # Bootstrap, inicialização do PocketBase, scheduler e listener SSE
+│       ├── main.go                  # Bootstrap, inicialização do PocketBase, PostgreSQL, Redis e listeners
+│       ├── pg.go                    # Pool PostgreSQL 16, auto-migrations e schema Omnichannel
+│       ├── realtime_ws.go           # Hub WebSocket bidirecional em tempo real + Redis PubSub
+│       ├── conversations.go         # CRUD de conversas, inboxes, envio de mídias e ingestão WhatsApp
+│       ├── contacts_pg.go           # CRM unificado no PostgreSQL com auto-migração de contatos
+│       ├── tags.go                  # Tags multicoloridas de Workspace (contacts & conversations)
 │       ├── auth.go                  # Autenticação JWT, login PocketBase, middleware RBAC e SuperAdmin
 │       ├── db.go                    # dbProvider com suporte a SQLite local e namespaces
 │       ├── agents_api.go            # Handlers REST para CRUD de Agentes Especialistas
@@ -166,7 +177,7 @@ Kallia/
 │       ├── queue.go                 # Gerenciador de filas Redis com fallback automático In-Memory
 │       ├── safehttp.go              # Guarda anti-SSRF (validação de URL/DNS/IP + redirects)
 │       ├── server.go                # Inicialização do servidor + hidratação do histórico do banco
-│       ├── session.go               # Estado WhatsApp/VoIP, auto-atendimento, attachServerAI
+│       ├── session.go               # Estado WhatsApp/VoIP, auto-atendimento, pgPushIncoming, realPhone
 │       ├── sessionmanager.go        # Ciclo de vida de conexões, restauração segura no Dev e deduplicação
 │       ├── sessionstore.go          # Operações no SQLite local (buffers de áudio, enquetes e sessões)
 │       └── util.go                  # Helpers de fuso, retry HTTP e goroutines seguras (goSafe)
@@ -181,49 +192,37 @@ Kallia/
 ├── client/                          # Código Frontend React/TypeScript
 │   └── src/
 │       ├── App.tsx                  # Ponto de entrada React com rotas autenticadas e seletor de Workspace
+│       ├── stores/
+│       │   ├── conversations.ts     # Store Zustand de conversas, mensagens e sincronização WebSocket
+│       │   ├── workspace.ts         # Store de workspaces ativos e planos
+│       │   ├── navigation.ts        # Gerenciador de seções e rotas
+│       │   └── auth.ts              # Gerenciador de sessão e tokens
 │       ├── components/
 │       │   ├── auth/LoginScreen.tsx # Tela de login integrada com PocketBase e Google OAuth2
 │       │   ├── layout/
 │       │   │   ├── AppShell.tsx     # Layout principal com barra superior e seletor de workspaces
-│       │   │   └── Sidebar.tsx      # Navegação lateral limpa e responsiva
-│       │   ├── shared/
-│       │   │   ├── WorkspaceSelector.tsx # Seletor de workspace em tempo real
-│       │   │   └── ConfirmModal.tsx      # Modal reutilizável de confirmação
-│       │   └── domain/
-│       │       ├── call/Webphone.tsx         # Discador Webphone com atalho de discagem do CRM
-│       │       ├── history/
-│       │       │   ├── HistoryTable.tsx       # Tabela de histórico por Workspace
-│       │       │   ├── AudioRecordingPlayer.tsx # Player de áudio com marcador .audio-slider
-│       │       │   ├── TranscriptModal.tsx    # Modal de transcrição completa
-│       │       │   └── SummaryModal.tsx       # Modal de resumo por IA
-│       │       ├── settings/
-│       │       │   ├── SettingsTab.tsx        # Configurações de sistema (Chatwoot, Geral e Webhook)
-│       │       │   ├── AISettingsPane.tsx     # Painel de Integração de Voz multi-provedor (Gemini/Grok/OpenAI)
-│       │       │   ├── ToolsSettingsPane.tsx  # Painel de Ferramentas e Ações da IA
-│       │       │   ├── PostCallSettingsPane.tsx # Notificações e resumos pós-chamada
-│       │       │   ├── NPSSettingsPane.tsx    # Pesquisa de satisfação pós-atendimento (NPS)
-│       │       │   └── FollowupSettingsPane.tsx # Mensagens de acompanhamento (Follow-up)
-│       │       └── session/AIDialog.tsx      # Dialog de voz e seleção de agente especialista
-│       ├── pages/
-│       │   ├── DashboardPage.tsx     # Dashboard executivo com KPIs do Workspace ativo
-│       │   ├── ContactsPage.tsx      # Módulo de CRM de contatos unificado por Workspace
-│       │   ├── AgentsPage.tsx        # Central Única de Agentes IA do Workspace
-│       │   └── ConnectionsPage.tsx   # Conexões de WhatsApp do Workspace + Visão Global para SuperAdmin
-│       ├── services/
-│       │   ├── auth.ts               # Login/Logout e utilitários de token no localStorage
-│       │   ├── workspaces.ts         # Listagem, criação e troca de workspace ativo
-│       │   ├── contacts.ts           # Serviços REST de gerenciamento de contatos (CRM)
-│       │   ├── agents.ts             # Serviços REST de gerenciamento de agentes
-│       │   └── history.ts            # Serviços de busca e exclusão autenticada de histórico
-│       ├── hooks/
-│       │   ├── useWorkspace.ts       # Hook de gerenciamento do workspace ativo e cotas
-│       │   ├── useContactDisplay.ts  # Hook reativo de resolução de nomes e fotos de contatos
-│       │   └── useContactInfo.ts     # Hook de busca e cache de informações de contato por JID/LID/Telefone
-│       ├── styles/
-│       │   └── index.css             # Estilos globais, variáveis CSS, micro-animações e classe .audio-slider
-│       └── lib/
-│           ├── api.ts                # Cliente HTTP centralizado com injeção automática de Bearer Token
-│           └── event-stream.ts       # SSE com ticket de uso único + reconexão manual c/ backoff
+│       │   │   └── Sidebar.tsx      # Navegação lateral com atalho para Conversas (Chat)
+│       │   ├── domain/
+│       │   │   ├── chat/            # Módulo Completo de Chat Omnichannel Estilo WhatsApp
+│       │   │   │   ├── ConversationsList.tsx    # Lista com filtros e botão "+ Nova Conversa"
+│       │   │   │   ├── ChatHeader.tsx           # Cabeçalho da conversa com IA toggle e atalhos
+│       │   │   │   ├── ChatTimeline.tsx         # Linha do tempo com balões, áudios e lightbox
+│       │   │   │   ├── ChatInputBar.tsx         # Barra de envio com gravador de voz PTT e emojis
+│       │   │   │   └── ContactDetailsDrawer.tsx # Painel lateral de dados e tags do contato
+│       │   │   ├── call/Webphone.tsx            # Discador Webphone com auto-complete de contatos
+│       │   │   ├── history/                     # Tabelas e modais de histórico de ligações
+│       │   │   ├── settings/                    # Painéis de configurações e integrações
+│       │   │   └── session/AIDialog.tsx         # Dialog de voz e seleção de agente especialista
+│       │   └── shared/
+│       │       ├── WorkspaceSelector.tsx        # Seletor de workspace em tempo real
+│       │       └── ConfirmModal.tsx             # Modal reutilizável de confirmação
+│       └── pages/
+│           ├── ConversationsPage.tsx # Central de Atendimento & Chat Omnichannel
+│           ├── DashboardPage.tsx     # Dashboard executivo com KPIs do Workspace ativo
+│           ├── ContactsPage.tsx      # Módulo de CRM de contatos unificado por Workspace (PostgreSQL)
+│           ├── AgentsPage.tsx        # Central Única de Agentes IA do Workspace
+│           ├── ConnectionsPage.tsx   # Conexões de WhatsApp do Workspace
+│           └── ProfilePage.tsx       # Perfil do usuário e Painel Admin Global
 ```
 
 ---

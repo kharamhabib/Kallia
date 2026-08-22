@@ -187,7 +187,7 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
   // Filtra sugestões de auto-complete
   const autoCompleteSuggestions = phone.trim()
     ? (contactsList ?? []).filter(
-        (c) =>
+        (c: Contact) =>
           c.phone.replace(/\D/g, "").includes(phone.replace(/\D/g, "")) ||
           (c.name || "").toLowerCase().includes(phone.toLowerCase()) ||
           (c.company || "").toLowerCase().includes(phone.toLowerCase())
@@ -333,7 +333,7 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
                 <p className="text-[10px] font-bold text-muted-foreground px-2 py-1 uppercase tracking-wider">
                   Contatos Encontrados
                 </p>
-                {autoCompleteSuggestions.map((c) => (
+                {autoCompleteSuggestions.map((c: Contact) => (
                   <button
                     key={c.id}
                     type="button"
@@ -450,7 +450,7 @@ export const Webphone = ({ sid, useAI = true, prompt = "" }: WebphoneProps) => {
                   Nenhum contato encontrado na sua base.
                 </div>
               ) : (
-                contactsList.map((c) => (
+                contactsList.map((c: Contact) => (
                   <button
                     key={c.id}
                     type="button"
