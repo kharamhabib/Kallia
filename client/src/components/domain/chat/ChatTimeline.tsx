@@ -238,38 +238,83 @@ export const ChatTimeline = () => {
                     </div>
                   </div>
                 ) : (
-                  /* Balão de Mensagem Padrão */
+                  /* Balão de Mensagem Padrão com Ações ao Lado */
                   <div
                     className={cn(
-                      "flex w-full group/msg relative",
+                      "flex w-full group/msg relative items-end",
                       isContact ? "justify-start" : "justify-end",
                     )}
                   >
-                    {/* Barra Flutuante de Reações Rápidas no Hover */}
-                    {!isDeleted && (
-                      <div
-                        className={cn(
-                          "absolute -top-5 z-20 hidden group-hover/msg:flex items-center gap-0.5 rounded-full bg-card/95 border border-border px-1.5 py-0.5 shadow-md backdrop-blur-md animate-in fade-in zoom-in-95 duration-100",
-                          isContact ? "left-2" : "right-2",
-                        )}
-                      >
-                        {QUICK_EMOJIS.map((emoji) => (
-                          <button
-                            key={emoji}
-                            type="button"
-                            onClick={() =>
-                              reactToMessage(activeConversation.id, msg.id, emoji)
-                            }
-                            className="h-6 w-6 text-sm flex items-center justify-center rounded-full hover:bg-muted hover:scale-125 transition-transform cursor-pointer"
-                            title={`Reagir com ${emoji}`}
-                          >
-                            {emoji}
-                          </button>
-                        ))}
+                    {/* Ações ao lado para mensagens enviadas (!isContact) - à esquerda do balão */}
+                    {!isContact && !isDeleted && (
+                      <div className="mr-2 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity self-center shrink-0">
+                        {/* Menu Dropdown de Opções */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
+                              title="Opções da mensagem"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" side="top" className="w-44 z-50">
+                            <DropdownMenuItem
+                              onClick={() => setReplyingToMessage(msg)}
+                              className="gap-2 text-xs cursor-pointer"
+                            >
+                              <Reply className="h-3.5 w-3.5" />
+                              <span>Responder</span>
+                            </DropdownMenuItem>
+                            {msg.content && (
+                              <DropdownMenuItem
+                                onClick={() => handleCopy(msg.content)}
+                                className="gap-2 text-xs cursor-pointer"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                                <span>Copiar</span>
+                              </DropdownMenuItem>
+                            )}
+                            {msg.content_type === "text" && (
+                              <DropdownMenuItem
+                                onClick={() => openEditModal(msg)}
+                                className="gap-2 text-xs cursor-pointer"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                <span>Editar</span>
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              onClick={() => openDeleteModal(msg)}
+                              className="gap-2 text-xs text-destructive focus:text-destructive cursor-pointer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>Apagar para todos</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        {/* Pílula de Emojis Rápidos */}
+                        <div className="flex items-center gap-0.5 rounded-full bg-card/95 border border-border px-1.5 py-0.5 shadow-xs backdrop-blur-md">
+                          {QUICK_EMOJIS.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() =>
+                                reactToMessage(activeConversation.id, msg.id, emoji)
+                              }
+                              className="h-6 w-6 text-sm flex items-center justify-center rounded-full hover:bg-muted hover:scale-125 transition-transform cursor-pointer"
+                              title={`Reagir com ${emoji}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {/* Balão */}
+                    {/* Balão de Mensagem */}
                     <div
                       className={cn(
                         "relative max-w-[85%] sm:max-w-[70%] rounded-2xl p-3 shadow-2xs transition-all text-xs",
@@ -281,73 +326,6 @@ export const ChatTimeline = () => {
                         isDeleted && "opacity-60 italic",
                       )}
                     >
-                      {/* Menu Contextual Chevron ⌄ no Hover */}
-                      {!isDeleted && (
-                        <div
-                          className={cn(
-                            "absolute top-1.5 z-10 hidden group-hover/msg:block",
-                            isContact ? "right-1.5" : "left-1.5",
-                          )}
-                        >
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className={cn(
-                                  "flex h-5 w-5 items-center justify-center rounded-full transition-colors cursor-pointer",
-                                  isContact
-                                    ? "bg-muted text-muted-foreground hover:text-foreground"
-                                    : "bg-white/20 text-white hover:bg-white/30",
-                                )}
-                                title="Opções da mensagem"
-                              >
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align={isContact ? "end" : "start"}
-                              className="w-44"
-                            >
-                              <DropdownMenuItem
-                                onClick={() => setReplyingToMessage(msg)}
-                                className="gap-2 text-xs cursor-pointer"
-                              >
-                                <Reply className="h-3.5 w-3.5" />
-                                <span>Responder</span>
-                              </DropdownMenuItem>
-                              {msg.content && (
-                                <DropdownMenuItem
-                                  onClick={() => handleCopy(msg.content)}
-                                  className="gap-2 text-xs cursor-pointer"
-                                >
-                                  <Copy className="h-3.5 w-3.5" />
-                                  <span>Copiar</span>
-                                </DropdownMenuItem>
-                              )}
-                              {!isContact &&
-                                msg.content_type === "text" && (
-                                  <DropdownMenuItem
-                                    onClick={() => openEditModal(msg)}
-                                    className="gap-2 text-xs cursor-pointer"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                    <span>Editar</span>
-                                  </DropdownMenuItem>
-                                )}
-                              {!isContact && (
-                                <DropdownMenuItem
-                                  onClick={() => openDeleteModal(msg)}
-                                  className="gap-2 text-xs text-destructive focus:text-destructive cursor-pointer"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  <span>Apagar para todos</span>
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      )}
-
                       {/* Badge de IA se a mensagem foi enviada pelo agente */}
                       {isAI && (
                         <div className="flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400 mb-1">
@@ -397,7 +375,7 @@ export const ChatTimeline = () => {
                                   src={msg.media_url}
                                   alt="Anexo de Imagem"
                                   onClick={() => setLightboxImage(msg.media_url || null)}
-                                  className="max-h-64 w-full object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
+                                  className="max-h-72 w-full object-cover rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
                                 />
                               ) : (
                                 <div className="flex items-center gap-2 p-3 text-xs">
@@ -519,6 +497,59 @@ export const ChatTimeline = () => {
                         </div>
                       )}
                     </div>
+
+                    {/* Ações ao lado para mensagens recebidas (isContact) - à direita do balão */}
+                    {isContact && !isDeleted && (
+                      <div className="ml-2 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity self-center shrink-0">
+                        {/* Pílula de Emojis Rápidos */}
+                        <div className="flex items-center gap-0.5 rounded-full bg-card/95 border border-border px-1.5 py-0.5 shadow-xs backdrop-blur-md">
+                          {QUICK_EMOJIS.map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() =>
+                                reactToMessage(activeConversation.id, msg.id, emoji)
+                              }
+                              className="h-6 w-6 text-sm flex items-center justify-center rounded-full hover:bg-muted hover:scale-125 transition-transform cursor-pointer"
+                              title={`Reagir com ${emoji}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Menu Dropdown de Opções */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex h-7 w-7 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
+                              title="Opções da mensagem"
+                            >
+                              <ChevronDown className="h-4 w-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" side="top" className="w-44 z-50">
+                            <DropdownMenuItem
+                              onClick={() => setReplyingToMessage(msg)}
+                              className="gap-2 text-xs cursor-pointer"
+                            >
+                              <Reply className="h-3.5 w-3.5" />
+                              <span>Responder</span>
+                            </DropdownMenuItem>
+                            {msg.content && (
+                              <DropdownMenuItem
+                                onClick={() => handleCopy(msg.content)}
+                                className="gap-2 text-xs cursor-pointer"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                                <span>Copiar</span>
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

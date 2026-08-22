@@ -1002,10 +1002,10 @@ func (s *server) handleReactMessage(w http.ResponseWriter, r *http.Request) {
 	var workspaceID, contactPhone, sessionID, externalID string
 	var metadataBytes []byte
 	err := db.QueryRow(
-		`SELECT c.workspace_id, ct.phone, COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.metadata
+		`SELECT c.workspace_id, COALESCE(ct.phone, ''), COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.metadata
 		 FROM messages m
 		 JOIN conversations c ON c.id = m.conversation_id
-		 JOIN contacts ct ON ct.id = c.contact_id
+		 LEFT JOIN contacts ct ON ct.id = c.contact_id
 		 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
 		 WHERE m.id = $1 AND c.id = $2`,
 		msgID, convID,
@@ -1108,10 +1108,10 @@ func (s *server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	var workspaceID, contactPhone, sessionID, externalID, senderType string
 	var metadataBytes []byte
 	err := db.QueryRow(
-		`SELECT c.workspace_id, ct.phone, COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.sender_type, m.metadata
+		`SELECT c.workspace_id, COALESCE(ct.phone, ''), COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.sender_type, m.metadata
 		 FROM messages m
 		 JOIN conversations c ON c.id = m.conversation_id
-		 JOIN contacts ct ON ct.id = c.contact_id
+		 LEFT JOIN contacts ct ON ct.id = c.contact_id
 		 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
 		 WHERE m.id = $1 AND c.id = $2`,
 		msgID, convID,
@@ -1136,7 +1136,7 @@ func (s *server) handleEditMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Se for enviada e tiver WhatsApp ativo, dispara BuildEdit
-	if externalID != "" && senderType == "agent" && contactPhone != "" {
+	if externalID != "" && senderType != "contact" && contactPhone != "" {
 		var sess *Session
 		if sessionID != "" {
 			sess, _ = s.sessions.Get(sessionID)
@@ -1184,10 +1184,10 @@ func (s *server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	var workspaceID, contactPhone, sessionID, externalID, senderType string
 	var metadataBytes []byte
 	err := db.QueryRow(
-		`SELECT c.workspace_id, ct.phone, COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.sender_type, m.metadata
+		`SELECT c.workspace_id, COALESCE(ct.phone, ''), COALESCE(inb.session_id, ''), COALESCE(m.external_id, ''), m.sender_type, m.metadata
 		 FROM messages m
 		 JOIN conversations c ON c.id = m.conversation_id
-		 JOIN contacts ct ON ct.id = c.contact_id
+		 LEFT JOIN contacts ct ON ct.id = c.contact_id
 		 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
 		 WHERE m.id = $1 AND c.id = $2`,
 		msgID, convID,
@@ -1213,7 +1213,7 @@ func (s *server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dispara Revoke no WhatsApp
-	if externalID != "" && senderType == "agent" && contactPhone != "" {
+	if externalID != "" && senderType != "contact" && contactPhone != "" {
 		var sess *Session
 		if sessionID != "" {
 			sess, _ = s.sessions.Get(sessionID)

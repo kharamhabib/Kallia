@@ -347,6 +347,44 @@ Todo o código do servidor Go deve utilizar exclusivamente o método unificado `
 
 ---
 
-## 11. Manutenção e Atualizações
+---
+
+## 11. Central Omnichannel de Conversas & Mensageria WhatsApp
+
+A Central de Conversas (`/conversations`) opera com sincronização em tempo real de baixa latência e suporte nativo ao protocolo estendido do WhatsApp:
+
+### 11.1 Estrutura de Comunicação em Tempo Real
+- **WebSocket Hub (`realtime_ws.go`)**: Endpoint `/api/workspaces/{wid}/ws?token=...` conectado a todos os operadores do Workspace. As mensagens enviadas ou recebidas são despachadas localmente de forma síncrona (< 1ms) e sincronizadas entre múltiplos nós através de canais Redis Pub/Sub (`ws:workspace:{wid}`).
+- **Eventos Transmitidos**:
+  - `message:created`: Nova mensagem recebida do WhatsApp, disparada por operador ou gerada por IA.
+  - `message:updated`: Atualização de reações de emoji, texto editado ou mensagem revogada/apagada.
+  - `typing`: Indicador de digitação do cliente em tempo real.
+  - `conversation:updated`: Atualização de status (aberta, pendente, resolvida), tags ou atribuição de operador.
+
+### 11.2 Storage Híbrido de Mídia e Motor de Retenção de Disco
+- **Descriptografia Automática no Whatsmeow**: Ao receber mensagens de mídia (`ImageMessage`, `AudioMessage`, `VideoMessage`, `DocumentMessage`), o Whatsmeow descriptografa os bytes via `cli.Download` e os armazena em `storage/media/{workspace_id}/{message_id}.{ext}`.
+- **Endpoint HTTP com Cache (`GET /api/media/{wid}/{fileName}`)**: Rota pública isenta de Bearer token (para carregamento nativo em tags `<img>`, `<audio>` e `<video>`), com proteção contra *path traversal* e cabeçalho `Cache-Control: public, max-age=86400`.
+- **Motor de Retenção Automática (`StartMediaCleaner`)**: Rotina diária que remove mídias com mais de 30 dias (configurável via `KALLIA_MEDIA_RETENTION_DAYS`), preservando espaço no disco do VPS e mantendo todo o histórico textual no PostgreSQL.
+
+### 11.3 Interações de Mensagens Estilo WhatsApp
+1. **Reações com Emojis**:
+   - Barra flutuante com 6 emojis rápidos (`👍 ❤️ 😂 😮 😢 🙏`) ao passar o mouse.
+   - Sincronização bidirecional via `whatsmeow.BuildReaction` e exibição de badges na base dos balões.
+2. **Respostas com Citação (Reply / Quoted Message)**:
+   - Prévia visual com barra de cancelamento (`X`) acima do input bar.
+   - Injeção de `waE2E.ContextInfo` (com `StanzaID` e citação original) para que o WhatsApp do cliente renderize a mensagem respondida.
+3. **Edição de Mensagens**:
+   - Edição de mensagens enviadas via `PATCH /api/conversations/{convId}/messages/{msgId}`.
+   - Disparo do protocolo de edição no WhatsApp (`whatsmeow.BuildEdit`) e exibição do badge `(editada)` no balão.
+4. **Apagar para Todos (Revoke)**:
+   - Revogação de mensagens enviadas via `DELETE /api/conversations/{convId}/messages/{msgId}`.
+   - Disparo do comando de revogação no WhatsApp (`whatsmeow.BuildRevoke`) e substituição do texto por *"Esta mensagem foi apagada"*.
+5. **Separadores de Data & Smart Auto-Scroll**:
+   - Pílulas sticky agrupando o histórico em *"Hoje"*, *"Ontem"*, dias da semana ou data completa.
+   - Detecção de rolagem manual: pausa o scroll automático ao subir para ler histórico antigo e fornece botão flutuante `↓` para retorno rápido.
+
+---
+
+## 12. Manutenção e Atualizações
 
 Sempre que uma alteração estrutural, novo modelo de dados ou adição de protocolo for realizada no sistema, este arquivo **`ARQUITETURA.MD`** deve ser atualizado imediatamente.

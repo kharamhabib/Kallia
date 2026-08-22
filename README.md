@@ -65,6 +65,24 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 - **Webhook Delivery Worker**: Fila assíncrona para entrega de webhooks com retries exponenciais e Dead-Letter Queue (DLQ).
 - **Fallback Automático In-Memory**: Caso o Redis não esteja disponível (como em desenvolvimento local), o sistema chaveia automaticamente para filas em memória RAM sem interromper nenhuma funcionalidade.
 
+### 💬 Central Omnichannel de Conversas & Chat WhatsApp Web
+- **Interface Completa em 3 Colunas**: Lista de conversas com contadores de não lidas, timeline interativa de mensagens e painel lateral expansível de detalhes do contato.
+- **Mensagens Ricas & Mídia Nativa**:
+  - Envio e reprodução de notas de voz (áudios PTT gravados diretamente no microfone com medidor de tempo).
+  - Envio e visualização em alta resolução de fotos (com modal Lightbox para zoom), vídeos e download de documentos/PDFs.
+  - Alternador instantâneo entre mensagem pública de WhatsApp e **Nota Interna Privada** (visível apenas para os operadores).
+- **Interações Avançadas Estilo WhatsApp**:
+  - **Reações com Emojis**: Pílula flutuante de reações rápidas (`👍 ❤️ 😂 😮 😢 🙏`) com sincronização bidirecional no WhatsApp (`whatsmeow.BuildReaction`).
+  - **Responder (Reply / Citação)**: Citação visual da mensagem respondida com injeção de `waE2E.ContextInfo`.
+  - **Editar Mensagem**: Edição em tempo real de mensagens enviadas com sincronização nativa no WhatsApp (`whatsmeow.BuildEdit`) e marcação `(editada)`.
+  - **Apagar para Todos (Revoke)**: Revogação nativa no WhatsApp (`whatsmeow.BuildRevoke`) e substituição por *"Esta mensagem foi apagada"*.
+- **Separadores de Data & Auto-Scroll Inteligente**:
+  - Divisores de data sticky (*"Hoje"*, *"Ontem"*, dias da semana para os últimos 7 dias ou data formatada `DD/MM/AAAA`).
+  - Rolagem automática inteligente: pausa o scroll quando o operador sobe para ler mensagens antigas e fornece botão flutuante `↓` para retorno rápido.
+- **Storage Híbrido & Retenção de Disco**:
+  - Descriptografia automática de mídias do WhatsApp com rota `/api/media/{wid}/{file}` otimizada para tags `<img>`, `<audio>` e `<video>`.
+  - Limpeza diária automática em background para mídias com mais de 30 dias (`KALLIA_MEDIA_RETENTION_DAYS`), preservando espaço em disco.
+
 ### 🤖 Agentes Especialistas, IA Multi-Provedor & Transferência (`TransferTo`)
 - **Provedores Suportados**:
   - **Google Gemini Live**: Modelo padrão `models/gemini-3.1-flash-live-preview`, vozes nativas (Puck, Charon, Kore, Fenrir, Aoede), campo `languageCode` nativo.
@@ -78,23 +96,24 @@ Toda a pilha VoIP roda **nativamente em Go**: o codec de voz MLow, a empacotagem
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│          BROWSER (cliente React 19 + CRM + Discador Webphone)            │
-│   mic + alto-falante  ·  WebRTC (Opus)  ·  HTTP REST (JWT) + SSE         │
+│          BROWSER (cliente React 19 + CRM + Chat Omnichannel + Webphone)  │
+│   mic/áudio  ·  WebRTC (Opus)  ·  HTTP REST (JWT)  ·  WebSocket (/ws)    │
 └───────────────┬───────────────────────────────┬──────────────────────────┘
-                │ Auth & CRM                    │ WebRTC & VoIP
+                │ Auth & CRM                    │ WebRTC, VoIP & Omnichannel
                 ▼                               ▼
     ┌──────────────────────┐      ┌────────────────────────────┐
     │  PocketBase (:8090)  │      │     Kallia Server (:8080)   │
     │  (SSOT de Metadados) │◄────►│  WebRTC, Pion, whatsmeow   │
     │  SSE /api/realtime   │      └──────────────┬─────────────┘
     └───────────┬──────────┘                     │
-                │ SQLite                         ▼
-                │                    ┌────────────────────────────┐
-                ▼                    │   Redis 7 (:6379)          │
-     ┌──────────────────────┐        │   Filas de Discagem &      │
-     │  Volume ./storage    │        │   Rate Limiter Anti-Spam   │
-     │  (pb_data + *.db)    │        │   (Fallback In-Memory)     │
-     └──────────────────────┘        └────────────────────────────┘
+                │ SQLite                         ├────────────────────────────┐
+                │                                ▼                            ▼
+                ▼                    ┌────────────────────────┐  ┌────────────────────────┐
+     ┌──────────────────────┐        │   Redis 7 (:6379)      │  │ PostgreSQL 16 (:5432)  │
+     │  Volume ./storage    │        │   Filas de Discagem &  │  │ Inboxes, Mensagens,    │
+     │  (pb_data + *.db +   │        │   PubSub WebSocket     │  │ Tags, Contatos &       │
+     │   mídias do chat)    │        │   (Fallback In-Memory) │  │ pgvector 768d (RAG)    │
+     └──────────────────────┘        └────────────────────────┘  └────────────────────────┘
 ```
 
 ---
@@ -140,9 +159,11 @@ O projeto está configurado para deploy imediato no **Coolify** via `docker-comp
 | `POCKETBASE_URL` | `http://pocketbase:8090` | URL de comunicação com o PocketBase |
 | `POCKETBASE_ADMIN_EMAIL` | — | E-mail de superuser/admin do PocketBase para sync |
 | `POCKETBASE_ADMIN_PASSWORD` | — | Senha de superuser/admin do PocketBase |
-| `REDIS_URL` | `redis://redis:6379` | URL de conexão com a fila Redis |
+| `REDIS_URL` | `redis://redis:6379` | URL de conexão com a fila Redis / PubSub |
+| `KALLIA_PG_URL` | `postgres://kallia:...@postgres:5432/kallia` | URL de conexão com o PostgreSQL 16 (Omnichannel + pgvector) |
 | `KALLIA_MAX_CALLS` | `8` | Limite de chamadas simultâneas padrão por sessão |
-| `KALLIA_STORAGE_DIR` | `./storage` | Diretório de persistência SQLite e gravações |
+| `KALLIA_STORAGE_DIR` | `./storage` | Diretório de persistência SQLite, gravações e mídias |
+| `KALLIA_MEDIA_RETENTION_DAYS` | `30` | Dias de retenção de mídias locais antes da limpeza automática |
 | `KALLIA_UDP_PORT` | `50000` | Porta UDP para fluxo de áudio WebRTC / RTP |
 | `KALLIA_PUBLIC_IP` | `auto` | IP público para anúncio ICE no WebRTC |
 | `KALLIA_JWT_SECRET` | — | Chave secreta HMAC para assinatura de tokens JWT |
