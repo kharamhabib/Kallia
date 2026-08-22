@@ -1341,6 +1341,19 @@ func (c *PocketBaseClient) UpdateCallRecordingURLPB(ctx context.Context, callID,
 			}
 		}
 	}
+
+	// Se ainda não existir registro, cria um inicial com recording_url
+	createResp, createErr := c.doAdminRequest(ctx, "POST", "/api/collections/call_history/records", map[string]any{
+		"call_id":       callID,
+		"recording_url": recordingURL,
+		"direction":     "inbound",
+		"started_at":    time.Now().UnixMilli(),
+		"workspace_id":  "default",
+	})
+	if createErr != nil {
+		return createErr
+	}
+	defer createResp.Body.Close()
 	return nil
 }
 

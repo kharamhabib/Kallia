@@ -67,6 +67,7 @@ type HistoryPersister interface {
 	SaveCall(rec CallRecord)
 	SaveSummary(sessionID, callID, summary string)
 	SaveTicket(sessionID, callID, reason string)
+	SaveRecording(sessionID, callID, recordingURL string)
 }
 
 type Broker struct {
@@ -280,6 +281,23 @@ func (b *Broker) saveSummary(sessionID, callID, summary string) {
 	b.mu.Unlock()
 	if b.History != nil {
 		b.History.SaveSummary(sessionID, callID, summary)
+	}
+}
+
+func (b *Broker) saveRecording(sessionID, callID, recordingURL string) {
+	b.mu.Lock()
+	for i := range b.history {
+		if b.history[i].SessionID == sessionID && b.history[i].CallID == callID {
+			b.history[i].RecordingURL = recordingURL
+			break
+		}
+	}
+	if c, ok := b.calls[callID]; ok && c.SessionID == sessionID {
+		c.RecordingURL = recordingURL
+	}
+	b.mu.Unlock()
+	if b.History != nil {
+		b.History.SaveRecording(sessionID, callID, recordingURL)
 	}
 }
 

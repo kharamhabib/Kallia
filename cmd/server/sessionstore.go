@@ -749,6 +749,21 @@ func (p *pgHistoryPersister) SaveSummary(sessionID, callID, summary string) {
 	})
 }
 
+func (p *pgHistoryPersister) SaveRecording(sessionID, callID, recordingURL string) {
+	goSafe(p.log, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		// 1. Atualizar no PocketBase (SSOT)
+		_ = pbClient.UpdateCallRecordingURLPB(ctx, callID, recordingURL)
+
+		// 2. Atualizar no SQLite local
+		if err := p.store.updateCallRecording(ctx, sessionID, callID, recordingURL); err != nil {
+			p.log.Error("falha ao persistir URL de gravação da chamada no SQLite", "callId", callID, "err", err)
+		}
+	})
+}
+
 func (p *pgHistoryPersister) SaveTicket(sessionID, callID, reason string) {
 	goSafe(p.log, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

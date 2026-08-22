@@ -81,7 +81,7 @@ Este documento registra as implementações recentes concluídas e as melhorias 
 - [x] **Persistência Completa de Metadados de Chamadas no PocketBase (`workspace_id`, `agent_id`, `recording_url`, `transcript`) (21/08/2026)**:
   - **Resolução de `workspace_id`**: Adicionado `getWorkspaceID()` em [`session.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/session.go) e [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go), garantindo que o identificador real do workspace seja propagado para o `CallRecord` e nunca caia como `"default"`.
   - **Identificação e Hot-Sync de `agent_id`**: Adicionados métodos `resolveDefaultAgentID`, `SetAgentID` e `UpdateCallAgentPB`, associando o ID do agente atendente (principal ou especialista) tanto na inicialização quanto nas transferências de chamada.
-  - **Sincronização de `recording_url`**: Atualizado o handler `cm.SetOnEnded` para fechar o arquivo WAV, registrar a URL `/api/sessions/{sid}/recordings/{callId}` no broker e chamar `UpdateCallRecordingURLPB` diretamente no PocketBase.
+  - **Sincronização Atômica de `recording_url`**: Eliminada condição de corrida onde `AddStateListener` encerrava o registro antes do fechamento do arquivo de áudio. Implementados `b.saveRecording` no broker e `HistoryPersister.SaveRecording` no `pgHistoryPersister`, garantindo que a URL `/api/sessions/{sid}/recordings/{callId}` seja propagada atômica e confiavelmente ao PocketBase e SQLite logo após a finalização do arquivo WAV.
   - **Proteção Contra Sobrescrita no `SaveCallHistoryPB`**: Adicionado guardião no PocketBase client preservando valores existentes de transcrições, resumos, gravações e agentes contra patches parciais.
 
 ---

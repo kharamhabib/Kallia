@@ -226,8 +226,6 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	})
 	cm.AddStateListener(func(c *call.CallInfo) {
 		if c.IsEnded() {
-			s.removeCall(c.CallID)
-			s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
 			return
 		}
 		dir := "outbound"
@@ -268,8 +266,6 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		if rec != nil {
 			rec.Close()
 			recURL = fmt.Sprintf("/api/sessions/%s/recordings/%s", s.id, c.CallID)
-			_ = s.mgr.store.updateCallRecording(context.Background(), s.id, c.CallID, recURL)
-			_ = pbClient.UpdateCallRecordingURLPB(context.Background(), c.CallID, recURL)
 		}
 
 		s.mgr.broker.updateCall(c.CallID, func(r *CallRecord) {
@@ -280,6 +276,9 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
+		if recURL != "" {
+			s.mgr.broker.saveRecording(s.id, c.CallID, recURL)
+		}
 		if s.mgr.Scheduler != nil {
 			s.mgr.Scheduler.CleanupAgent(c.CallID)
 		}
