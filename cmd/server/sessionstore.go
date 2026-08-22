@@ -439,6 +439,21 @@ func (s *sessionStore) setAPIKey(ctx context.Context, id, apiKey string) error {
 	return err
 }
 
+func (s *sessionStore) get(ctx context.Context, id string) (*sessionRow, error) {
+	var r sessionRow
+	var wsID string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, name, COALESCE(jid, ''), COALESCE(webhook, ''), COALESCE(chatwoot, ''), COALESCE(ai_config, ''), COALESCE(workspace_id, project_id, ''), COALESCE(api_key, '')
+		FROM sessions WHERE id = $1
+	`, id).Scan(&r.ID, &r.Name, &r.JID, &r.Webhook, &r.Chatwoot, &r.AIConfig, &wsID, &r.APIKey)
+	if err != nil {
+		return nil, err
+	}
+	r.WorkspaceID = wsID
+	r.ProjectID = wsID
+	return &r, nil
+}
+
 func (s *sessionStore) delete(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = $1`, id)
 	return err

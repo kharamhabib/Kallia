@@ -942,6 +942,43 @@ func (c *PocketBaseClient) UpsertSessionFullPB(ctx context.Context, id, name, ji
 	return err
 }
 
+type SessionPBRow struct {
+	ID             string `json:"id"`
+	SID            string `json:"sid"`
+	Name           string `json:"name"`
+	JID            string `json:"jid"`
+	PhoneNumber    string `json:"phone_number"`
+	Status         string `json:"status"`
+	WorkspaceID    string `json:"workspace_id"`
+	APIKey         string `json:"api_key"`
+	DefaultAgentID string `json:"default_agent_id"`
+}
+
+func (c *PocketBaseClient) GetSessionPB(ctx context.Context, idOrSID string) (*SessionPBRow, error) {
+	if idOrSID == "" {
+		return nil, nil
+	}
+	filter := fmt.Sprintf(`sid="%s" || id="%s"`, idOrSID, idOrSID)
+	searchURL := fmt.Sprintf("/api/collections/sessions/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
+	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
+	if err != nil || resp == nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil
+	}
+
+	var pbRes PBListResponse[SessionPBRow]
+	if json.NewDecoder(resp.Body).Decode(&pbRes) != nil || len(pbRes.Items) == 0 {
+		return nil, nil
+	}
+
+	item := pbRes.Items[0]
+	return &item, nil
+}
+
 func (c *PocketBaseClient) DeleteSessionPB(ctx context.Context, id string) error {
 	// 1. Tentar deletar diretamente caso seja o ID de 15 caracteres do PocketBase
 	resp, err := c.doAdminRequest(ctx, "DELETE", "/api/collections/sessions/records/"+id, nil)
@@ -1151,6 +1188,13 @@ func (c *PocketBaseClient) UpsertMasterAgentPB(ctx context.Context, workspaceID 
 // --- HISTÓRICO DE CHAMADAS & TRANSCRIÇÕES (CALL_HISTORY) ---
 
 func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, sessionID, callID, peer, direction string, startedAt, endedAt int64, summary, recordingURL, transcriptJSON, agentID string) error {
+	if workspaceID == "" || workspaceID == "default" {
+		if sessionID != "" {
+			if pbSess, err := c.GetSessionPB(ctx, sessionID); err == nil && pbSess != nil && pbSess.WorkspaceID != "" && pbSess.WorkspaceID != "default" {
+				workspaceID = pbSess.WorkspaceID
+			}
+		}
+	}
 	if workspaceID == "" {
 		workspaceID = "default"
 	}
@@ -1162,7 +1206,6 @@ func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, s
 		"peer":         peer,
 		"direction":    direction,
 		"started_at":   startedAt,
-		"agent_id":     agentID,
 	}
 
 	if endedAt > 0 {
@@ -1173,6 +1216,9 @@ func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, s
 	}
 	if recordingURL != "" {
 		data["recording_url"] = recordingURL
+	}
+	if agentID != "" {
+		data["agent_id"] = agentID
 	}
 	if transcriptJSON != "" {
 		var parsed any
@@ -1188,10 +1234,34 @@ func (c *PocketBaseClient) SaveCallHistoryPB(ctx context.Context, workspaceID, s
 	if err == nil && resp != nil {
 		defer resp.Body.Close()
 		var pbRes PBListResponse[struct {
-			ID string `json:"id"`
+			ID           string `json:"id"`
+			WorkspaceID  string `json:"workspace_id"`
+			Transcript   any    `json:"transcript"`
+			Summary      string `json:"summary"`
+			RecordingURL string `json:"recording_url"`
+			AgentID      string `json:"agent_id"`
 		}]
 		if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
-			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, data)
+			item := pbRes.Items[0]
+			// Preserva workspace_id real se já existente e o novo for "default"
+			if item.WorkspaceID != "" && item.WorkspaceID != "default" && (workspaceID == "" || workspaceID == "default") {
+				data["workspace_id"] = item.WorkspaceID
+			}
+			// Se o registro existente já tiver dados válidos e o patch não fornecer novos, não sobrescreve com vazio
+			if _, ok := data["transcript"]; !ok && item.Transcript != nil {
+				// preserva existente
+			}
+			if _, ok := data["summary"]; !ok && item.Summary != "" {
+				// preserva existente
+			}
+			if _, ok := data["recording_url"]; !ok && item.RecordingURL != "" {
+				// preserva existente
+			}
+			if _, ok := data["agent_id"]; !ok && item.AgentID != "" {
+				// preserva existente
+			}
+
+			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+item.ID, data)
 			if patchErr == nil && patchResp != nil {
 				defer patchResp.Body.Close()
 				return nil
@@ -1264,6 +1334,31 @@ func (c *PocketBaseClient) UpdateCallRecordingURLPB(ctx context.Context, callID,
 		if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
 			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
 				"recording_url": recordingURL,
+			})
+			if patchErr == nil && patchResp != nil {
+				defer patchResp.Body.Close()
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+func (c *PocketBaseClient) UpdateCallAgentPB(ctx context.Context, callID, agentID string) error {
+	if agentID == "" {
+		return nil
+	}
+	filter := fmt.Sprintf(`call_id="%s"`, callID)
+	searchURL := fmt.Sprintf("/api/collections/call_history/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
+	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
+	if err == nil && resp != nil {
+		defer resp.Body.Close()
+		var pbRes PBListResponse[struct {
+			ID string `json:"id"`
+		}]
+		if json.NewDecoder(resp.Body).Decode(&pbRes) == nil && len(pbRes.Items) > 0 {
+			patchResp, patchErr := c.doAdminRequest(ctx, "PATCH", "/api/collections/call_history/records/"+pbRes.Items[0].ID, map[string]any{
+				"agent_id": agentID,
 			})
 			if patchErr == nil && patchResp != nil {
 				defer patchResp.Body.Close()

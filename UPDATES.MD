@@ -78,6 +78,11 @@ Este documento registra as implementações recentes concluídas e as melhorias 
   - **Upsert Seguro de Transcrição no PocketBase**: Atualizados `SaveCallHistoryPB`, `UpdateCallTranscriptPB` e `UpdateCallSummaryPB` em [`pocketbase_client.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/pocketbase_client.go) com proteção contra sobrescrita de dados existentes (`[]` vazios) e criação garantida do registro com a transcrição completa no PocketBase.
   - **Leitura Resiliente de Transcrições**: `GetCallTranscriptPB` e o endpoint `/transcript` agora decodificam de forma flexível strings JSON ou arrays nativos armazenados na coleção `call_history` do PocketBase com sincronização reversa para o SQLite.
   - **Resolução e Auto-Sync de Contatos**: Implementado `GetContactByPhonePB` no cliente PocketBase e integrado em `resolveContactName` ([`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go)), garantindo que nomes resolvidos (como *"Kallia CRM"*) sejam sincronizados no PocketBase e SQLite em vez de ficarem como *"Contato WhatsApp"*.
+- [x] **Persistência Completa de Metadados de Chamadas no PocketBase (`workspace_id`, `agent_id`, `recording_url`, `transcript`) (21/08/2026)**:
+  - **Resolução de `workspace_id`**: Adicionado `getWorkspaceID()` em [`session.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/session.go) e [`httpapi.go`](file:///c:/Users/khara/Desktop/APPS%20GRAVITY/Kallia/Kallia%20Call/cmd/server/httpapi.go), garantindo que o identificador real do workspace seja propagado para o `CallRecord` e nunca caia como `"default"`.
+  - **Identificação e Hot-Sync de `agent_id`**: Adicionados métodos `resolveDefaultAgentID`, `SetAgentID` e `UpdateCallAgentPB`, associando o ID do agente atendente (principal ou especialista) tanto na inicialização quanto nas transferências de chamada.
+  - **Sincronização de `recording_url`**: Atualizado o handler `cm.SetOnEnded` para fechar o arquivo WAV, registrar a URL `/api/sessions/{sid}/recordings/{callId}` no broker e chamar `UpdateCallRecordingURLPB` diretamente no PocketBase.
+  - **Proteção Contra Sobrescrita no `SaveCallHistoryPB`**: Adicionado guardião no PocketBase client preservando valores existentes de transcrições, resumos, gravações e agentes contra patches parciais.
 
 ---
 

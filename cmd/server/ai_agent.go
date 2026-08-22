@@ -63,6 +63,9 @@ type ServerAIAgent struct {
 	// Histórico acumulado de transcrição da chamada (persistente mesmo após fechar provedor)
 	transcriptLines []TranscriptLine
 	transcriptMu    sync.Mutex
+
+	agentID   string
+	agentName string
 }
 
 // NewServerAIAgent cria e acopla um agente de IA ao CallManager.
@@ -803,6 +806,17 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 
 	newCfg.SystemInstruction += extraContext.String()
 
+	a.mu.Lock()
+	a.agentID = targetRow.ID
+	a.agentName = targetRow.Name
+	a.config = newCfg
+	a.provider = newCfg.Provider
+	a.mu.Unlock()
+
+	a.sess.mgr.broker.updateCall(a.callID, func(rec *CallRecord) {
+		rec.AgentID = targetRow.ID
+	})
+
 	a.log.Info("[ServerAIAgent] Transferindo chamada para novo agente especialista", "target_id", targetRow.ID, "target_name", targetRow.Name, "new_provider", newCfg.Provider)
 
 	// 1. Aguarda a fala atual da IA terminar 100% de ser reproduzida no WhatsApp antes de trocar
@@ -818,15 +832,11 @@ func (a *ServerAIAgent) SwitchToAgent(target string) error {
 
 	// 3. Enquanto o toque de transferência toca para o cliente (2.2s), reconecta o provedor com o especialista em paralelo
 	a.closeCurrentProvider()
-	a.config = newCfg
-	a.provider = newCfg.Provider
 
 	var reconnectErr error
-	if a.provider == "grok" {
-		a.grok = NewGrokLiveClient(newCfg.GeminiAPIKey, newCfg, a.log)
+	if newCfg.Provider == "grok" {
 		reconnectErr = a.connectGrok(context.Background())
 	} else {
-		a.gemini = NewGeminiLiveClient(newCfg, a.log)
 		reconnectErr = a.connectGemini(context.Background())
 	}
 	if reconnectErr != nil {
@@ -1112,6 +1122,9 @@ func (a *ServerAIAgent) executePostCallActions(transcript []TranscriptLine) {
 	// Salva a transcrição no banco de dados principal (PocketBase SSOT + SQLite)
 	if a.sess.mgr != nil && a.sess.mgr.store != nil {
 		goSafe(a.log, func() {
+			if a.agentID != "" {
+				_ = pbClient.UpdateCallAgentPB(context.Background(), a.callID, a.agentID)
+			}
 			if pbErr := pbClient.UpdateCallTranscriptPB(context.Background(), a.callID, transcript); pbErr != nil {
 				a.log.Error("[ServerAIAgent] Erro ao salvar transcrição no PocketBase", "err", pbErr)
 			} else {
@@ -1361,3 +1374,16 @@ func extractSummaryText(data map[string]any) string {
 func (a *ServerAIAgent) TransferTo(ctx context.Context, targetAgentID string) error {
 	return a.SwitchToAgent(targetAgentID)
 }
+
+func (a *ServerAIAgent) SetAgentID(id string) {
+	a.mu.Lock()
+	a.agentID = id
+	a.mu.Unlock()
+}
+
+func (a *ServerAIAgent) GetAgentID() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.agentID
+}
+

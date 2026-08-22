@@ -152,6 +152,58 @@ func (s *Session) createCall(callID string) *call.CallManager {
 	return cm
 }
 
+func (s *Session) getWorkspaceID() string {
+	if s.projectID != "" && s.projectID != "default" {
+		return s.projectID
+	}
+	if s.mgr != nil && s.mgr.store != nil {
+		if row, err := s.mgr.store.get(context.Background(), s.id); err == nil && row != nil && row.WorkspaceID != "" && row.WorkspaceID != "default" {
+			s.projectID = row.WorkspaceID
+			return s.projectID
+		}
+	}
+	if pbSess, err := pbClient.GetSessionPB(context.Background(), s.id); err == nil && pbSess != nil && pbSess.WorkspaceID != "" && pbSess.WorkspaceID != "default" {
+		s.projectID = pbSess.WorkspaceID
+		return s.projectID
+	}
+	if s.projectID != "" {
+		return s.projectID
+	}
+	return "default"
+}
+
+func (s *Session) resolveDefaultAgentID(direction string) string {
+	wsID := s.getWorkspaceID()
+	// 1. Tenta PocketBase
+	if pbAgents, err := pbClient.ListAgentsPB(context.Background(), wsID); err == nil && len(pbAgents) > 0 {
+		for _, ag := range pbAgents {
+			if direction == "inbound" && (ag.Inbound || strings.ToLower(strings.TrimSpace(ag.Name)) == "agente principal") {
+				return ag.ID
+			}
+			if direction == "outbound" && (ag.Outbound || strings.ToLower(strings.TrimSpace(ag.Name)) == "agente principal") {
+				return ag.ID
+			}
+		}
+		return pbAgents[0].ID
+	}
+
+	// 2. Tenta SQLite
+	if s.mgr != nil && s.mgr.store != nil {
+		if agents, err := s.mgr.store.listAgents(context.Background(), wsID); err == nil && len(agents) > 0 {
+			for _, ag := range agents {
+				if direction == "inbound" && (ag.Inbound || strings.ToLower(strings.TrimSpace(ag.Name)) == "agente principal") {
+					return ag.ID
+				}
+				if direction == "outbound" && (ag.Outbound || strings.ToLower(strings.TrimSpace(ag.Name)) == "agente principal") {
+					return ag.ID
+				}
+			}
+			return agents[0].ID
+		}
+	}
+	return "main"
+}
+
 func (s *Session) wireCall(cm *call.CallManager, callID string) {
 	callStartTime := time.Now()
 	peerInfo := ""
@@ -163,9 +215,11 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		s.log.Error("falha ao criar gravador de áudio no servidor", "callId", callID, "err", err)
 	}
 
+	wsID := s.getWorkspaceID()
+
 	cm.SetOnIncoming(func(c *call.CallInfo) {
 		s.mgr.broker.upsertCall(CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: "inbound", Peer: c.PeerJid,
+			SessionID: s.id, WorkspaceID: wsID, CallID: c.CallID, Direction: "inbound", Peer: c.PeerJid,
 			StartedAt: time.Now().UnixMilli(), Status: StatusRinging,
 		})
 		s.mgr.broker.emitIncoming(s.id, c.CallID, c.PeerJid)
@@ -195,12 +249,14 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		}
 		existing, _ := s.mgr.broker.getCall(c.CallID)
 		recRecord := CallRecord{
-			SessionID: s.id, CallID: c.CallID, Direction: dir, Peer: peerPhone,
+			SessionID: s.id, WorkspaceID: wsID, CallID: c.CallID, Direction: dir, Peer: peerPhone,
 			StartedAt: time.Now().UnixMilli(), Status: mapStatus(c.StateData.State),
 		}
 		if existing != nil {
 			recRecord.Owner = existing.Owner
 			recRecord.StartedAt = existing.StartedAt
+			recRecord.AgentID = existing.AgentID
+			recRecord.RecordingURL = existing.RecordingURL
 			if existing.Peer != "" && len(peerPhone) > 13 {
 				recRecord.Peer = existing.Peer
 			}
@@ -208,11 +264,19 @@ func (s *Session) wireCall(cm *call.CallManager, callID string) {
 		s.mgr.broker.upsertCall(recRecord)
 	})
 	cm.SetOnEnded(func(c *call.CallInfo) {
+		recURL := ""
 		if rec != nil {
 			rec.Close()
-			recURL := fmt.Sprintf("/api/sessions/%s/recordings/%s", s.id, c.CallID)
+			recURL = fmt.Sprintf("/api/sessions/%s/recordings/%s", s.id, c.CallID)
 			_ = s.mgr.store.updateCallRecording(context.Background(), s.id, c.CallID, recURL)
+			_ = pbClient.UpdateCallRecordingURLPB(context.Background(), c.CallID, recURL)
 		}
+
+		s.mgr.broker.updateCall(c.CallID, func(r *CallRecord) {
+			if recURL != "" {
+				r.RecordingURL = recURL
+			}
+		})
 
 		s.removeCall(c.CallID)
 		s.mgr.broker.endCall(c.CallID, string(c.StateData.EndReason))
@@ -287,6 +351,14 @@ func (s *Session) attachServerAI(cm *call.CallManager, callID, direction string,
 					peer = peerFn(info)
 				}
 				agent := NewServerAIAgent(s, callID, peer, direction, cm, cfg, s.log)
+				agentID := s.resolveDefaultAgentID(direction)
+				if agentID != "" {
+					agent.SetAgentID(agentID)
+					s.mgr.broker.updateCall(callID, func(rec *CallRecord) {
+						rec.AgentID = agentID
+					})
+				}
+
 				if err := agent.Start(s.mgr.appCtx); err != nil {
 					s.log.Error("[ServerAI] Erro ao iniciar agente", "err", err, "callId", callID, "direction", direction)
 					return
@@ -294,7 +366,7 @@ func (s *Session) attachServerAI(cm *call.CallManager, callID, direction string,
 				if s.mgr.Scheduler != nil {
 					s.mgr.Scheduler.RegisterAgent(callID, agent)
 				}
-				s.log.Info("[ServerAI] Agente IA acoplado à chamada", "callId", callID, "direction", direction)
+				s.log.Info("[ServerAI] Agente IA acoplado à chamada", "callId", callID, "direction", direction, "agentId", agentID)
 			})
 		})
 	})
