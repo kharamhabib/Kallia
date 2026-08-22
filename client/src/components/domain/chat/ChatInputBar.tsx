@@ -85,19 +85,27 @@ export const ChatInputBar = () => {
     setText(val);
     if (convId) {
       if (!typingTimerRef.current) {
-        sendTypingSignal(convId, true);
+        sendTypingSignal(convId, true, "text");
       } else {
         clearTimeout(typingTimerRef.current);
       }
       typingTimerRef.current = setTimeout(() => {
-        sendTypingSignal(convId, false);
+        sendTypingSignal(convId, false, "text");
         typingTimerRef.current = null;
-      }, 2000);
+      }, 2500);
     }
   };
 
   const handleSend = async () => {
     if (!activeConversation) return;
+
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    if (convId) {
+      sendTypingSignal(convId, false, "text");
+    }
 
     const replyToId = replyingToMessage?.id;
 
@@ -204,6 +212,9 @@ export const ChatInputBar = () => {
       recorder.start(100);
       setIsRecording(true);
       setRecordingSeconds(0);
+      if (convId) {
+        sendTypingSignal(convId, true, "audio");
+      }
 
       recordingTimerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
@@ -217,6 +228,9 @@ export const ChatInputBar = () => {
     if (!mediaRecorderRef.current || !isRecording) return;
 
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (convId) {
+      sendTypingSignal(convId, false, "audio");
+    }
 
     mediaRecorderRef.current.onstop = () => {
       const activeMime = mediaRecorderRef.current?.mimeType || "audio/ogg; codecs=opus";
@@ -247,6 +261,9 @@ export const ChatInputBar = () => {
 
   const cancelRecording = () => {
     if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (convId) {
+      sendTypingSignal(convId, false, "audio");
+    }
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
     }

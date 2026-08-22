@@ -77,7 +77,7 @@ interface ConversationsState {
     name?: string,
     message?: string,
   ) => Promise<Conversation>;
-  sendTypingSignal: (conversationId: string, isTyping: boolean) => void;
+  sendTypingSignal: (conversationId: string, isTyping: boolean, media?: "text" | "audio") => void;
   connectWebSocket: (workspaceId: string) => void;
   disconnectWebSocket: () => void;
 }
@@ -446,13 +446,14 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     }
   },
 
-  sendTypingSignal: (conversationId: string, isTyping: boolean) => {
+  sendTypingSignal: (conversationId: string, isTyping: boolean, media: "text" | "audio" = "text") => {
     if (activeWS && activeWS.readyState === WebSocket.OPEN) {
       activeWS.send(
         JSON.stringify({
-          type: "typing",
+          type: "chat_presence",
           conversation_id: conversationId,
           is_typing: isTyping,
+          media,
         }),
       );
     }
@@ -555,11 +556,20 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
                 return m;
               }),
             }));
+          } else if (data.type === "message:status" && data.message_ids && Array.isArray(data.message_ids)) {
+            const idSet = new Set(data.message_ids);
+            const newStatus = data.status;
+            set((state) => ({
+              messages: state.messages.map((m) =>
+                idSet.has(m.id) ? { ...m, status: newStatus } : m,
+              ),
+            }));
           } else if (data.type === "typing") {
             const convId = data.conversation_id;
             const isTyping = data.is_typing;
+            const media = data.media || "text";
             set((state) => ({
-              typingMap: { ...state.typingMap, [convId]: isTyping },
+              typingMap: { ...state.typingMap, [convId]: isTyping ? { isTyping: true, media } : false },
             }));
           } else if (data.type === "conversation:updated") {
             // Revalida a conversa

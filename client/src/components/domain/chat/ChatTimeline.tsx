@@ -16,6 +16,7 @@ import {
   Pencil,
   Trash2,
   ChevronDown,
+  Smile,
   Ban,
   CheckCircle,
 } from "lucide-react";
@@ -64,7 +65,15 @@ export const ChatTimeline = () => {
   const [deletingMessage, setDeletingMessage] = useState<Message | null>(null);
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
 
-  const isTyping = Boolean(activeConversation && typingMap[activeConversation.id]);
+  const typingState = activeConversation ? typingMap[activeConversation.id] : undefined;
+  const isTyping = Boolean(
+    typingState &&
+      (typeof typingState === "boolean" ? typingState : (typingState as any)?.isTyping),
+  );
+  const typingMedia =
+    typeof typingState === "object" && typingState !== null && "media" in typingState
+      ? (typingState as any).media
+      : "text";
 
   // ── Smart Auto-Scroll ───────────────────────────────────────────────
 
@@ -238,25 +247,25 @@ export const ChatTimeline = () => {
                     </div>
                   </div>
                 ) : (
-                  /* Balão de Mensagem Padrão com Ações ao Lado */
+                  /* Balão de Mensagem Padrão com Botões Discretos ao Lado */
                   <div
                     className={cn(
                       "flex w-full group/msg relative items-end",
                       isContact ? "justify-start" : "justify-end",
                     )}
                   >
-                    {/* Ações ao lado para mensagens enviadas (!isContact) - à esquerda do balão */}
+                    {/* Ações para mensagens enviadas (!isContact) - à esquerda do balão */}
                     {!isContact && !isDeleted && (
-                      <div className="mr-2 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity self-center shrink-0">
-                        {/* Menu Dropdown de Opções */}
+                      <div className="mr-1.5 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity self-center shrink-0">
+                        {/* Botão de Opções ⌄ */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
                               type="button"
-                              className="flex h-7 w-7 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
+                              className="flex h-6 w-6 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
                               title="Opções da mensagem"
                             >
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-3.5 w-3.5" />
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" side="top" className="w-44 z-50">
@@ -295,22 +304,33 @@ export const ChatTimeline = () => {
                           </DropdownMenuContent>
                         </DropdownMenu>
 
-                        {/* Pílula de Emojis Rápidos */}
-                        <div className="flex items-center gap-0.5 rounded-full bg-card/95 border border-border px-1.5 py-0.5 shadow-xs backdrop-blur-md">
-                          {QUICK_EMOJIS.map((emoji) => (
+                        {/* Botão de Emoji ☺ com Popover dos 6 Emojis */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
                             <button
-                              key={emoji}
                               type="button"
-                              onClick={() =>
-                                reactToMessage(activeConversation.id, msg.id, emoji)
-                              }
-                              className="h-6 w-6 text-sm flex items-center justify-center rounded-full hover:bg-muted hover:scale-125 transition-transform cursor-pointer"
-                              title={`Reagir com ${emoji}`}
+                              className="flex h-6 w-6 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
+                              title="Reagir com emoji"
                             >
-                              {emoji}
+                              <Smile className="h-3.5 w-3.5" />
                             </button>
-                          ))}
-                        </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" side="top" className="p-1 min-w-fit rounded-full shadow-lg border bg-card/98 backdrop-blur-md z-50">
+                            <div className="flex items-center gap-0.5">
+                              {QUICK_EMOJIS.map((emoji) => (
+                                <DropdownMenuItem
+                                  key={emoji}
+                                  onClick={() =>
+                                    reactToMessage(activeConversation.id, msg.id, emoji)
+                                  }
+                                  className="h-7 w-7 p-0 flex items-center justify-center rounded-full hover:bg-muted text-sm cursor-pointer hover:scale-125 transition-transform"
+                                >
+                                  <span>{emoji}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     )}
 
@@ -456,11 +476,11 @@ export const ChatTimeline = () => {
                         </>
                       )}
 
-                      {/* Rodapé da Mensagem (Horário + Badge Editada + Status de Entrega) */}
+                      {/* Rodapé da Mensagem (Horário + Badge Editada + Status de Entrega WhatsApp) */}
                       <div
                         className={cn(
-                          "mt-1.5 flex items-center justify-end gap-1 text-[10px] opacity-70",
-                          !isContact && "text-primary-foreground/80",
+                          "mt-1.5 flex items-center justify-end gap-1 text-[10px] opacity-75",
+                          !isContact && "text-primary-foreground/90",
                         )}
                       >
                         {isEdited && !isDeleted && (
@@ -498,35 +518,46 @@ export const ChatTimeline = () => {
                       )}
                     </div>
 
-                    {/* Ações ao lado para mensagens recebidas (isContact) - à direita do balão */}
+                    {/* Ações para mensagens recebidas (isContact) - à direita do balão */}
                     {isContact && !isDeleted && (
-                      <div className="ml-2 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity self-center shrink-0">
-                        {/* Pílula de Emojis Rápidos */}
-                        <div className="flex items-center gap-0.5 rounded-full bg-card/95 border border-border px-1.5 py-0.5 shadow-xs backdrop-blur-md">
-                          {QUICK_EMOJIS.map((emoji) => (
-                            <button
-                              key={emoji}
-                              type="button"
-                              onClick={() =>
-                                reactToMessage(activeConversation.id, msg.id, emoji)
-                              }
-                              className="h-6 w-6 text-sm flex items-center justify-center rounded-full hover:bg-muted hover:scale-125 transition-transform cursor-pointer"
-                              title={`Reagir com ${emoji}`}
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Menu Dropdown de Opções */}
+                      <div className="ml-1.5 flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity self-center shrink-0">
+                        {/* Botão de Emoji ☺ com Popover dos 6 Emojis */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
                               type="button"
-                              className="flex h-7 w-7 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
+                              className="flex h-6 w-6 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
+                              title="Reagir com emoji"
+                            >
+                              <Smile className="h-3.5 w-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" side="top" className="p-1 min-w-fit rounded-full shadow-lg border bg-card/98 backdrop-blur-md z-50">
+                            <div className="flex items-center gap-0.5">
+                              {QUICK_EMOJIS.map((emoji) => (
+                                <DropdownMenuItem
+                                  key={emoji}
+                                  onClick={() =>
+                                    reactToMessage(activeConversation.id, msg.id, emoji)
+                                  }
+                                  className="h-7 w-7 p-0 flex items-center justify-center rounded-full hover:bg-muted text-sm cursor-pointer hover:scale-125 transition-transform"
+                                >
+                                  <span>{emoji}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+
+                        {/* Botão de Opções ⌄ */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="flex h-6 w-6 items-center justify-center rounded-full bg-card/95 border border-border text-muted-foreground hover:text-foreground hover:bg-muted shadow-xs transition-colors cursor-pointer"
                               title="Opções da mensagem"
                             >
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-3.5 w-3.5" />
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" side="top" className="w-44 z-50">
@@ -556,12 +587,15 @@ export const ChatTimeline = () => {
             );
           })}
 
-          {/* Indicador de Digitação do Cliente */}
+          {/* Indicador de Digitação / Gravação de Áudio do Cliente */}
           {isTyping && (
             <div className="flex justify-start">
               <div className="flex items-center gap-2 rounded-2xl rounded-tl-xs bg-card border border-border px-3.5 py-2.5 shadow-2xs text-xs text-muted-foreground">
                 <span className="font-semibold text-foreground">
                   {activeConversation.contact?.name || "Cliente"}
+                </span>
+                <span className="text-[11px] italic text-emerald-500 font-medium">
+                  {typingMedia === "audio" ? "gravando áudio..." : "digitando..."}
                 </span>
                 <span className="flex gap-1 items-center">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -776,23 +810,23 @@ const AudioPlayer = ({
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-const MessageStatusIcon = ({ status }: { status: string }) => {
+const MessageStatusIcon = ({ status }: { status?: string }) => {
   switch (status) {
     case "sent":
       return (
-        <span title="Enviado">
-          <Check className="h-3.5 w-3.5 text-muted-foreground" />
+        <span title="Enviada">
+          <Check className="h-3.5 w-3.5 text-primary-foreground/70" />
         </span>
       );
     case "delivered":
       return (
-        <span title="Entregue">
-          <CheckCheck className="h-3.5 w-3.5 text-muted-foreground" />
+        <span title="Entregue no WhatsApp">
+          <CheckCheck className="h-3.5 w-3.5 text-primary-foreground/70" />
         </span>
       );
     case "read":
       return (
-        <span title="Lido">
+        <span title="Lida pelo cliente">
           <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold" />
         </span>
       );

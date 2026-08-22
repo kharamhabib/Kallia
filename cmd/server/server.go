@@ -8,6 +8,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"go.mau.fi/whatsmeow/store"
+	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
@@ -88,6 +89,56 @@ func newServer(ctx context.Context, storageDir, redisURL, pgURL, staticDir strin
 	}
 	mgr.nps = newNPSEngine(log, sStore, getSession)
 	mgr.followup = newFollowupEngine(log, getSession)
+
+	hub.OnPresenceUpdate = func(workspaceID, convID, state, mediaType string) {
+		if pg == nil || pg.DB() == nil {
+			return
+		}
+		var phone, sessionID string
+		err := pg.DB().QueryRow(
+			`SELECT COALESCE(ct.phone, ''), COALESCE(inb.session_id, '')
+			 FROM conversations c
+			 LEFT JOIN contacts ct ON ct.id = c.contact_id
+			 LEFT JOIN inboxes inb ON inb.id = c.inbox_id
+			 WHERE c.id = $1 AND c.workspace_id = $2`,
+			convID, workspaceID,
+		).Scan(&phone, &sessionID)
+		if err != nil || phone == "" {
+			return
+		}
+
+		var sess *Session
+		if sessionID != "" {
+			sess, _ = mgr.Get(sessionID)
+		}
+		if sess == nil || sess.getClient() == nil {
+			for _, info := range mgr.infos() {
+				if info.WorkspaceID == workspaceID && info.State == "open" {
+					sess, _ = mgr.Get(info.ID)
+					break
+				}
+			}
+		}
+		if sess == nil || sess.getClient() == nil {
+			return
+		}
+
+		chatJID, err := resolveRecipient(phone)
+		if err != nil {
+			return
+		}
+
+		presence := types.ChatPresencePaused
+		if state == "composing" {
+			presence = types.ChatPresenceComposing
+		}
+		media := types.ChatPresenceMediaText
+		if mediaType == "audio" {
+			media = types.ChatPresenceMediaAudio
+		}
+
+		_ = sess.getClient().SendChatPresence(ctx, chatJID, presence, media)
+	}
 
 	return &server{
 		db:        provider,

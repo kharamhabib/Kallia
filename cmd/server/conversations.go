@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -1251,5 +1253,50 @@ func (s *server) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "content": deletedText, "metadata": meta})
+}
+
+func pgUpdateMessageReceiptStatus(db *sql.DB, hub *RealtimeHub, workspaceID string, externalIDs []types.MessageID, status string) error {
+	if db == nil || len(externalIDs) == 0 {
+		return nil
+	}
+
+	strIDs := make([]string, len(externalIDs))
+	for i, id := range externalIDs {
+		strIDs[i] = string(id)
+	}
+
+	rows, err := db.Query(
+		`UPDATE messages
+		 SET status = $1
+		 WHERE external_id = ANY($2) AND status != 'read'
+		 RETURNING id, conversation_id`,
+		status, pq.Array(strIDs),
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	updatedMsgIDs := []string{}
+	var convID string
+	for rows.Next() {
+		var mID, cID string
+		if err := rows.Scan(&mID, &cID); err == nil {
+			updatedMsgIDs = append(updatedMsgIDs, mID)
+			convID = cID
+		}
+	}
+
+	if len(updatedMsgIDs) > 0 && hub != nil && workspaceID != "" {
+		event, _ := json.Marshal(map[string]interface{}{
+			"type":            "message:status",
+			"conversation_id": convID,
+			"message_ids":     updatedMsgIDs,
+			"status":          status,
+		})
+		hub.Broadcast(workspaceID, event)
+	}
+
+	return nil
 }
 

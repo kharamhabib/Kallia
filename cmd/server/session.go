@@ -715,6 +715,7 @@ func (s *Session) handleEvent(rawEvt any) {
 			"type": string(evt.Type), "ids": evt.MessageIDs,
 			"timestamp": evt.Timestamp.UnixMilli(),
 		})
+		go s.pgPushReceipt(evt)
 	case *events.CallOffer:
 		s.onIncomingOffer(ctx, evt)
 	case *events.CallAccept:
@@ -1461,5 +1462,27 @@ func (s *Session) pgPushIncoming(evt *events.Message) {
 		evt.Info.IsFromMe,
 		string(evt.Info.ID),
 	)
+}
+
+func (s *Session) pgPushReceipt(evt *events.Receipt) {
+	if s.mgr == nil || s.mgr.PG == nil || s.mgr.PG.DB() == nil || len(evt.MessageIDs) == 0 {
+		return
+	}
+	wid := s.info().WorkspaceID
+	if wid == "" {
+		return
+	}
+
+	status := "sent"
+	switch evt.Type {
+	case types.ReceiptTypeRead, types.ReceiptTypeReadSelf, types.ReceiptTypePlayed:
+		status = "read"
+	case types.ReceiptTypeDelivered:
+		status = "delivered"
+	default:
+		return
+	}
+
+	_ = pgUpdateMessageReceiptStatus(s.mgr.PG.DB(), s.mgr.Hub, wid, evt.MessageIDs, status)
 }
 

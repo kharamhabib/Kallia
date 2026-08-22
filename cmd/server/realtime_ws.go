@@ -31,12 +31,13 @@ type WSClient struct {
 
 // RealtimeHub gerencia os clientes conectados e o Redis Pub/Sub por workspace.
 type RealtimeHub struct {
-	rdb     *redis.Client
-	log     *slog.Logger
-	clients map[string]map[*WSClient]bool // workspace_id -> set of clients
-	mu      sync.RWMutex
-	ctx     context.Context
-	cancel  context.CancelFunc
+	rdb              *redis.Client
+	log              *slog.Logger
+	clients          map[string]map[*WSClient]bool // workspace_id -> set of clients
+	mu               sync.RWMutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	OnPresenceUpdate func(workspaceID, convID, state, mediaType string)
 }
 
 func NewRealtimeHub(ctx context.Context, rdb *redis.Client, log *slog.Logger) *RealtimeHub {
@@ -159,6 +160,7 @@ func (c *WSClient) readPump() {
 			Type           string `json:"type"`
 			ConversationID string `json:"conversation_id,omitempty"`
 			IsTyping       bool   `json:"is_typing,omitempty"`
+			Media          string `json:"media,omitempty"` // "text" ou "audio"
 			MessageID      string `json:"message_id,omitempty"`
 		}
 		if err := json.Unmarshal(message, &inMsg); err != nil {
@@ -168,15 +170,29 @@ func (c *WSClient) readPump() {
 		switch inMsg.Type {
 		case "ping":
 			c.send <- []byte(`{"type":"pong"}`)
-		case "typing":
+		case "typing", "chat_presence":
 			// Reencaminha typing indicator para todos os outros atendentes do workspace
 			outJSON, _ := json.Marshal(map[string]interface{}{
 				"type":            "typing",
 				"conversation_id": inMsg.ConversationID,
 				"sender_id":       c.userID,
 				"is_typing":       inMsg.IsTyping,
+				"media":           inMsg.Media,
 			})
 			c.hub.Broadcast(c.workspaceID, outJSON)
+
+			// Dispara presença nativa no WhatsApp do destinatário
+			if c.hub.OnPresenceUpdate != nil && inMsg.ConversationID != "" {
+				state := "paused"
+				if inMsg.IsTyping {
+					state = "composing"
+				}
+				mediaType := inMsg.Media
+				if mediaType == "" {
+					mediaType = "text"
+				}
+				go c.hub.OnPresenceUpdate(c.workspaceID, inMsg.ConversationID, state, mediaType)
+			}
 		}
 	}
 }
