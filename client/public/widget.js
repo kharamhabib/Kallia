@@ -2,7 +2,7 @@
  * Kallia — widget de chamada para o Chatwoot.
  * Carregue no Chatwoot (super_admin > app_config > internal), no campo de scripts:
  *   <script src="https://SEU-KALLIA/widget.js" data-api-key="SUA_API_KEY"></script>
- * Injeta um ícone de telefone ao lado do botão de excluir ticket; ao clicar,
+ * Injeta um ícone de telefone ao lado das ações da conversa; ao clicar,
  * abre um painel flutuante e liga para o contato via WhatsApp (WebRTC).
  *
  * SEGURANÇA: a API key fica visível no HTML para qualquer agente logado no
@@ -12,19 +12,33 @@
  */
 (function () {
   "use strict";
+
+  // Previne carregamento duplicado do widget
+  if (window.__KALLIA_WIDGET_LOADED__) {
+    console.log("[Kallia] Widget já carregado nesta página.");
+    return;
+  }
+  window.__KALLIA_WIDGET_LOADED__ = true;
+
   var script = document.currentScript;
   if (!script) {
-    var scripts = document.getElementsByTagName("script");
-    for (var i = 0; i < scripts.length; i++) {
-      if (scripts[i].src && (scripts[i].src.indexOf("/widget.js") > -1 || scripts[i].src.indexOf("/widget.min.js") > -1)) {
-        script = scripts[i];
-        break;
+    script = document.querySelector('script[src*="widget.js"], script[src*="widget.min.js"]');
+    if (!script) {
+      var scripts = document.getElementsByTagName("script");
+      for (var i = 0; i < scripts.length; i++) {
+        if (scripts[i].src && (scripts[i].src.indexOf("/widget.js") > -1 || scripts[i].src.indexOf("/widget.min.js") > -1)) {
+          script = scripts[i];
+          break;
+        }
       }
     }
   }
-  var BASE = (script && script.getAttribute("data-url")) || (script ? new URL(script.src).origin : "");
-  var KEY = (script && script.getAttribute("data-api-key")) || "";
-  var ANCHOR = (script && script.getAttribute("data-anchor")) || "";
+
+  var BASE = (window.KALLIA_BASE_URL) || (script && script.getAttribute("data-url")) || (script && script.src ? new URL(script.src).origin : window.location.origin);
+  var KEY = (window.KALLIA_API_KEY) || (script && script.getAttribute("data-api-key")) || "";
+  var ANCHOR = (window.KALLIA_ANCHOR) || (script && script.getAttribute("data-anchor")) || "";
+
+  console.log("[Kallia] Inicializando widget...", { base: BASE, hasKey: Boolean(KEY), anchor: ANCHOR });
 
   var PHONE_SVG =
     '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
@@ -45,21 +59,34 @@
 
   function api(path, opts) {
     opts = opts || {};
+    var headers = { "Content-Type": "application/json" };
+    if (KEY) {
+      headers["X-API-Key"] = KEY;
+      headers["X-Connection-API-Key"] = KEY;
+    }
     return fetch(BASE + path, {
       method: opts.method || "GET",
-      headers: { "Content-Type": "application/json", "X-API-Key": KEY },
+      headers: headers,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     }).then(function (r) {
-      if (!r.ok) throw new Error(path + " " + r.status);
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (errBody) {
+          var msg = (errBody && errBody.error) || (path + " " + r.status);
+          throw new Error(msg);
+        });
+      }
       return r.json();
     });
   }
 
   // ---------- estilos ----------
   var style = document.createElement("style");
+  style.id = "kallia-widget-styles";
   style.textContent =
-    "#kallia-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#687076}" +
-    "#kallia-btn:hover{color:#11181c}" +
+    "#kallia-btn{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#687076;transition:all .15s ease}" +
+    "#kallia-btn:hover{color:#11181c;background:#f1f3f5}" +
+    "#kallia-btn.kallia-floating-btn{position:fixed;bottom:24px;right:24px;width:48px;height:48px;border-radius:50%;background:#30a46c;color:#fff;box-shadow:0 8px 24px rgba(48,164,108,.35);z-index:99998;border:none}" +
+    "#kallia-btn.kallia-floating-btn:hover{transform:scale(1.05);filter:brightness(1.05)}" +
     "#kallia-panel{position:fixed;bottom:20px;right:20px;width:296px;background:#fff;color:#11181c;border:1px solid #dfe3e6;border-radius:12px;box-shadow:0 12px 32px rgba(17,24,28,.12);z-index:99999;font-family:'Inter','InterDisplay',-apple-system,system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}" +
     "#kallia-panel .cw-h{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid #eceef0;font-size:14px;font-weight:600;color:#11181c;letter-spacing:-.01em}" +
     "#kallia-panel .cw-dot{width:7px;height:7px;border-radius:50%;background:#2781F6;flex:none}" +
@@ -83,7 +110,9 @@
     "#kallia-panel .cw-mute svg{width:19px;height:19px}" +
     "#kallia-panel .cw-warn{width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:#fff7c2;color:#9e6c00;display:flex;align-items:center;justify-content:center}" +
     "#kallia-panel .cw-warn svg{width:24px;height:24px}";
-  document.head.appendChild(style);
+  if (!document.getElementById("kallia-widget-styles")) {
+    document.head.appendChild(style);
+  }
 
   // ---------- estado ----------
   var call = null; // {pc, mic, callId, session, t0, timer, answered, isServerAI}
@@ -115,6 +144,7 @@
       ringTimer = setInterval(beep, 2500);
     } catch (e) {}
   }
+
   function stopRing() {
     if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
     if (ringCtx) { try { ringCtx.close(); } catch (e) {} ringCtx = null; }
@@ -232,12 +262,12 @@
   }
 
   function setStatus(t) {
-    var s = document.getElementById("wacalls-st");
+    var s = document.getElementById("kallia-st");
     if (s) s.textContent = t;
   }
 
   function addTranscript(speaker, text) {
-    var tBox = document.getElementById("wacalls-transcript");
+    var tBox = document.getElementById("kallia-transcript");
     if (!tBox) return;
     tBox.style.display = "flex";
     
@@ -265,7 +295,7 @@
   }
 
   function interruptTranscript() {
-    var tBox = document.getElementById("wacalls-transcript");
+    var tBox = document.getElementById("kallia-transcript");
     if (!tBox) return;
     var lastLine = tBox.lastElementChild;
     if (lastLine && lastLine.getAttribute("data-speaker") === "ai") {
@@ -278,8 +308,6 @@
   }
 
   function iceComplete(pc) {
-    // Timeout de 10s: sem ele a chamada ficava em "Conectando…" para sempre
-    // quando a coleta ICE travava. O listener é sempre removido.
     return new Promise(function (res, rej) {
       if (pc.iceGatheringState === "complete") return res();
       var timer = setTimeout(function () {
@@ -300,7 +328,6 @@
     });
   }
 
-  // micErrorMessage traduz erros comuns de getUserMedia para orientar o agente
   function micErrorMessage(e) {
     if (e && (e.name === "NotAllowedError" || e.name === "SecurityError")) {
       return "Permissão de microfone negada. Libere o microfone no ícone de cadeado do navegador e tente de novo.";
@@ -331,7 +358,7 @@
           pc.addTransceiver("audio", { direction: "recvonly" });
         }
         pc.ontrack = function (ev) {
-          var a = document.getElementById("wacalls-audio");
+          var a = document.getElementById("kallia-audio");
           if (a) {
             if (a.srcObject !== remoteStream) {
               a.srcObject = remoteStream;
@@ -350,7 +377,7 @@
               }
             }
             a.play().catch(function (err) {
-              console.error("[wacalls-widget] erro ao reproduzir audio:", err);
+              console.error("[Kallia] erro ao reproduzir áudio:", err);
             });
           }
         };
@@ -394,8 +421,6 @@
       }
       connectEvents();
     } catch (e) {
-      // Libera mic e PeerConnection em qualquer falha (o LED do microfone
-      // não pode ficar aceso numa chamada que nem começou)
       if (pc) { try { pc.close(); } catch (_) {} }
       if (mic) {
         try {
@@ -406,18 +431,11 @@
     }
   }
 
-  // fetchEventTicket troca a API key (header) por um ticket de uso único (30s).
-  // A key NUNCA vai na URL (vazava em logs de proxy e no console).
   function fetchEventTicket() {
-    return fetch(BASE + "/api/events/ticket", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-API-Key": KEY },
-    }).then(function (r) {
-      if (!r.ok) throw new Error("ticket " + r.status);
-      return r.json();
-    }).then(function (d) {
-      return d.ticket;
-    });
+    return api("/api/events/ticket", { method: "POST" })
+      .then(function (d) {
+        return d.ticket;
+      });
   }
 
   var esRetry = 0;
@@ -425,8 +443,6 @@
 
   function connectEvents() {
     if (!BASE || globalES || esTimer) return;
-    // Cada (re)conexão emite um ticket novo (o ticket é de uso único — o
-    // reconnect automático do EventSource com a mesma URL não funcionaria).
     esTimer = setTimeout(function () {
       esTimer = null;
       openEvents();
@@ -442,7 +458,7 @@
           globalES = es;
           es.onopen = function () {
             esRetry = 0;
-            console.log("[wacalls-widget] EventSource conectado");
+            console.log("[Kallia] EventSource conectado");
           };
           es.onmessage = function (ev) {
             var msg;
@@ -453,16 +469,16 @@
             try { es.close(); } catch (e) {}
             if (globalES === es) globalES = null;
             esRetry += 1;
-            connectEvents(); // agenda reconexão com backoff
+            connectEvents();
           };
         } catch (e) {
-          console.error("[wacalls-widget] Erro ao instanciar EventSource:", e);
+          console.error("[Kallia] Erro ao instanciar EventSource:", e);
           esRetry += 1;
           connectEvents();
         }
       })
       .catch(function (e) {
-        console.error("[wacalls-widget] Falha ao obter ticket SSE:", e);
+        console.error("[Kallia] Falha ao obter ticket SSE:", e);
         esRetry += 1;
         esTimer = setTimeout(openEvents, Math.min(30000, 1000 * Math.pow(2, esRetry)));
       });
@@ -485,7 +501,6 @@
       return;
     }
 
-    // chamada RECEBIDA pendente que foi atendida pela IA do servidor ou outro operador
     if (incoming && msgCallId === incoming.callId) {
       if (msg.type === "incoming-claimed" || msg.type === "call-status") {
         var owner = msg.owner;
@@ -493,7 +508,6 @@
         
         if (isConnected) {
           if (owner === "__server__") {
-            // Atendido pela IA do servidor: para de tocar e mostra a chamada ativa da IA no painel
             var inc = incoming;
             incoming = null;
             stopRing();
@@ -511,10 +525,9 @@
             };
             call.timer = setInterval(tick, 1000);
           } else {
-            // Atendido por outro operador humano: fecha o painel e para de tocar
             incoming = null;
             stopRing();
-            var p = document.getElementById("wacalls-panel");
+            var p = document.getElementById("kallia-panel");
             if (p) p.remove();
           }
           return;
@@ -524,8 +537,8 @@
       if (msg.type === "call-ended" || msg.status === "ended") {
         incoming = null;
         stopRing();
-        var p = document.getElementById("wacalls-panel");
-        if (p) p.remove();
+        var p2 = document.getElementById("kallia-panel");
+        if (p2) p2.remove();
         return;
       }
     }
@@ -535,11 +548,9 @@
       if (incoming && incoming.callId === msgCallId) return;
       incoming = { sessionId: msg.sessionId, callId: msgCallId, peer: msg.peer || "" };
       
-      // Renderiza imediatamente com dados básicos para feedback rápido
       render({ incoming: true, phone: msg.peer.split("@")[0], hasAI: false });
       playRing();
       
-      // Busca as informações do contato (nome) e a config da IA em paralelo
       Promise.all([
         api("/api/sessions/" + msg.sessionId + "/contacts/" + encodeURIComponent(msg.peer)).catch(function() { return null; }),
         api("/api/sessions/" + msg.sessionId + "/ai-config").catch(function() { return null; })
@@ -608,7 +619,7 @@
           pc.addTransceiver("audio", { direction: "recvonly" });
         }
         pc.ontrack = function (ev) {
-          var a = document.getElementById("wacalls-audio");
+          var a = document.getElementById("kallia-audio");
           if (a) {
             if (a.srcObject !== remoteStream) {
               a.srcObject = remoteStream;
@@ -627,7 +638,7 @@
               }
             }
             a.play().catch(function (err) {
-              console.error("[wacalls-widget] erro ao reproduzir audio:", err);
+              console.error("[Kallia] erro ao reproduzir áudio:", err);
             });
           }
         };
@@ -650,7 +661,6 @@
         markAnswered();
       }
     } catch (e) {
-      // Libera mic/PeerConnection criados antes da falha
       if (pc) { try { pc.close(); } catch (_) {} }
       if (mic) {
         try {
@@ -667,7 +677,7 @@
     incoming = null;
     stopRing();
     if (inc) api("/api/sessions/" + inc.sessionId + "/calls/" + inc.callId + "/reject", { method: "POST", body: {} }).catch(function () {});
-    var p = document.getElementById("wacalls-panel");
+    var p = document.getElementById("kallia-panel");
     if (p) p.remove();
   }
 
@@ -685,7 +695,7 @@
     var s = Math.floor((Date.now() - call.t0) / 1000);
     var mm = String(Math.floor(s / 60)).padStart(2, "0");
     var ss = String(s % 60).padStart(2, "0");
-    var st = document.getElementById("wacalls-st");
+    var st = document.getElementById("kallia-st");
     if (st && st.textContent.indexOf("Erro") < 0) st.textContent = mm + ":" + ss;
   }
 
@@ -726,25 +736,33 @@
   var resolved = null; 
 
   function convKey() {
-    var acc = location.pathname.match(/accounts\/(\d+)/);
-    var conv = location.pathname.match(/conversations\/(\d+)/);
+    var full = location.pathname + location.hash;
+    var acc = full.match(/accounts\/(\d+)/);
+    var conv = full.match(/conversations\/(\d+)/);
     return acc && conv ? acc[1] + "/" + conv[1] : null;
   }
 
   function refreshBinding() {
     connectEvents();
     var key = convKey();
-    if (key === currentConvKey) return; 
+    if (key === currentConvKey && callable) return; 
     currentConvKey = key;
     callable = false;
     resolved = null;
-    var b = document.getElementById("wacalls-btn");
-    if (b) b.remove();
-    if (!key) return;
+    
+    if (!key) {
+      var b = document.getElementById("kallia-btn");
+      if (b) b.remove();
+      return;
+    }
+
     var parts = key.split("/");
+    console.log("[Kallia] Buscando contexto da conversa Chatwoot:", { accountId: parts[0], conversationId: parts[1] });
+    
     api("/api/chatwoot/resolve?account_id=" + parts[0] + "&conversation_id=" + parts[1])
       .then(function (info) {
         if (convKey() !== key) return; 
+        console.log("[Kallia] Conversa resolvida com sucesso:", info);
         resolved = { session: info.session_id, phone: info.phone, name: info.name || info.phone, hasAI: false, serverSideAI: false };
         callable = true;
         api("/api/sessions/" + info.session_id + "/ai-config")
@@ -759,10 +777,11 @@
             ensureButton();
           });
       })
-      .catch(function () {
+      .catch(function (err) {
+        console.warn("[Kallia] Não foi possível resolver conversa para WhatsApp:", err && err.message);
         if (convKey() !== key) return;
         callable = false;
-        var x = document.getElementById("wacalls-btn");
+        var x = document.getElementById("kallia-btn");
         if (x) x.remove();
       });
   }
@@ -774,7 +793,7 @@
 
   function onCall() {
     connectEvents();
-    console.log("[wacalls-widget] clique no botão de ligar");
+    console.log("[Kallia] Clique no botão de ligar");
     if (resolved) {
       render({ session: resolved.session, phone: resolved.phone, name: resolved.name, hasAI: resolved.hasAI && resolved.serverSideAI, serverSideAI: resolved.serverSideAI });
       return;
@@ -808,71 +827,96 @@
       });
   }
 
-  // (= barra de ações do ticket). Fallback pelo texto "Ações da conversa".
   function findActionsContainer() {
     if (ANCHOR) {
       var a = document.querySelector(ANCHOR);
-      if (a) return { container: a, sibling: a.querySelector("button") || a };
+      if (a) return { container: a, sibling: a.querySelector("button") || a, isFloating: false };
     }
+
+    // Estratégia 1: Seletores conhecidos do Chatwoot (v2, v3, v4)
+    var selectors = [
+      ".conversation-header .actions",
+      ".conversation--header-actions",
+      "header .actions",
+      "header [class*='actions']",
+      "div[data-testid='conversation-header'] div[class*='actions']",
+      ".conversation-header [class*='button-group']",
+      "header div.flex.items-center",
+      ".conversation--header div.flex",
+      "main header div.flex",
+      "#conversation-wrap header div.flex"
+    ];
+
+    for (var s = 0; s < selectors.length; s++) {
+      var cont = document.querySelector(selectors[s]);
+      if (cont && cont.offsetWidth > 0 && cont.offsetHeight > 0) {
+        var firstBtn = cont.querySelector("button");
+        return { container: cont, sibling: firstBtn || cont, isFloating: false };
+      }
+    }
+
+    // Estratégia 2: Busca por botões de ação na barra superior (Resolve, Snooze, More)
     var btns = document.querySelectorAll("button");
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
       var r = b.getBoundingClientRect();
-      if (r.width >= 28 && r.width <= 40 && r.height >= 28 && r.height <= 40 && r.left > window.innerWidth * 0.6) {
+      if (r.width >= 24 && r.width <= 50 && r.height >= 24 && r.height <= 50 && r.top < 150) {
         var p = b.parentElement;
         if (p) {
           var sib = p.querySelectorAll(":scope > button");
-          if (sib.length >= 2 && sib.length <= 6) return { container: p, sibling: b };
-        }
-      }
-    }
-    var spans = document.querySelectorAll("span");
-    for (var j = 0; j < spans.length; j++) {
-      if (spans[j].textContent.trim() === "Ações da conversa") {
-        var section = spans[j].closest("div");
-        if (section && section.parentElement) {
-          var divs = section.parentElement.querySelectorAll("div");
-          for (var k = 0; k < divs.length; k++) {
-            var bb = divs[k].querySelectorAll(":scope > button");
-            if (bb.length >= 2 && bb.length <= 6) return { container: divs[k], sibling: bb[0] };
+          if (sib.length >= 1 && sib.length <= 8) {
+            return { container: p, sibling: b, isFloating: false };
           }
         }
       }
     }
-    return null;
+
+    // Estratégia 3: Fallback para botão flutuante se não encontrar cabeçalho
+    return { container: document.body, sibling: null, isFloating: true };
   }
 
   function ensureButton() {
-    // só injeta se a conversa atual for de uma caixa conectada (vínculo empresa+caixa)
-    if (!callable || !/\/conversations\/\d+/.test(location.pathname)) {
+    if (!callable || !convKey()) {
       var old = document.getElementById("kallia-btn");
       if (old) old.remove();
       return;
     }
     if (document.getElementById("kallia-btn")) return;
+    
     var found = findActionsContainer();
     if (!found || !found.container) return;
     if (found.container.querySelector("#kallia-btn")) return;
+
     var btn = document.createElement("button");
     btn.id = "kallia-btn";
     btn.type = "button";
-    btn.title = "Ligar pelo WhatsApp";
-    btn.className = found.sibling && found.sibling.className
-      ? found.sibling.className // herda o estilo nativo do Chatwoot
-      : "inline-flex items-center justify-center h-8 w-8 p-0 rounded-lg";
-    btn.innerHTML = PHONE_SVG;
+    btn.title = "Ligar pelo WhatsApp (Kallia)";
+    
+    if (found.isFloating) {
+      btn.className = "kallia-floating-btn";
+      btn.innerHTML = PHONE_SVG;
+    } else {
+      btn.className = found.sibling && found.sibling.className
+        ? found.sibling.className
+        : "inline-flex items-center justify-center h-8 w-8 p-0 rounded-lg";
+      btn.innerHTML = PHONE_SVG;
+    }
+
     btn.onclick = function (e) {
       e.preventDefault();
       e.stopPropagation();
       onCall();
     };
-    found.container.appendChild(btn);
-    console.log("[kallia-widget] ícone injetado no container de ações da conversa");
+
+    if (found.isFloating) {
+      document.body.appendChild(btn);
+    } else {
+      found.container.appendChild(btn);
+    }
+    console.log("[Kallia] Ícone de chamada injetado com sucesso! isFloating:", found.isFloating);
   }
 
   var obs = new MutationObserver(function () {
-    // Debounce: o DOM do Chatwoot (SPA) muta constantemente — antes o handler
-    // rodava a cada mutação + um setInterval de 1s redundante.
     scheduleBindingRefresh();
   });
   obs.observe(document.body, { childList: true, subtree: true });
@@ -891,8 +935,9 @@
   (function retry() {
     refreshBinding();
     ensureButton();
-    if (++tries < 40) setTimeout(retry, 800);
+    if (++tries < 30) setTimeout(retry, 1000);
   })();
-  connectEvents(); // SSE sempre ligado p/ receber chamadas mesmo sem painel aberto
-  console.log("[kallia-widget] carregado. base=", BASE);
+
+  connectEvents();
+  console.log("[Kallia] Widget carregado e pronto.");
 })();

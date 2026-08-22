@@ -664,6 +664,20 @@ func (s *server) withCombinedAuth(next http.Handler) http.Handler {
 				}
 			}
 
+			// Fallback: consultar no PocketBase se não encontrado no SQLite
+			if sessRow == nil && pbClient != nil {
+				if pbSess, pbErr := pbClient.GetSessionByAPIKeyPB(r.Context(), connAPIKey); pbErr == nil && pbSess != nil {
+					sessRow = &sessionRow{
+						ID:          pbSess.SID,
+						Name:        pbSess.Name,
+						JID:         pbSess.JID,
+						WorkspaceID: pbSess.WorkspaceID,
+						ProjectID:   pbSess.WorkspaceID,
+						APIKey:      pbSess.APIKey,
+					}
+				}
+			}
+
 			if sessRow != nil {
 				ctx := context.WithValue(r.Context(), ctxKeyUserID, "api-key-system")
 				ctx = context.WithValue(ctx, ctxKeyUserRole, "creator")

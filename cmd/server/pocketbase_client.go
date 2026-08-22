@@ -979,6 +979,31 @@ func (c *PocketBaseClient) GetSessionPB(ctx context.Context, idOrSID string) (*S
 	return &item, nil
 }
 
+func (c *PocketBaseClient) GetSessionByAPIKeyPB(ctx context.Context, apiKey string) (*SessionPBRow, error) {
+	if apiKey == "" {
+		return nil, nil
+	}
+	filter := fmt.Sprintf(`api_key="%s"`, apiKey)
+	searchURL := fmt.Sprintf("/api/collections/sessions/records?filter=(%s)&perPage=1", url.QueryEscape(filter))
+	resp, err := c.doAdminRequest(ctx, "GET", searchURL, nil)
+	if err != nil || resp == nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil
+	}
+
+	var pbRes PBListResponse[SessionPBRow]
+	if json.NewDecoder(resp.Body).Decode(&pbRes) != nil || len(pbRes.Items) == 0 {
+		return nil, nil
+	}
+
+	item := pbRes.Items[0]
+	return &item, nil
+}
+
 func (c *PocketBaseClient) DeleteSessionPB(ctx context.Context, id string) error {
 	// 1. Tentar deletar diretamente caso seja o ID de 15 caracteres do PocketBase
 	resp, err := c.doAdminRequest(ctx, "DELETE", "/api/collections/sessions/records/"+id, nil)

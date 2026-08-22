@@ -597,22 +597,64 @@ func (s *server) handleChatwootResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("chatwoot resolve", "account_id", accountID, "conversation_id", convID)
-	// Qualquer sessão da conta serve só para consultar a conversa (mesmo token de conta).
+	// 1. Descobrir a sessão probatória para consultar o Chatwoot
 	probe := s.sessions.sessionForChatwootAccount(accountID)
+	apiKey := r.Header.Get("X-Connection-API-Key")
+	if apiKey == "" {
+		apiKey = r.Header.Get("X-API-Key")
+	}
+
+	if probe == nil && apiKey != "" {
+		if sRow, err := s.sessions.store.getSessionByAPIKey(r.Context(), apiKey); err == nil && sRow != nil {
+			if sess, ok := s.sessions.Get(sRow.ID); ok && sess.getChatwoot().valid() {
+				probe = sess
+			}
+		}
+	}
+
+	if probe == nil {
+		allRows, err := s.sessions.store.listAll(r.Context())
+		if err == nil {
+			for _, row := range allRows {
+				if row.Chatwoot != "" {
+					var cwCfg ChatwootConfig
+					if json.Unmarshal([]byte(row.Chatwoot), &cwCfg) == nil && cwCfg.valid() {
+						if cwCfg.AccountID == accountID || (apiKey != "" && row.APIKey == apiKey) {
+							if sess, ok := s.sessions.Get(row.ID); ok {
+								sess.setChatwoot(cwCfg)
+								probe = sess
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if probe == nil {
 		s.log.Warn("chatwoot resolve: no session for account", "account_id", accountID)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no session linked to this chatwoot account"})
 		return
 	}
+
 	res, code, err := probe.getChatwoot().req(http.MethodGet, "/conversations/"+convID, nil)
 	if err != nil || code >= 300 {
 		s.log.Error("chatwoot resolve: lookup failed", "code", code, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "chatwoot lookup failed"})
 		return
 	}
-	// Amarra empresa + caixa: a sessão tem que ser a da inbox desta conversa.
+
+	// Amarra empresa + caixa: a sessão preferencial é a da inbox desta conversa.
 	inboxID := asInt(res["inbox_id"])
 	sess := s.sessions.sessionForChatwootInbox(accountID, inboxID)
+	if sess == nil {
+		// Fallback: se não houver sessão exclusiva para esta inbox, reutiliza a sessão probe da mesma conta
+		if probe.getChatwoot().valid() && (probe.getChatwoot().AccountID == accountID || probe.getChatwoot().InboxID == 0) {
+			sess = probe
+		}
+	}
+
 	if sess == nil {
 		s.log.Warn("chatwoot resolve: no session for inbox", "account_id", accountID, "inbox_id", inboxID)
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no session linked to this inbox", "inbox_id": strconv.Itoa(inboxID)})
